@@ -1,0 +1,14 @@
+name: ci
+
+on:
+  pull_request: {}
+
+jobs:
+  lib-check-test-publish-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch Bosatsu CLI and runtime
+        run: ./bosatsu --fetch
+      - name: Run lib check, lib test, and dry-run publish
+        run: scripts/test.sh
