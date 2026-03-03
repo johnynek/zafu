@@ -6,15 +6,26 @@ from Bosatsu/Char import (
   string_to_Int_List,
   int_List_to_String,
 )
+from Bosatsu/Lazy import (
+  Lazy,
+  lazy,
+  get_Lazy,
+)
 from Bosatsu/List import eq_List
 from Bosatsu/Num/Float64 import (
-  float64_to_Int,
+  abs,
+  cmp_Float64,
+  divf,
   float64_to_String,
   int_to_Float64,
+  is_finite,
+  subf,
 )
 from Bosatsu/Rand import (
   Rand,
   int_range,
+  one_of,
+  geometric_Int,
   const_Rand,
   map_Rand,
   flat_map_Rand,
@@ -35,36 +46,52 @@ export (
   bool_Gen,
   comparison_Gen,
   int_Gen,
+  int32_Gen,
+  uint32_Gen,
+  pos_Int_Gen,
   char_Gen,
   string_Gen,
   float64_Gen,
   option_Gen,
   list_Gen,
   tuple2_Gen,
+  tuple3_Gen,
+  tuple4_Gen,
   Prop,
   forall_Prop,
   suite_Prop,
   run_Prop,
 )
 
-enum Gen:
-  Gen(rand: Rand[a], shrink: a -> List[a])
+struct Gen(rand: Rand[a], shrink: a -> Lazy[List[a]])
 
 def gen_Rand(gen: Gen[a]) -> Rand[a]:
-  match gen:
-    case Gen(rand, _):
-      rand
+  Gen(rand, _) = gen
+  rand
 
-def shrink_Gen(gen: Gen[a]) -> a -> List[a]:
-  match gen:
-    case Gen(_, shrink):
-      shrink
+def shrink_Gen(gen: Gen[a]) -> a -> Lazy[List[a]]:
+  Gen(_, shrink) = gen
+  shrink
 
 def no_shrink_Gen(rand: Rand[a]) -> Gen[a]:
-  Gen(rand, _ -> [])
+  Gen(rand, _ -> lazy(() -> []))
 
 def const_Gen(value: a) -> Gen[a]:
   no_shrink_Gen(const_Rand(value))
+
+# Preserve shrinking when the caller can provide the inverse map.
+def map_Gen(gen: Gen[a], to: a -> b, from: b -> a) -> Gen[b]:
+  Gen(
+    map_Rand(gen.gen_Rand(), to),
+    b -> lazy(() -> gen.shrink_Gen()(from(b)).get_Lazy().map_List(to)),
+  )
+
+# Preserve shrinking for flat_map by requiring the result shrinker.
+def flat_map_Gen(gen: Gen[a], fn: a -> Gen[b], shrink: b -> Lazy[List[b]]) -> Gen[b]:
+  Gen(
+    flat_map_Rand(gen.gen_Rand(), a -> fn(a).gen_Rand()),
+    shrink,
+  )
 
 def and_Bool(left: Bool, right: Bool) -> Bool:
   if left:
@@ -78,53 +105,22 @@ def not_Bool(value: Bool) -> Bool:
   else:
     True
 
-def map_Gen(gen: Gen[a], fn: a -> b) -> Gen[b]:
-  no_shrink_Gen(map_Rand(gen.gen_Rand(), fn))
-
-def flat_map_Gen(gen: Gen[a], fn: a -> Gen[b]) -> Gen[b]:
-  no_shrink_Gen(flat_map_Rand(gen.gen_Rand(), a -> fn(a).gen_Rand()))
-
 def test_passes(test: Test) -> Bool:
-  (_, _, passed) = int_loop(4096, ([test], False, True), (rem, state) -> (
-    (stack, done, passed) = state
-    if done:
-      (0, state)
-    else:
-      match stack:
-        case []:
-          (0, (stack, True, passed))
-        case [head, *tail]:
-          match head:
-            case Assertion(value, _):
-              if value:
-                (rem.sub(1), (tail, False, passed))
-              else:
-                (0, (tail, True, False))
-            case TestSuite(_, tests):
-              (rem.sub(1), (tests.concat(tail), False, passed))
-  ))
-  passed
+  match test:
+    case Assertion(value, _):
+      value
+    case TestSuite(_, _):
+      False
 
 def first_failure_message(test: Test) -> Option[String]:
-  (_, _, message) = int_loop(4096, ([test], False, None), (rem, state) -> (
-    (stack, done, message) = state
-    if done:
-      (0, state)
-    else:
-      match stack:
-        case []:
-          (0, (stack, True, message))
-        case [head, *tail]:
-          match head:
-            case Assertion(value, msg):
-              if value:
-                (rem.sub(1), (tail, False, message))
-              else:
-                (0, (tail, True, Some(msg)))
-            case TestSuite(_, tests):
-              (rem.sub(1), (tests.concat(tail), False, message))
-  ))
-  message
+  match test:
+    case Assertion(value, message):
+      if value:
+        None
+      else:
+        Some(message)
+    case TestSuite(_, _):
+      None
 
 def first_failing(values: List[a], test_fn: a -> Test) -> Option[a]:
   loop values:
@@ -136,14 +132,19 @@ def first_failing(values: List[a], test_fn: a -> Test) -> Option[a]:
       else:
         Some(head)
 
-def shrink_to_smallest(start: a, shrink: a -> List[a], test_fn: a -> Test) -> a:
-  int_loop(128, start, (rem, current) -> (
-    match first_failing(shrink(current), test_fn):
-      case None:
-        (0, current)
-      case Some(next):
-        (rem.sub(1), next)
-  ))
+def shrink_to_smallest_steps(steps: List[Unit], current: a, shrink: a -> Lazy[List[a]], test_fn: a -> Test) -> a:
+  loop steps:
+    case []:
+      current
+    case [_, *tail]:
+      match first_failing(get_Lazy(shrink(current)), test_fn):
+        case None:
+          current
+        case Some(next):
+          shrink_to_smallest_steps(tail, next, shrink, test_fn)
+
+def shrink_to_smallest(start: a, shrink: a -> Lazy[List[a]], test_fn: a -> Test) -> a:
+  shrink_to_smallest_steps(replicate_List(Unit, 128), start, shrink, test_fn)
 
 def first_failure_and_shrunk_samples(samples: List[a], gen: Gen[a], test_fn: a -> Test) -> Option[(a, a)]:
   loop samples:
@@ -181,6 +182,13 @@ def list_size_loop(list: List[a], acc: Int) -> Int:
 def list_size(list: List[a]) -> Int:
   list_size_loop(list, 0)
 
+def min_Int(a: Int, b: Int) -> Int:
+  match cmp_Int(a, b):
+    case LT | EQ:
+      a
+    case GT:
+      b
+
 def abs_Int(i: Int) -> Int:
   if cmp_Int(i, 0) matches LT:
     0.sub(i)
@@ -195,26 +203,54 @@ def sign_Int(i: Int) -> Int:
   else:
     1
 
-def shrink_Int(i: Int) -> List[Int]:
+def first_List(list: List[a]) -> Option[a]:
+  match list:
+    case [head, *_]:
+      Some(head)
+    case []:
+      None
+
+def shrink_Int(i: Int) -> Lazy[List[Int]]:
   if i.eq_Int(0):
-    []
+    lazy(() -> [])
   else:
     half = i.div(2)
     one = sign_Int(i)
-    if half.eq_Int(0):
-      [0]
-    elif half.eq_Int(one):
-      [0, one]
-    else:
-      [0, half, one]
+    lazy(() -> (
+      if half.eq_Int(0):
+        [0]
+      elif half.eq_Int(one):
+        [0, one]
+      else:
+        [0, half, one]
+    ))
 
-def shrink_List(shrink_item)(list: List[a]) -> List[List[a]]:
+def shrink_non_negative(i: Int) -> Lazy[List[Int]]:
+  lazy(() -> [v for v in shrink_Int(i).get_Lazy() if cmp_Int(v, 0) matches GT | EQ])
+
+def shrink_positive(i: Int) -> Lazy[List[Int]]:
+  if cmp_Int(i, 1) matches LT | EQ:
+    lazy(() -> [])
+  else:
+    lazy(() -> (
+      positive = [v for v in shrink_Int(i).get_Lazy() if cmp_Int(v, 0) matches GT]
+      [1].concat(positive)
+    ))
+
+def shrink_List(shrink_item)(list: List[a]) -> Lazy[List[List[a]]]:
   match list:
     case []:
-      []
+      lazy(() -> [])
     case [head, *tail]:
-      head_shrinks = shrink_item(head).map_List(h -> [h, *tail])
-      [[], tail].concat(head_shrinks)
+      lazy(() -> (
+        head_shrinks = shrink_item(head).get_Lazy()
+        shrunk_head = match first_List(head_shrinks):
+          case Some(h):
+            [[h, *tail]]
+          case None:
+            []
+        [tail, [head]].concat(shrunk_head)
+      ))
 
 def to_ascii_Char(i: Int) -> Char:
   match int_to_Char(i):
@@ -223,15 +259,17 @@ def to_ascii_Char(i: Int) -> Char:
     case None:
       .'a'
 
-def shrink_Char(char: Char) -> List[Char]:
-  int_values = shrink_Int(char_to_Int(char))
-  int_values.foldl_List([], (acc, i) -> (
-    match int_to_Char(i):
-      case Some(c):
-        [c, *acc]
-      case None:
-        acc
-  )).reverse()
+def shrink_Char(char: Char) -> Lazy[List[Char]]:
+  lazy(() -> (
+    int_values = shrink_Int(char_to_Int(char)).get_Lazy()
+    int_values.foldl_List([], (acc, i) -> (
+      match int_to_Char(i):
+        case Some(c):
+          [c, *acc]
+        case None:
+          acc
+    )).reverse()
+  ))
 
 def int_List_to_String_or_empty(list: List[Int]) -> String:
   match int_List_to_String(list):
@@ -240,33 +278,97 @@ def int_List_to_String_or_empty(list: List[Int]) -> String:
     case None:
       ""
 
-def shrink_String(str: String) -> List[String]:
+def shrink_String(str: String) -> Lazy[List[String]]:
   ints = string_to_Int_List(str)
-  shrink_List(shrink_Int)(ints).foldl_List([], (acc, int_list) -> (
-    match int_List_to_String(int_list):
-      case Some(s):
-        [s, *acc]
-      case None:
-        acc
-  )).reverse()
+  lazy(() -> (
+    int_candidates = shrink_List(shrink_Int)(ints).get_Lazy()
+    int_candidates.foldl_List([], (acc, int_list) -> (
+      match int_List_to_String(int_list):
+        case Some(s):
+          [s, *acc]
+        case None:
+          acc
+    )).reverse()
+  ))
 
-def shrink_Option(shrink_item)(value: Option[a]) -> List[Option[a]]:
+def shrink_Option(shrink_item)(value: Option[a]) -> Lazy[List[Option[a]]]:
   match value:
     case None:
-      []
+      lazy(() -> [])
     case Some(item):
-      [None].concat(shrink_item(item).map_List(Some))
+      lazy(() -> (
+        match first_List(shrink_item(item).get_Lazy()):
+          case Some(next):
+            [None, Some(next)]
+          case None:
+            [None]
+      ))
 
-def shrink_Tuple2(shrink_left, shrink_right)((left, right): (a, b)) -> List[(a, b)]:
-  left_shrinks = shrink_left(left).map_List(l -> (l, right))
-  right_shrinks = shrink_right(right).map_List(r -> (left, r))
-  left_shrinks.concat(right_shrinks)
+def shrink_Tuple2(shrink_left, shrink_right)((left, right): (a, b)) -> Lazy[List[(a, b)]]:
+  lazy(() -> (
+    left_candidates = match first_List(shrink_left(left).get_Lazy()):
+      case Some(l):
+        [(l, right)]
+      case None:
+        []
+    right_candidates = match first_List(shrink_right(right).get_Lazy()):
+      case Some(r):
+        [(left, r)]
+      case None:
+        []
+    left_candidates.concat(right_candidates)
+  ))
+
+def shrink_Tuple3(shrink_a, shrink_b, shrink_c)((a0, b0, c0): (a, b, c)) -> Lazy[List[(a, b, c)]]:
+  lazy(() -> (
+    as = match first_List(shrink_a(a0).get_Lazy()):
+      case Some(a1):
+        [(a1, b0, c0)]
+      case None:
+        []
+    bs = match first_List(shrink_b(b0).get_Lazy()):
+      case Some(b1):
+        [(a0, b1, c0)]
+      case None:
+        []
+    cs = match first_List(shrink_c(c0).get_Lazy()):
+      case Some(c1):
+        [(a0, b0, c1)]
+      case None:
+        []
+    as.concat(bs).concat(cs)
+  ))
+
+def shrink_Tuple4(shrink_a, shrink_b, shrink_c, shrink_d)((a0, b0, c0, d0): (a, b, c, d)) -> Lazy[List[(a, b, c, d)]]:
+  lazy(() -> (
+    as = match first_List(shrink_a(a0).get_Lazy()):
+      case Some(a1):
+        [(a1, b0, c0, d0)]
+      case None:
+        []
+    bs = match first_List(shrink_b(b0).get_Lazy()):
+      case Some(b1):
+        [(a0, b1, c0, d0)]
+      case None:
+        []
+    cs = match first_List(shrink_c(c0).get_Lazy()):
+      case Some(c1):
+        [(a0, b0, c1, d0)]
+      case None:
+        []
+    ds = match first_List(shrink_d(d0).get_Lazy()):
+      case Some(d1):
+        [(a0, b0, c0, d1)]
+      case None:
+        []
+    as.concat(bs).concat(cs).concat(ds)
+  ))
 
 unit_Gen: Gen[Unit] = const_Gen(Unit)
 
 bool_Gen: Gen[Bool] = Gen(
   map_Rand(int_range(2), i -> i.eq_Int(1)),
-  b -> [False] if b else [],
+  b -> lazy(() -> [False] if b else []),
 )
 
 comparison_Gen: Gen[Comparison] = Gen(
@@ -278,18 +380,52 @@ comparison_Gen: Gen[Comparison] = Gen(
     else:
       GT
   )),
-  c -> match c:
+  c -> lazy(() -> match c:
     case LT:
       []
     case EQ:
       [LT]
     case GT:
       [EQ, LT],
+  ),
 )
 
+def signed_int_rand(max_abs: Int) -> Rand[Int]:
+  map_Rand(int_range(max_abs.mul(2)), i -> i.sub(max_abs))
+
+int8_max = shift_left_Int(1, 7)
+int16_max = shift_left_Int(1, 15)
+int32_max = shift_left_Int(1, 31)
+int64_max = shift_left_Int(1, 63)
+int128_max = shift_left_Int(1, 127)
+
+rand_int8: Rand[Int] = signed_int_rand(int8_max)
+rand_int16: Rand[Int] = signed_int_rand(int16_max)
+rand_int32: Rand[Int] = signed_int_rand(int32_max)
+rand_int64: Rand[Int] = signed_int_rand(int64_max)
+rand_int128: Rand[Int] = signed_int_rand(int128_max)
+
 int_Gen: Gen[Int] = Gen(
-  map_Rand(int_range(4096), i -> i.sub(2048)),
+  one_of(rand_int8, [rand_int16, rand_int32, rand_int64, rand_int128]),
   shrink_Int,
+)
+
+int32_Gen: Gen[Int] = Gen(rand_int32, shrink_Int)
+
+uint32_Gen: Gen[Int] = Gen(
+  int_range(4294967296),
+  shrink_non_negative,
+)
+
+pos_Int_Gen: Gen[Int] = Gen(
+  one_of(
+    map_Rand(int_range(255), i -> i.add(1)),
+    [
+      map_Rand(int_range(65535), i -> i.add(1)),
+      map_Rand(int_range(2147483647), i -> i.add(1)),
+    ]
+  ),
+  shrink_positive,
 )
 
 char_Gen: Gen[Char] = Gen(
@@ -298,7 +434,7 @@ char_Gen: Gen[Char] = Gen(
 )
 
 string_Gen: Gen[String] = Gen(
-  flat_map_Rand(int_range(12), len -> (
+  flat_map_Rand(int_range(24), len -> (
     chars = replicate_List(char_Gen.gen_Rand(), len)
     map_Rand(sequence_Rand(chars), list -> (
       int_values = list.map_List(char_to_Int)
@@ -308,13 +444,51 @@ string_Gen: Gen[String] = Gen(
   shrink_String,
 )
 
+float_zero = int_to_Float64(0)
+float_one = int_to_Float64(1)
+float_scale = int_to_Float64(1000000)
+
+def signed_Float64(neg: Bool, value: Float64) -> Float64:
+  if neg:
+    subf(float_zero, value)
+  else:
+    value
+
+rand_unit_float: Rand[Float64] = map_Rand(
+  int_range(1000000),
+  i -> divf(int_to_Float64(i), float_scale),
+)
+
+rand_signed_unit_float: Rand[Float64] = map_Rand(
+  prod_Rand(bool_Gen.gen_Rand(), rand_unit_float),
+  ((neg, value)) -> signed_Float64(neg, value),
+)
+
+rand_exp_float: Rand[Float64] = map_Rand(
+  prod_Rand(bool_Gen.gen_Rand(), geometric_Int),
+  ((neg, exp0)) -> (
+    exp = min_Int(exp0, 60)
+    mag = int_to_Float64(shift_left_Int(1, exp))
+    signed_Float64(neg, mag)
+  ),
+)
+
+def shrink_Float64(value: Float64) -> Lazy[List[Float64]]:
+  if cmp_Float64(value, float_zero) matches EQ:
+    lazy(() -> [])
+  else:
+    half = divf(value, int_to_Float64(2))
+    mirrored = subf(float_zero, half)
+    lazy(() -> (
+      if cmp_Float64(abs(value), float_one) matches LT:
+        [float_zero, half]
+      else:
+        [float_zero, half, mirrored]
+    ))
+
 float64_Gen: Gen[Float64] = Gen(
-  map_Rand(int_Gen.gen_Rand(), int_to_Float64),
-  f -> match float64_to_Int(f):
-    case Some(i):
-      shrink_Int(i).map_List(int_to_Float64)
-    case None:
-      [],
+  one_of(rand_unit_float, [rand_signed_unit_float, rand_exp_float]),
+  shrink_Float64,
 )
 
 def option_Gen(gen: Gen[a]) -> Gen[Option[a]]:
@@ -330,7 +504,7 @@ def option_Gen(gen: Gen[a]) -> Gen[Option[a]]:
 
 def list_Gen(gen: Gen[a]) -> Gen[List[a]]:
   Gen(
-    flat_map_Rand(int_range(10), len -> sequence_Rand(replicate_List(gen.gen_Rand(), len))),
+    flat_map_Rand(int_range(16), len -> sequence_Rand(replicate_List(gen.gen_Rand(), len))),
     shrink_List(gen.shrink_Gen()),
   )
 
@@ -340,13 +514,26 @@ def tuple2_Gen(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
     shrink_Tuple2(left.shrink_Gen(), right.shrink_Gen()),
   )
 
-enum Prop:
-  Prop(run: Int -> Rand[Test])
+def tuple3_Gen(ga: Gen[a], gb: Gen[b], gc: Gen[c]) -> Gen[(a, b, c)]:
+  Gen(
+    map_Rand(prod_Rand(prod_Rand(ga.gen_Rand(), gb.gen_Rand()), gc.gen_Rand()), (((a0, b0), c0)) -> (a0, b0, c0)),
+    shrink_Tuple3(ga.shrink_Gen(), gb.shrink_Gen(), gc.shrink_Gen()),
+  )
+
+def tuple4_Gen(ga: Gen[a], gb: Gen[b], gc: Gen[c], gd: Gen[d]) -> Gen[(a, b, c, d)]:
+  Gen(
+    map_Rand(
+      prod_Rand(prod_Rand(prod_Rand(ga.gen_Rand(), gb.gen_Rand()), gc.gen_Rand()), gd.gen_Rand()),
+      ((((a0, b0), c0), d0)) -> (a0, b0, c0, d0)
+    ),
+    shrink_Tuple4(ga.shrink_Gen(), gb.shrink_Gen(), gc.shrink_Gen(), gd.shrink_Gen()),
+  )
+
+struct Prop(run: Int -> Rand[Test])
 
 def run_count(prop: Prop, count: Int) -> Rand[Test]:
-  match prop:
-    case Prop(run):
-      run(count)
+  Prop(run) = prop
+  run(count)
 
 def forall_Prop(gen: Gen[a], name: String, show: a -> String, test_fn: a -> Test) -> Prop:
   Prop(count -> (
@@ -421,9 +608,12 @@ predef_generators_prop: Prop = suite_Prop("Predef generators", [
       abs_Int(idx).eq_Int(1)
   )),
   always_valid_prop(int_Gen, "Int reflexive", int_to_String, i -> i.eq_Int(i)),
+  always_valid_prop(int32_Gen, "Int32-ish", int_to_String, i -> cmp_Int(abs_Int(i), int32_max) matches LT | EQ),
+  always_valid_prop(uint32_Gen, "UInt32-ish", int_to_String, i -> cmp_Int(i, 0) matches GT | EQ),
+  always_valid_prop(pos_Int_Gen, "Positive Int", int_to_String, i -> cmp_Int(i, 0) matches GT),
   always_valid_prop(char_Gen, "Char round-trip", show_Char, c -> int_to_Char(char_to_Int(c)) matches Some(_)),
   always_valid_prop(string_Gen, "String round-trip", s -> s, s -> int_List_to_String(string_to_Int_List(s)) matches Some(_)),
-  always_valid_prop(float64_Gen, "Float64 from Int", float64_to_String, f -> float64_to_Int(f) matches Some(_)),
+  always_valid_prop(float64_Gen, "Float64 finite", float64_to_String, is_finite),
   always_valid_prop(option_Gen(int_Gen), "Option[Int]", show_Option_Int, o -> (
     match o:
       case None:
@@ -432,15 +622,15 @@ predef_generators_prop: Prop = suite_Prop("Predef generators", [
         i.eq_Int(i)
   )),
   always_valid_prop(list_Gen(int_Gen), "List[Int]", show_Int_List, list -> eq_List(eq_Int)(list.reverse().reverse(), list)),
-  always_valid_prop(tuple2_Gen(int_Gen, bool_Gen), "Tuple2[Int, Bool]", _ -> "tuple2", ((i, b)) -> (
-    i.eq_Int(i) if b else i.eq_Int(i)
-  )),
+  always_valid_prop(tuple2_Gen(int_Gen, bool_Gen), "Tuple2[Int, Bool]", _ -> "tuple2", ((i, b)) -> i.eq_Int(i) if b else i.eq_Int(i)),
+  always_valid_prop(tuple3_Gen(int_Gen, bool_Gen, char_Gen), "Tuple3", _ -> "tuple3", ((i, _, c)) -> and_Bool(i.eq_Int(i), char_to_Int(c).eq_Int(char_to_Int(c)))),
+  always_valid_prop(tuple4_Gen(int_Gen, bool_Gen, char_Gen, string_Gen), "Tuple4", _ -> "tuple4", ((i, _, c, s)) -> and_Bool(i.eq_Int(i), and_Bool(char_to_Int(c).eq_Int(char_to_Int(c)), int_List_to_String(string_to_Int_List(s)) matches Some(_)))),
 ])
 
-def non_zero_int_Gen() -> Gen[Int]:
+def non_one_int_Gen() -> Gen[Int]:
   Gen(
-    map_Rand(int_range(1024), i -> i.add(1)),
-    shrink_Int,
+    map_Rand(int_range(1024), i -> i.add(2)),
+    shrink_positive,
   )
 
 def non_empty_int_list_Gen() -> Gen[List[Int]]:
@@ -453,7 +643,7 @@ def non_empty_int_list_Gen() -> Gen[List[Int]]:
   )
 
 def shrink_int_witness() -> Test:
-  match first_failure_and_shrunk(non_zero_int_Gen(), 20, 99, i -> Assertion(i.add(i).eq_Int(i), "2*x == x")):
+  match first_failure_and_shrunk(non_one_int_Gen(), 20, 99, i -> Assertion(i.add(i).eq_Int(i), "2*x == x")):
     case None:
       Assertion(False, "expected failing int sample")
     case Some((original, shrunk)):
