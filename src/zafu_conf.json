@@ -8,12 +8,12 @@
   ],
   "private_deps": {
     "core_alpha": {
-      "version": "4.2.0",
+      "version": "4.2.1",
       "hashes": [
-        "blake3:f9a2e4fc5b3d62d8d17ab06492ea0bf208015149c3507070462448e07bf895f5"
+        "blake3:228b24f5039388a7b220c18a1d3ceded54d0f99dcf5b512dac1b8c03e29a6c1a"
       ],
       "uris": [
-        "https://github.com/johnynek/bosatsu/releases/download/v0.0.40/core_alpha-v4.2.0.bosatsu_lib"
+        "https://github.com/johnynek/bosatsu/releases/download/v0.0.41/core_alpha-v4.2.1.bosatsu_lib"
       ]
     }
   }
