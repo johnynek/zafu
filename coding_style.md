@@ -118,7 +118,7 @@ Add small local/package-local helpers that return `Option`/`Prog` so `<-` pipeli
 ## 7) Practical quality bar
 
 1. Keep APIs intentional with `export (...)`.
-2. Prefer total functions and explicit `Option`/sum types for failure.
+2. Use explicit `Option`/sum types for failure.
 3. Add or update `tests` alongside behavior changes.
 4. Before PR/release, run `scripts/test.sh`.
 
