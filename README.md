@@ -29,7 +29,13 @@ This runs:
 2. `./bosatsu lib test`
 3. Dry-run style publish via `scripts/publish_bosatsu_libs.sh --dry-run` with `URI_BASE=https://example.invalid/`
 
-## CI and release
+## CI, docs, and release
 
 - CI (`.github/workflows/ci.yml`) runs the same check/test/dry-run publish on pull requests.
+- Docs (`.github/workflows/docs-pages.yml`) runs on each push to `main`, generates markdown docs with `./bosatsu lib doc`, converts them to HTML with Pandoc, and deploys to GitHub Pages.
 - Release (`.github/workflows/release.yml`) triggers on `vX.Y.Z` tags, verifies the tagged commit is on `main`, publishes `.bosatsu_lib` files, and uploads them to the GitHub Release page.
+
+## API docs
+
+- GitHub Pages index: [johnynek.github.io/zafu](https://johnynek.github.io/zafu/)
+- Current module docs: [Zafu/Vector](https://johnynek.github.io/zafu/Zafu/Vector.html)
