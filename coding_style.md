@@ -13,13 +13,13 @@ This guide is for experienced programmers (or coding agents) who want to be prod
 2. Typecheck continuously while editing:
 
 ```bash
-./bosatsu lib check --repo_root .
+./bosatsu lib check
 ```
 
 3. Run tests when a unit of work is complete:
 
 ```bash
-./bosatsu lib test --repo_root .
+./bosatsu lib test
 ```
 
 4. Validate publishability in CI/local without mutating repo config:

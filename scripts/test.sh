@@ -4,9 +4,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-./bosatsu lib fetch --repo_root "$REPO_ROOT"
-./bosatsu lib check --repo_root "$REPO_ROOT"
-./bosatsu lib test --repo_root "$REPO_ROOT"
+./bosatsu lib fetch
+./bosatsu lib check
+./bosatsu lib test
 
 OUTDIR="${OUTDIR:-"$REPO_ROOT/.bosatsu_lib_publish_dry_run"}"
 URI_BASE="${URI_BASE:-https://example.invalid/}"

@@ -39,8 +39,8 @@ jobs:
         run: ./bosatsu --fetch
       - name: Verify library before release
         run: |
-          ./bosatsu lib check --repo_root "$GITHUB_WORKSPACE"
-          ./bosatsu lib test --repo_root "$GITHUB_WORKSPACE"
+          ./bosatsu lib check
+          ./bosatsu lib test
       - name: Publish Bosatsu library files for release assets
         env:
           REPO_ROOT: ${{ github.workspace }}

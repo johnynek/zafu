@@ -100,42 +100,56 @@ if [[ ${#LIB_NAMES[@]} -gt 0 ]]; then
   for name in "${LIB_NAMES[@]}"; do
     echo "  name = $name"
     ./bosatsu lib fetch \
-      --repo_root "$REPO_ROOT" \
       --name "$name"
   done
 else
-  ./bosatsu lib fetch \
-    --repo_root "$REPO_ROOT"
+  ./bosatsu lib fetch
 fi
 
 publish_repo_root="$REPO_ROOT"
 cas_arg=()
 tmp_repo=""
+tmp_publish_root=""
+
+cleanup() {
+  if [[ -n "$tmp_repo" ]]; then
+    rm -rf "$tmp_repo"
+  fi
+}
+
 if [[ "$DRY_RUN" -eq 1 ]]; then
   tmp_repo="$(mktemp -d "${TMPDIR:-/tmp}/bosatsu-publish-dry-run.XXXXXX")"
-  trap 'rm -rf "$tmp_repo"' EXIT
+  trap cleanup EXIT
   tmp_publish_root="$tmp_repo/repo"
   mkdir -p "$tmp_publish_root"
 
-  # Copy source into a temporary workspace so publish can run without mutating
-  # repository conf files.
+  # Copy source into a temp workspace and initialize git metadata there so
+  # bosatsu root discovery works without touching the primary working tree.
   tar -C "$REPO_ROOT" \
     --exclude='.git' \
     --exclude='.bosatsuc' \
     --exclude='.bosatsu_lib_publish' \
     --exclude='.bosatsu_lib_publish_dry_run' \
     -cf - . | tar -C "$tmp_publish_root" -xf -
+  git -C "$tmp_publish_root" init >/dev/null
+
+  if [[ -d "$REPO_ROOT/.bosatsuc/cli" ]]; then
+    mkdir -p "$tmp_publish_root/.bosatsuc"
+    cp -R "$REPO_ROOT/.bosatsuc/cli" "$tmp_publish_root/.bosatsuc/"
+  fi
 
   publish_repo_root="$tmp_publish_root"
   cas_arg=(--cas_dir "$REPO_ROOT/.bosatsuc/cas")
 fi
 
-./bosatsu lib publish \
-  --repo_root "$publish_repo_root" \
-  "${cas_arg[@]}" \
-  --outdir "$OUTDIR" \
-  --git_sha "$GIT_SHA" \
-  --uri-base "$URI_BASE"
+(
+  cd "$publish_repo_root"
+  ./bosatsu lib publish \
+    "${cas_arg[@]}" \
+    --outdir "$OUTDIR" \
+    --git_sha "$GIT_SHA" \
+    --uri-base "$URI_BASE"
+)
 
 echo
 echo "Generated .bosatsu_lib files:"

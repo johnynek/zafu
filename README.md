@@ -25,8 +25,8 @@ scripts/test.sh
 
 This runs:
 
-1. `./bosatsu lib check --repo_root <repo>`
-2. `./bosatsu lib test --repo_root <repo>`
+1. `./bosatsu lib check`
+2. `./bosatsu lib test`
 3. Dry-run style publish via `scripts/publish_bosatsu_libs.sh --dry-run` with `URI_BASE=https://example.invalid/`
 
 ## CI and release
