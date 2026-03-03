@@ -92,8 +92,16 @@ Use `recur` when non-tail recursion is intentional or when it is the clearer exp
 ## 4) Prefer left-apply (`<-`) over deep nesting
 
 Write sequential pipelines with `<-` instead of nested `match`/`if_Some`/`await` chains.
+`if_Some` is not built in; define it locally (or import your shared helper).
 
 ```bosatsu
+def if_Some(o: Option[a], fn: a -> Option[b]) -> Option[b]:
+  match o:
+    case Some(a):
+      fn(a)
+    case None:
+      None
+
 parsed <- parse_number_token(s).if_Some()
 (rest, token, is_int_token) = parsed
 f <- string_to_Float64(token).if_Some()
