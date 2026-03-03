@@ -37,5 +37,4 @@ This runs:
 
 ## API docs
 
-- GitHub Pages index: [johnynek.github.io/zafu](https://johnynek.github.io/zafu/)
-- Current module docs: [Zafu/Collection/Vector](https://johnynek.github.io/zafu/Zafu/Collection/Vector.html)
+- [Zafu library docs](https://johnynek.github.io/zafu/)
