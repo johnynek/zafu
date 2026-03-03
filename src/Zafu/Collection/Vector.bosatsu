@@ -76,11 +76,8 @@ empty_Vector: forall a. Vector[a] = Leaf(0, empty_Array)
 
 # Returns the number of elements in a vector.
 def size_Vector(vec: Vector[a]) -> Int:
-  match vec:
-    case Leaf(sz, _):
-      sz
-    case Branch(_, sz, _, _):
-      sz
+  Leaf(sz, _) | Branch(_, sz, _, _) = vec
+  sz
 
 # Alias for size_Vector.
 def size(vec: Vector[a]) -> Int:
@@ -156,9 +153,7 @@ def regroup_nodes(parent_height: Int, children: Array[Vector[a]]) -> Array[Vecto
 
 def collapse_nodes(nodes: Array[Vector[a]]) -> Option[Vector[a]]:
   cnt0 = size_Array(nodes)
-  if cnt0.eq_Int(0):
-    None
-  elif cnt0.eq_Int(1):
+  if cnt0.cmp_Int(1) matches LT | EQ:
     get_Array(nodes, 0)
   else:
     child_height0 = get_or_Array(nodes, 0, _ -> empty_Vector).height_Vector()
@@ -240,8 +235,6 @@ def to_List_Vector(vec: Vector[a]) -> List[a]:
 
 def choose_child_loop(prefix: Array[Int], target: Int, low: Int, high: Int, fuel: Int) -> Option[Int]:
   recur fuel:
-    case _ if cmp_Int(fuel, 0) matches LT | EQ:
-      None
     case _ if cmp_Int(low, high) matches GT:
       None
     case _ if cmp_Int(fuel, 0) matches GT:
@@ -266,7 +259,7 @@ def choose_child_loop(prefix: Array[Int], target: Int, low: Int, high: Int, fuel
 def choose_child(prefix: Array[Int], target: Int, low: Int, high: Int, fuel: Int) -> Option[Int]:
   choose_child_loop(prefix, target, low, high, fuel)
 
-def find_with_Vector_loop(current: Vector[a], current_idx: Int, fuel: Int, on_missing: Unit -> b, on_found: a -> b) -> b:
+def find_with_Vector_loop(current: Vector[a], current_idx: Int, fuel: Int, on_missing: () -> b, on_found: a -> b) -> b:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       on_missing(Unit)
@@ -296,14 +289,14 @@ def find_with_Vector_loop(current: Vector[a], current_idx: Int, fuel: Int, on_mi
                   case None:
                     on_missing(Unit)
     case _:
-      on_missing(Unit)
+      on_missing()
 
 # Lookup helper used by both index_Vector and get_or_Vector.
-def find_with_Vector(vec: Vector[a], idx: Int, on_missing: Unit -> b, on_found: a -> b) -> b:
+def find_with_Vector(vec: Vector[a], idx: Int, on_missing: () -> b, on_found: a -> b) -> b:
   if cmp_Int(idx, 0) matches LT:
-    on_missing(Unit)
+    on_missing()
   elif cmp_Int(idx, size(vec)) matches GT | EQ:
-    on_missing(Unit)
+    on_missing()
   else:
     fuel = height_Vector(vec).add(4).add(1)
     find_with_Vector_loop(vec, idx, fuel, on_missing, on_found)
@@ -318,20 +311,16 @@ def get_or_Vector(vec: Vector[a], idx: Int, fn: Unit -> a) -> a:
 
 # Left fold over all vector elements.
 def foldl_Vector(vec: Vector[a], init: b, fn: (b, a) -> b) -> b:
-  fuel = traversal_fuel(vec)
-  (_, acc) = int_loop(fuel, ([vec], init), (rem, state) -> (
-    (stack, acc) = state
-    match stack:
-      case []:
-        (0, state)
-      case [Leaf(_, items), *tail]:
-        next_acc = foldl_Array(items, acc, fn)
-        (rem.sub(1), (tail, next_acc))
-      case [Branch(_, _, _, children), *tail]:
-        next_stack = push_children_ltr(children, tail)
-        (rem.sub(1), (next_stack, acc))
-  ))
-  acc
+  def go(fuel, stack, acc):
+    loop (fuel, stack):
+        case (_, [Leaf(_, items), *tail]) if cmp_Int(fuel, 0) matches GT:
+            next_acc = foldl_Array(items, acc, fn)
+            go(fuel.sub(1), tail, next_acc)
+        case (_, [Branch(_, _, _, children), *tail]) if cmp_Int(fuel, 0) matches GT:
+            next_stack = push_children_ltr(children, tail)
+            go(fuel.sub(1), next_stack, acc)
+        case _: acc
+  go(traversal_fuel(vec), [vec], init)
 
 def foldr_leaf(items: Array[a], init: b, fn: (a, b) -> b) -> b:
   rev = reverse_Array(items)
@@ -356,8 +345,6 @@ def foldr_Vector(vec: Vector[a], init: b, fn: (a, b) -> b) -> b:
 
 def map_with_fuel_Vector(vec: Vector[a], fn: a -> b, fuel: Int) -> Vector[b]:
   recur fuel:
-    case _ if cmp_Int(fuel, 0) matches LT | EQ:
-      empty_Vector
     case _ if cmp_Int(fuel, 0) matches GT:
       match vec:
         case Leaf(sz, items):
@@ -384,12 +371,9 @@ def flat_map_Vector(vec: Vector[a], fn: a -> Vector[b]) -> Vector[b]:
   from_Array_Vector(concat_all_Array(rev_arrays.reverse()))
 
 def split_first_Array(arr: Array[a]) -> Option[(a, Array[a])]:
-  cnt = size_Array(arr)
-  if cnt.eq_Int(0):
-    None
-  else:
-    match get_Array(arr, 0):
+  match get_Array(arr, 0):
       case Some(head):
+        cnt = size_Array(arr)
         Some((head, slice_Array(arr, 1, cnt)))
       case None:
         None
