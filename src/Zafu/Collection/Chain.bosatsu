@@ -26,7 +26,7 @@ from Bosatsu/Testing/Properties import (
 )
 
 export (
-  Chain(),
+  Chain,
   empty_Chain,
   singleton_Chain,
   from_List_Chain,
@@ -50,8 +50,34 @@ export (
 enum Chain[a: +*]:
   Empty
   Singleton(item: a)
-  Wrap(sz: Int, items: Array[a])
+  WrapArray(sz: Int, items: Array[a])
+  WrapList(sz: Int, items: List[a])
   Concat(sz: Int, left: Chain[a], right: Chain[a])
+
+def list_size_Chain_loop(list: List[a], acc: Int) -> Int:
+  loop list:
+    case []:
+      acc
+    case [_, *tail]:
+      list_size_Chain_loop(tail, acc.add(1))
+
+def list_size_Chain(list: List[a]) -> Int:
+  list_size_Chain_loop(list, 0)
+
+def index_List_Chain_loop(list: List[a], idx: Int) -> Option[a]:
+  loop list:
+    case []:
+      None
+    case [head, *_] if idx.eq_Int(0):
+      Some(head)
+    case [_, *tail]:
+      index_List_Chain_loop(tail, idx.sub(1))
+
+def index_List_Chain(list: List[a], idx: Int) -> Option[a]:
+  if cmp_Int(idx, 0) matches LT:
+    None
+  else:
+    index_List_Chain_loop(list, idx)
 
 def chain_size(chain: Chain[a]) -> Int:
   match chain:
@@ -59,7 +85,9 @@ def chain_size(chain: Chain[a]) -> Int:
       0
     case Singleton(_):
       1
-    case Wrap(sz, _):
+    case WrapArray(sz, _):
+      sz
+    case WrapList(sz, _):
       sz
     case Concat(sz, _, _):
       sz
@@ -68,8 +96,14 @@ def from_Array_Chain(items: Array[a]) -> Chain[a]:
   sz = size_Array(items)
   if sz.eq_Int(0):
     Empty
+  elif sz.eq_Int(1):
+    match get_Array(items, 0):
+      case Some(item):
+        Singleton(item)
+      case None:
+        Empty
   else:
-    Wrap(sz, items)
+    WrapArray(sz, items)
 
 # Empty chain.
 empty_Chain: forall a. Chain[a] = Empty
@@ -80,7 +114,13 @@ def singleton_Chain(item: a) -> Chain[a]:
 
 # Build a chain from a list.
 def from_List_Chain(list: List[a]) -> Chain[a]:
-  from_Array_Chain(from_List_Array(list))
+  match list:
+    case []:
+      Empty
+    case [item]:
+      Singleton(item)
+    case _:
+      WrapList(list_size_Chain(list), list)
 
 # O(1) concatenation of two chains.
 def concat_Chain(left: Chain[a], right: Chain[a]) -> Chain[a]:
@@ -119,95 +159,112 @@ def traversal_fuel(chain: Chain[a]) -> Int:
 
 # Stack-safe left fold.
 def foldl_Chain(chain: Chain[a], init: b, fn: (b, a) -> b) -> b:
-  fuel = traversal_fuel(chain)
-  (_, acc) = int_loop(fuel, ([chain], init), (rem, state) -> (
-    (stack, acc) = state
-    match stack:
-      case []:
-        (0, state)
-      case [Empty, *tail]:
-        (rem.sub(1), (tail, acc))
-      case [Singleton(item), *tail]:
-        (rem.sub(1), (tail, fn(acc, item)))
-      case [Wrap(_, items), *tail]:
-        (rem.sub(1), (tail, foldl_Array(items, acc, fn)))
-      case [Concat(_, left, right), *tail]:
-        (rem.sub(1), ([left, right, *tail], acc))
-  ))
-  acc
+  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> b:
+    recur rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _ if cmp_Int(rem, 0) matches GT:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_fold(rem.sub(1), tail, acc)
+          case [Singleton(item), *tail]:
+            loop_fold(rem.sub(1), tail, fn(acc, item))
+          case [WrapArray(_, items), *tail]:
+            loop_fold(rem.sub(1), tail, foldl_Array(items, acc, fn))
+          case [WrapList(_, items), *tail]:
+            loop_fold(rem.sub(1), tail, items.foldl_List(acc, fn))
+          case [Concat(_, left, right), *tail]:
+            loop_fold(rem.sub(1), [left, right, *tail], acc)
+      case _:
+        acc
+  loop_fold(traversal_fuel(chain), [chain], init)
 
 def foldr_Array(items: Array[a], init: b, fn: (a, b) -> b) -> b:
   rev = reverse_Array(items)
   foldl_Array(rev, init, (acc, item) -> fn(item, acc))
 
+def foldr_List_Chain(items: List[a], init: b, fn: (a, b) -> b) -> b:
+  items.reverse().foldl_List(init, (acc, item) -> fn(item, acc))
+
 # Stack-safe right fold.
 def foldr_Chain(chain: Chain[a], init: b, fn: (a, b) -> b) -> b:
-  fuel = traversal_fuel(chain)
-  (_, acc) = int_loop(fuel, ([chain], init), (rem, state) -> (
-    (stack, acc) = state
-    match stack:
-      case []:
-        (0, state)
-      case [Empty, *tail]:
-        (rem.sub(1), (tail, acc))
-      case [Singleton(item), *tail]:
-        (rem.sub(1), (tail, fn(item, acc)))
-      case [Wrap(_, items), *tail]:
-        (rem.sub(1), (tail, foldr_Array(items, acc, fn)))
-      case [Concat(_, left, right), *tail]:
-        (rem.sub(1), ([right, left, *tail], acc))
-  ))
-  acc
+  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> b:
+    recur rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _ if cmp_Int(rem, 0) matches GT:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_fold(rem.sub(1), tail, acc)
+          case [Singleton(item), *tail]:
+            loop_fold(rem.sub(1), tail, fn(item, acc))
+          case [WrapArray(_, items), *tail]:
+            loop_fold(rem.sub(1), tail, foldr_Array(items, acc, fn))
+          case [WrapList(_, items), *tail]:
+            loop_fold(rem.sub(1), tail, foldr_List_Chain(items, acc, fn))
+          case [Concat(_, left, right), *tail]:
+            loop_fold(rem.sub(1), [right, left, *tail], acc)
+      case _:
+        acc
+  loop_fold(traversal_fuel(chain), [chain], init)
 
 # Convert to a list in iteration order.
 def to_List_Chain(chain: Chain[a]) -> List[a]:
   foldr_Chain(chain, [], (item, acc) -> [item, *acc])
 
-def find_with_Chain(chain: Chain[a], idx: Int, on_missing: Unit -> b, on_found: a -> b) -> b:
+def find_with_Chain(chain: Chain[a], idx: Int, on_missing: () -> b, on_found: a -> b) -> b:
   if cmp_Int(idx, 0) matches LT:
-    on_missing(Unit)
+    on_missing()
   else:
-    fuel = traversal_fuel(chain)
-    (_, _, result) = int_loop(fuel, ([chain], idx, None), (rem, state) -> (
-      (stack, rem_idx, result) = state
-      match result:
-        case Some(_):
-          (0, state)
-        case None:
+    def loop_find(rem: Int, stack: List[Chain[a]], rem_idx: Int) -> b:
+      recur rem:
+        case _ if cmp_Int(rem, 0) matches LT | EQ:
+          on_missing()
+        case _ if cmp_Int(rem, 0) matches GT:
           match stack:
             case []:
-              (0, state)
+              on_missing()
             case [Empty, *tail]:
-              (rem.sub(1), (tail, rem_idx, None))
+              loop_find(rem.sub(1), tail, rem_idx)
             case [Singleton(item), *tail]:
               if rem_idx.eq_Int(0):
-                (0, (tail, rem_idx, Some(on_found(item))))
+                on_found(item)
               else:
-                (rem.sub(1), (tail, rem_idx.sub(1), None))
-            case [Wrap(cnt, items), *tail]:
+                loop_find(rem.sub(1), tail, rem_idx.sub(1))
+            case [WrapArray(cnt, items), *tail]:
               if cmp_Int(rem_idx, cnt) matches LT:
                 match get_Array(items, rem_idx):
                   case Some(item):
-                    (0, (tail, rem_idx, Some(on_found(item))))
+                    on_found(item)
                   case None:
-                    (0, (tail, rem_idx, None))
+                    on_missing()
               else:
-                (rem.sub(1), (tail, rem_idx.sub(cnt), None))
+                loop_find(rem.sub(1), tail, rem_idx.sub(cnt))
+            case [WrapList(cnt, items), *tail]:
+              if cmp_Int(rem_idx, cnt) matches LT:
+                match index_List_Chain(items, rem_idx):
+                  case Some(item):
+                    on_found(item)
+                  case None:
+                    on_missing()
+              else:
+                loop_find(rem.sub(1), tail, rem_idx.sub(cnt))
             case [Concat(_, left, right), *tail]:
-              (rem.sub(1), ([left, right, *tail], rem_idx, None))
-    ))
-    match result:
-      case Some(found):
-        found
-      case None:
-        on_missing(Unit)
+              loop_find(rem.sub(1), [left, right, *tail], rem_idx)
+        case _:
+          on_missing()
+    loop_find(traversal_fuel(chain), [chain], idx)
 
 # Option-returning index lookup.
 def index_Chain(chain: Chain[a], idx: Int) -> Option[a]:
-  find_with_Chain(chain, idx, _ -> None, item -> Some(item))
+  find_with_Chain(chain, idx, () -> None, item -> Some(item))
 
 # Index lookup with fallback thunk.
-def get_or_Chain(chain: Chain[a], idx: Int, fn: Unit -> a) -> a:
+def get_or_Chain(chain: Chain[a], idx: Int, fn: () -> a) -> a:
   find_with_Chain(chain, idx, fn, item -> item)
 
 # Map over all elements.
@@ -266,12 +323,12 @@ def index_List(list: List[a], idx: Int) -> Option[a]:
   else:
     index_List_loop(list, idx)
 
-def get_or_List(list: List[a], idx: Int, fn: Unit -> a) -> a:
+def get_or_List(list: List[a], idx: Int, fn: () -> a) -> a:
   match index_List(list, idx):
     case Some(item):
       item
     case None:
-      fn(Unit)
+      fn()
 
 def foldr_list_model(list: List[Int], init: Int) -> Int:
   list.reverse().foldl_List(init, (acc, item) -> item.sub(acc))
@@ -281,10 +338,15 @@ def flat_map_model(list: List[Int]) -> List[Int]:
   rev.reverse()
 
 def deep_concat_chain(size: Int) -> Chain[Int]:
-  int_loop(size, empty_Chain, (rem, acc) -> (
-    next = concat_Chain(acc, singleton_Chain(rem))
-    (rem.sub(1), next)
-  ))
+  def loop_deep(rem: Int, acc: Chain[Int]) -> Chain[Int]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _ if cmp_Int(rem, 0) matches GT:
+        loop_deep(rem.sub(1), concat_Chain(acc, singleton_Chain(rem)))
+      case _:
+        acc
+  loop_deep(size, empty_Chain)
 
 rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
 
@@ -350,8 +412,8 @@ get_or_prop: Prop = forall_Prop(
   "get_or_Chain matches list get_or model",
   ((list, idx, fb)) -> (
     chain = from_List_Chain(list)
-    expected = get_or_List(list, idx, _ -> fb)
-    actual = get_or_Chain(chain, idx, _ -> fb)
+    expected = get_or_List(list, idx, () -> fb)
+    actual = get_or_Chain(chain, idx, () -> fb)
     Assertion(actual.eq_Int(expected), "get_or law")
   ))
 
@@ -470,9 +532,10 @@ chain_props: Prop = suite_Prop(
 
 tests = TestSuite("Chain tests", [
   Assertion(size_Chain(empty_Chain).eq_Int(0), "empty size"),
+  Assertion(from_Array_Chain(from_List_Array([1])).to_List_Chain() matches [1], "array singleton to singleton"),
   Assertion(to_List_Chain(empty_Chain) matches [], "empty to list"),
   Assertion(index_Chain(empty_Chain, 0) matches None, "empty index"),
-  Assertion(get_or_Chain(empty_Chain, 0, _ -> 11).eq_Int(11), "empty get_or fallback"),
+  Assertion(get_or_Chain(empty_Chain, 0, () -> 11).eq_Int(11), "empty get_or fallback"),
   Assertion(concat_Chain(empty_Chain, singleton_Chain(1)).to_List_Chain() matches [1], "concat left empty"),
   Assertion(concat_Chain(singleton_Chain(1), empty_Chain).to_List_Chain() matches [1], "concat right empty"),
   Assertion(prepend_Chain(1, from_List_Chain([2, 3])).to_List_Chain() matches [1, 2, 3], "prepend sanity"),
