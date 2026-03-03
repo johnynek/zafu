@@ -1,0 +1,96 @@
+name: docs-pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install runtime dependencies and pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgc1 libgc-dev pkg-config pandoc
+      - name: Fetch Bosatsu CLI and runtime
+        run: ./bosatsu --fetch
+      - name: Generate markdown docs
+        run: |
+          mkdir -p docs/markdown
+          ./bosatsu lib fetch
+          ./bosatsu lib doc --outdir docs/markdown
+      - name: Convert markdown docs to HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/site
+          converted=0
+          while IFS= read -r -d '' md_file; do
+            converted=1
+            rel_path="${md_file#docs/markdown/}"
+            html_path="docs/site/${rel_path%.md}.html"
+            mkdir -p "$(dirname "$html_path")"
+            pandoc "$md_file" \
+              --from=gfm \
+              --to=html5 \
+              --standalone \
+              --metadata "title=${rel_path%.md}" \
+              --output "$html_path"
+          done < <(find docs/markdown -type f -name '*.md' -print0)
+          if [[ "$converted" -eq 0 ]]; then
+            echo "No markdown docs were generated." >&2
+            exit 1
+          fi
+      - name: Build HTML index
+        shell: bash
+        run: |
+          set -euo pipefail
+          index_path="docs/site/index.html"
+          {
+            printf '%s\n' '<!doctype html>'
+            printf '%s\n' '<html lang="en">'
+            printf '%s\n' '<head>'
+            printf '%s\n' '  <meta charset="utf-8">'
+            printf '%s\n' '  <meta name="viewport" content="width=device-width, initial-scale=1">'
+            printf '%s\n' '  <title>zafu API docs</title>'
+            printf '%s\n' '</head>'
+            printf '%s\n' '<body>'
+            printf '%s\n' '  <h1>zafu API docs</h1>'
+            printf '%s\n' '  <ul>'
+            while IFS= read -r -d '' html_file; do
+              rel_path="${html_file#docs/site/}"
+              printf '    <li><a href="%s">%s</a></li>\n' "$rel_path" "$rel_path"
+            done < <(find docs/site -type f -name '*.html' ! -name 'index.html' -print0 | sort -z)
+            printf '%s\n' '  </ul>'
+            printf '%s\n' '</body>'
+            printf '%s\n' '</html>'
+          } > "$index_path"
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/site
+
+  deploy-docs:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build-docs
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
