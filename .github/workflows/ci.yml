@@ -11,8 +11,32 @@ jobs:
       - name: Install c runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgc1 libgc-dev pkg-config
+          sudo apt-get install -y libgc1 libgc-dev pkg-config pandoc
       - name: Fetch Bosatsu CLI and runtime
         run: ./bosatsu --fetch
       - name: Run lib check, lib test, and dry-run publish
         run: scripts/test.sh
+      - name: Generate docs and convert markdown to HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/markdown docs/html
+          ./bosatsu lib fetch
+          ./bosatsu lib doc --outdir docs/markdown
+          converted=0
+          while IFS= read -r -d '' md_file; do
+            converted=1
+            rel_path="${md_file#docs/markdown/}"
+            html_path="docs/html/${rel_path%.md}.html"
+            mkdir -p "$(dirname "$html_path")"
+            pandoc "$md_file" \
+              --from=gfm \
+              --to=html5 \
+              --standalone \
+              --metadata "title=${rel_path%.md}" \
+              --output "$html_path"
+          done < <(find docs/markdown -type f -name '*.md' -print0)
+          if [[ "$converted" -eq 0 ]]; then
+            echo "No markdown docs were generated." >&2
+            exit 1
+          fi

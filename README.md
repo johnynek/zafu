@@ -31,7 +31,7 @@ This runs:
 
 ## CI, docs, and release
 
-- CI (`.github/workflows/ci.yml`) runs the same check/test/dry-run publish on pull requests.
+- CI (`.github/workflows/ci.yml`) runs check/test/dry-run publish and validates docs generation plus markdown-to-HTML conversion with Pandoc on pull requests.
 - Docs (`.github/workflows/docs-pages.yml`) runs on each push to `main`, generates markdown docs with `./bosatsu lib doc`, converts them to HTML with Pandoc, and deploys to GitHub Pages.
 - Release (`.github/workflows/release.yml`) triggers on `vX.Y.Z` tags, verifies the tagged commit is on `main`, publishes `.bosatsu_lib` files, and uploads them to the GitHub Release page.
 
