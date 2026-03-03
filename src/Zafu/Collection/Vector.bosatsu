@@ -1,4 +1,4 @@
-package Zafu/Vector
+package Zafu/Collection/Vector
 
 from Bosatsu/List import eq_List
 from Bosatsu/Collection/Array import (
@@ -50,14 +50,17 @@ export (
 
 chunk_width = 32
 
+# Persistent vector backed by an RRB-style tree.
 enum Vector:
   Leaf(sz: Int, items: Array[a])
   Branch(height: Int, sz: Int, prefix: Array[Int], children: Array[Vector[a]])
 
 struct CatFrame(parent_height: Int, left_prefix: Array[Vector[a]], right_suffix: Array[Vector[a]])
 
+# The empty vector.
 empty_Vector: forall a. Vector[a] = Leaf(0, empty_Array)
 
+# Returns the number of elements in a vector.
 def size_Vector(vec: Vector[a]) -> Int:
   match vec:
     case Leaf(sz, _):
@@ -65,6 +68,7 @@ def size_Vector(vec: Vector[a]) -> Int:
     case Branch(_, sz, _, _):
       sz
 
+# Alias for size_Vector.
 def size(vec: Vector[a]) -> Int:
   size_Vector(vec)
 
@@ -180,6 +184,7 @@ def from_Array_Vector(arr: Array[a]) -> Vector[a]:
       ))
       get_or_Array(nodes_final, 0, _ -> empty_Vector)
 
+# Builds a vector from a list while preserving order.
 def from_List_Vector(list: List[a]) -> Vector[a]:
   from_Array_Vector(from_List_Array(list))
 
@@ -205,6 +210,7 @@ def to_Array_Vector(vec: Vector[a]) -> Array[a]:
   ))
   concat_all_Array(rev_chunks.reverse())
 
+# Converts a vector to a list in element order.
 def to_List_Vector(vec: Vector[a]) -> List[a]:
   to_List_Array(to_Array_Vector(vec))
 
@@ -234,6 +240,7 @@ def choose_child(prefix: Array[Int], target: Int, low: Int, high: Int, fuel: Int
   ))
   found
 
+# Returns the element at an index when it is in bounds.
 def index_Vector(vec: Vector[a], idx: Int) -> Option[a]:
   if cmp_Int(idx, 0) matches LT:
     None
@@ -270,6 +277,7 @@ def index_Vector(vec: Vector[a], idx: Int) -> Option[a]:
     ))
     result
 
+# Left fold over all vector elements.
 def foldl_Vector(vec: Vector[a], init: b, fn: (b, a) -> b) -> b:
   fuel = traversal_fuel(vec)
   (_, acc) = int_loop(fuel, ([vec], init), (rem, state) -> (
@@ -290,6 +298,7 @@ def foldr_leaf(items: Array[a], init: b, fn: (a, b) -> b) -> b:
   rev = reverse_Array(items)
   foldl_Array(rev, init, (acc, item) -> fn(item, acc))
 
+# Right fold over all vector elements.
 def foldr_Vector(vec: Vector[a], init: b, fn: (a, b) -> b) -> b:
   fuel = traversal_fuel(vec)
   (_, acc) = int_loop(fuel, ([vec], init), (rem, state) -> (
@@ -306,14 +315,17 @@ def foldr_Vector(vec: Vector[a], init: b, fn: (a, b) -> b) -> b:
   ))
   acc
 
+# Maps each element to a new vector.
 def map_Vector(vec: Vector[a], fn: a -> b) -> Vector[b]:
   from_Array_Vector(map_Array(to_Array_Vector(vec), fn))
 
+# Keeps elements that satisfy a predicate.
 def filter_Vector(vec: Vector[a], pred: a -> Bool) -> Vector[a]:
   arr = to_Array_Vector(vec)
   rev = foldl_Array(arr, [], (acc, item) -> [item, *acc] if pred(item) else acc)
   from_List_Vector(rev.reverse())
 
+# Maps each element to a vector and concatenates the results.
 def flat_map_Vector(vec: Vector[a], fn: a -> Vector[b]) -> Vector[b]:
   rev_arrays = foldl_Vector(vec, [], (acc, item) -> [to_Array_Vector(fn(item)), *acc])
   from_Array_Vector(concat_all_Array(rev_arrays.reverse()))
@@ -429,6 +441,7 @@ def concat_fallback(left: Vector[a], right: Vector[a]) -> Vector[a]:
   arr = concat_all_Array([to_Array_Vector(left), to_Array_Vector(right)])
   from_Array_Vector(arr)
 
+# Concatenates two vectors.
 def concat_Vector(left: Vector[a], right: Vector[a]) -> Vector[a]:
   if size(left).eq_Int(0):
     right
