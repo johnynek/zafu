@@ -40,12 +40,14 @@ export (
   size,
   size_Vector,
   index_Vector,
+  get_or_Vector,
   foldl_Vector,
   foldr_Vector,
   map_Vector,
   flat_map_Vector,
   filter_Vector,
   concat_Vector,
+  concat_all_Vector,
 )
 
 chunk_width = 32
@@ -277,6 +279,14 @@ def index_Vector(vec: Vector[a], idx: Int) -> Option[a]:
     ))
     result
 
+# Returns the element at an index, or calls fn when out of bounds.
+def get_or_Vector(vec: Vector[a], idx: Int, fn: Int -> a) -> a:
+  match index_Vector(vec, idx):
+    case Some(item):
+      item
+    case None:
+      fn(idx)
+
 # Left fold over all vector elements.
 def foldl_Vector(vec: Vector[a], init: b, fn: (b, a) -> b) -> b:
   fuel = traversal_fuel(vec)
@@ -453,6 +463,10 @@ def concat_Vector(left: Vector[a], right: Vector[a]) -> Vector[a]:
         v
       case None:
         concat_fallback(left, right)
+
+# Concatenates all vectors in a list from left to right.
+def concat_all_Vector(vecs: List[Vector[a]]) -> Vector[a]:
+  vecs.foldl_List(empty_Vector, concat_Vector)
 
 ############################
 # Property tests
@@ -636,7 +650,18 @@ tests = TestSuite("Vector tests", [
   Assertion(size(empty_Vector).eq_Int(0), "empty size"),
   Assertion(empty_Vector.index_Vector(0) matches None, "empty index"),
   Assertion(from_List_Vector([1, 2, 3]).index_Vector(1) matches Some(2), "basic index"),
+  Assertion(get_or_Vector(from_List_Vector([1, 2, 3]), 1, _ -> -1).eq_Int(2), "get_or hit"),
+  Assertion(get_or_Vector(from_List_Vector([1, 2, 3]), 6, idx -> idx.mul(2)).eq_Int(12), "get_or miss fallback"),
   Assertion(from_List_Vector([1, 2]).concat_Vector(from_List_Vector([3, 4])).to_List_Vector() matches [1, 2, 3, 4], "concat sanity"),
+  Assertion(concat_all_Vector([]).to_List_Vector() matches [], "concat_all empty"),
+  Assertion(
+    concat_all_Vector([
+      from_List_Vector([1, 2]),
+      empty_Vector,
+      from_List_Vector([3]),
+      from_List_Vector([4, 5]),
+    ]).to_List_Vector() matches [1, 2, 3, 4, 5],
+    "concat_all sanity"),
   Assertion(foldl_Vector(from_List_Vector([1, 2, 3]), 0, add).eq_Int(6), "foldl sanity"),
   Assertion(foldr_Vector(from_List_Vector([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
   run_Prop(vector_props, 200, 4242),
