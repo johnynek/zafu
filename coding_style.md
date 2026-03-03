@@ -146,6 +146,5 @@ Add small local/package-local helpers that return `Option`/`Prog` so `<-` pipeli
 
 ## 8) Pointers
 
-- `../bosatsu/test_workspace/`: canonical language idioms and small examples.
-- `../test_bo_repo/src/`: larger real-world Bosatsu examples (`Json`, `ParensProbs`, `Vector`).
+- [Bosatsu Language Guide](https://johnynek.github.io/bosatsu/language_guide.html): full language reference.
 - [Writing Bosatsu in 5 minutes](https://johnynek.github.io/bosatsu/writing_bosatsu_5_minutes.html): official quick syntax/workflow refresher.
