@@ -21,4 +21,4 @@ REPO_ROOT="$REPO_ROOT" \
 OUTDIR="$OUTDIR" \
 GIT_SHA="$GIT_SHA" \
 URI_BASE="$URI_BASE" \
-"$REPO_ROOT/scripts/publish_bosatsu_libs.sh"
+"$REPO_ROOT/scripts/publish_bosatsu_libs.sh" --dry-run

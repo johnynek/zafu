@@ -1,6 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+usage() {
+  cat <<'EOF'
+Usage: scripts/publish_bosatsu_libs.sh [--dry-run]
+
+Options:
+  --dry-run  Validate that publish succeeds without mutating *_conf.json files
+  --help     Show this help text
+EOF
+}
+
+DRY_RUN=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
 if [[ -n "${REPO_ROOT:-}" ]]; then
   REPO_ROOT="${REPO_ROOT%/}"
 else
@@ -25,12 +54,16 @@ if [[ -z "${URI_BASE:-}" ]]; then
 fi
 
 mkdir -p "$OUTDIR"
+find "$OUTDIR" -maxdepth 1 -type f -name '*.bosatsu_lib' -delete
 
 echo "bosatsu lib publish:"
 echo "  repo_root = $REPO_ROOT"
 echo "  outdir    = $OUTDIR"
 echo "  git_sha   = $GIT_SHA"
 echo "  uri-base  = $URI_BASE"
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "  mode      = dry-run (no *_conf.json updates)"
+fi
 
 cd "$REPO_ROOT"
 
@@ -75,8 +108,31 @@ else
     --repo_root "$REPO_ROOT"
 fi
 
+publish_repo_root="$REPO_ROOT"
+cas_arg=()
+tmp_repo=""
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  tmp_repo="$(mktemp -d "${TMPDIR:-/tmp}/bosatsu-publish-dry-run.XXXXXX")"
+  trap 'rm -rf "$tmp_repo"' EXIT
+  tmp_publish_root="$tmp_repo/repo"
+  mkdir -p "$tmp_publish_root"
+
+  # Copy source into a temporary workspace so publish can run without mutating
+  # repository conf files.
+  tar -C "$REPO_ROOT" \
+    --exclude='.git' \
+    --exclude='.bosatsuc' \
+    --exclude='.bosatsu_lib_publish' \
+    --exclude='.bosatsu_lib_publish_dry_run' \
+    -cf - . | tar -C "$tmp_publish_root" -xf -
+
+  publish_repo_root="$tmp_publish_root"
+  cas_arg=(--cas_dir "$REPO_ROOT/.bosatsuc/cas")
+fi
+
 ./bosatsu lib publish \
-  --repo_root "$REPO_ROOT" \
+  --repo_root "$publish_repo_root" \
+  "${cas_arg[@]}" \
   --outdir "$OUTDIR" \
   --git_sha "$GIT_SHA" \
   --uri-base "$URI_BASE"
