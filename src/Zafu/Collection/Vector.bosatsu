@@ -100,6 +100,16 @@ def min_Int(a: Int, b: Int) -> Int:
     case GT:
       b
 
+def max_Int(a: Int, b: Int) -> Int:
+  match cmp_Int(a, b):
+    case LT:
+      b
+    case GT | EQ:
+      a
+
+def clamp_Int(value: Int, low: Int, high: Int) -> Int:
+  min_Int(max_Int(value, low), high)
+
 def list_size_loop(list: List[a], acc: Int) -> Int:
   loop list:
     case []:
@@ -501,39 +511,386 @@ def concat_Vector(left: Vector[a], right: Vector[a]) -> Vector[a]:
 def concat_all_Vector(vecs: List[Vector[a]]) -> Vector[a]:
   vecs.foldl_List(empty_Vector, concat_Vector)
 
+def singleton_leaf(item: a) -> Vector[a]:
+  Leaf(1, from_List_Array([item]))
+
+def node_from_children(height: Int, children: Array[Vector[a]]) -> Vector[a]:
+  cnt = size_Array(children)
+  if cnt.eq_Int(0):
+    empty_Vector
+  elif cnt.eq_Int(1):
+    get_or_Array(children, 0, _ -> empty_Vector)
+  else:
+    make_branch(height, children)
+
+def append_nodes_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Array[Vector[a]]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      from_List_Array([concat_fallback(vec, singleton_leaf(item))])
+    case _ if cmp_Int(fuel, 0) matches GT:
+      match vec:
+        case Leaf(sz, items):
+          if cmp_Int(sz, chunk_width) matches LT:
+            new_items = concat_all_Array([items, from_List_Array([item])])
+            from_List_Array([Leaf(sz.add(1), new_items)])
+          else:
+            from_List_Array([vec, singleton_leaf(item)])
+        case Branch(height, _, _, children):
+          cnt = size_Array(children)
+          if cnt.eq_Int(0):
+            from_List_Array([concat_fallback(vec, singleton_leaf(item))])
+          else:
+            last_idx = cnt.sub(1)
+            child = get_or_Array(children, last_idx, _ -> empty_Vector)
+            grown = append_nodes_with_fuel(child, item, fuel.sub(1))
+            grown_cnt = size_Array(grown)
+            if grown_cnt.eq_Int(1):
+              next_child = get_or_Array(grown, 0, _ -> child)
+              next_children = set_or_self_Array(children, last_idx, next_child)
+              from_List_Array([make_branch(height, next_children)])
+            else:
+              prefix_children = slice_Array(children, 0, last_idx)
+              expanded_children = concat_all_Array([prefix_children, grown])
+              expanded_cnt = size_Array(expanded_children)
+              if cmp_Int(expanded_cnt, chunk_width) matches LT | EQ:
+                from_List_Array([make_branch(height, expanded_children)])
+              else:
+                left_children = slice_Array(expanded_children, 0, chunk_width)
+                right_children = slice_Array(expanded_children, chunk_width, expanded_cnt)
+                from_List_Array([make_branch(height, left_children), make_branch(height, right_children)])
+    case _:
+      from_List_Array([concat_fallback(vec, singleton_leaf(item))])
+
+def prepend_nodes_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Array[Vector[a]]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      from_List_Array([concat_fallback(singleton_leaf(item), vec)])
+    case _ if cmp_Int(fuel, 0) matches GT:
+      match vec:
+        case Leaf(sz, items):
+          if cmp_Int(sz, chunk_width) matches LT:
+            new_items = concat_all_Array([from_List_Array([item]), items])
+            from_List_Array([Leaf(sz.add(1), new_items)])
+          else:
+            from_List_Array([singleton_leaf(item), vec])
+        case Branch(height, _, _, children):
+          cnt = size_Array(children)
+          if cnt.eq_Int(0):
+            from_List_Array([concat_fallback(singleton_leaf(item), vec)])
+          else:
+            child = get_or_Array(children, 0, _ -> empty_Vector)
+            grown = prepend_nodes_with_fuel(child, item, fuel.sub(1))
+            grown_cnt = size_Array(grown)
+            if grown_cnt.eq_Int(1):
+              next_child = get_or_Array(grown, 0, _ -> child)
+              next_children = set_or_self_Array(children, 0, next_child)
+              from_List_Array([make_branch(height, next_children)])
+            else:
+              suffix_children = slice_Array(children, 1, cnt)
+              expanded_children = concat_all_Array([grown, suffix_children])
+              expanded_cnt = size_Array(expanded_children)
+              if cmp_Int(expanded_cnt, chunk_width) matches LT | EQ:
+                from_List_Array([make_branch(height, expanded_children)])
+              else:
+                left_children = slice_Array(expanded_children, 0, chunk_width)
+                right_children = slice_Array(expanded_children, chunk_width, expanded_cnt)
+                from_List_Array([make_branch(height, left_children), make_branch(height, right_children)])
+    case _:
+      from_List_Array([concat_fallback(singleton_leaf(item), vec)])
+
+def updated_with_fuel_Vector(vec: Vector[a], idx: Int, item: a, fuel: Int) -> Option[Vector[a]]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      None
+    case _ if cmp_Int(fuel, 0) matches GT:
+      match vec:
+        case Leaf(sz, items):
+          if cmp_Int(idx, 0) matches LT:
+            None
+          elif cmp_Int(idx, sz) matches GT | EQ:
+            None
+          else:
+            Some(Leaf(sz, set_or_self_Array(items, idx, item)))
+        case Branch(height, sz, prefix, children):
+          if cmp_Int(idx, 0) matches LT:
+            None
+          elif cmp_Int(idx, sz) matches GT | EQ:
+            None
+          else:
+            cnt = size_Array(children)
+            if cnt.eq_Int(0):
+              None
+            else:
+              match choose_child(prefix, idx, 0, cnt.sub(1), cnt.add(4)):
+                case None:
+                  None
+                case Some(child_idx):
+                  prev = get_or_Array(prefix, child_idx.sub(1), _ -> 0)
+                  local_idx = idx.sub(prev)
+                  match get_Array(children, child_idx):
+                    case None:
+                      None
+                    case Some(child):
+                      match updated_with_fuel_Vector(child, local_idx, item, fuel.sub(1)):
+                        case None:
+                          None
+                        case Some(next_child):
+                          next_children = set_or_self_Array(children, child_idx, next_child)
+                          Some(Branch(height, sz, prefix, next_children))
+    case _:
+      None
+
+def take_with_fuel_Vector(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      empty_Vector
+    case _ if cmp_Int(fuel, 0) matches GT:
+      match vec:
+        case Leaf(_, items):
+          taken = slice_Array(items, 0, count)
+          Leaf(size_Array(taken), taken)
+        case Branch(height, _, prefix, children):
+          cnt = size_Array(children)
+          if cnt.eq_Int(0):
+            empty_Vector
+          else:
+            match choose_child(prefix, count.sub(1), 0, cnt.sub(1), cnt.add(4)):
+              case None:
+                empty_Vector
+              case Some(child_idx):
+                prev = get_or_Array(prefix, child_idx.sub(1), _ -> 0)
+                local_count = count.sub(prev)
+                child = get_or_Array(children, child_idx, _ -> empty_Vector)
+                child_taken = if local_count.eq_Int(size_Vector(child)):
+                  child
+                else:
+                  take_with_fuel_Vector(child, local_count, fuel.sub(1))
+                left_children = slice_Array(children, 0, child_idx)
+                kept_children = concat_all_Array([left_children, from_List_Array([child_taken])])
+                node_from_children(height, kept_children)
+    case _:
+      empty_Vector
+
+def drop_with_fuel_Vector(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      empty_Vector
+    case _ if cmp_Int(fuel, 0) matches GT:
+      match vec:
+        case Leaf(_, items):
+          sz = size_Array(items)
+          kept = slice_Array(items, count, sz)
+          Leaf(size_Array(kept), kept)
+        case Branch(height, _, prefix, children):
+          cnt = size_Array(children)
+          if cnt.eq_Int(0):
+            empty_Vector
+          else:
+            match choose_child(prefix, count, 0, cnt.sub(1), cnt.add(4)):
+              case None:
+                empty_Vector
+              case Some(child_idx):
+                prev = get_or_Array(prefix, child_idx.sub(1), _ -> 0)
+                local_count = count.sub(prev)
+                child = get_or_Array(children, child_idx, _ -> empty_Vector)
+                child_kept = if local_count.eq_Int(0):
+                  child
+                else:
+                  drop_with_fuel_Vector(child, local_count, fuel.sub(1))
+                right_children = slice_Array(children, child_idx.add(1), cnt)
+                kept_children = if child_kept.size_Vector().eq_Int(0):
+                  right_children
+                else:
+                  concat_all_Array([from_List_Array([child_kept]), right_children])
+                node_from_children(height, kept_children)
+    case _:
+      empty_Vector
+
+def next_leaf_Vector(stack: List[Vector[a]], fuel: Int) -> Option[(Array[a], List[Vector[a]])]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      None
+    case _ if cmp_Int(fuel, 0) matches GT:
+      match stack:
+        case []:
+          None
+        case [Leaf(_, items), *tail]:
+          Some((items, tail))
+        case [Branch(_, _, _, children), *tail]:
+          next_leaf_Vector(push_children_ltr(children, tail), fuel.sub(1))
+    case _:
+      None
+
+def zip_chunk_with_fuel(left_items: Array[a], left_idx: Int, right_items: Array[b], right_idx: Int, rem: Int, rev_pairs: List[(a, b)]) -> (Int, Int, List[(a, b)]):
+  recur rem:
+    case _ if cmp_Int(rem, 0) matches LT | EQ:
+      (left_idx, right_idx, rev_pairs)
+    case _ if cmp_Int(rem, 0) matches GT:
+      match get_Array(left_items, left_idx):
+        case None:
+          (left_idx, right_idx, rev_pairs)
+        case Some(left_item):
+          match get_Array(right_items, right_idx):
+            case None:
+              (left_idx, right_idx, rev_pairs)
+            case Some(right_item):
+              zip_chunk_with_fuel(
+                left_items,
+                left_idx.add(1),
+                right_items,
+                right_idx.add(1),
+                rem.sub(1),
+                [(left_item, right_item), *rev_pairs]
+              )
+    case _:
+      (left_idx, right_idx, rev_pairs)
+
+def zip_rev_with_fuel(left_stack: List[Vector[a]], right_stack: List[Vector[b]], left_curr: Option[(Array[a], Int)], right_curr: Option[(Array[b], Int)], rem: Int, rev_pairs: List[(a, b)], fuel: Int) -> List[(a, b)]:
+  recur fuel:
+    case _ if cmp_Int(rem, 0) matches LT | EQ:
+      rev_pairs
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      rev_pairs
+    case _ if cmp_Int(fuel, 0) matches GT:
+      left_ready = match left_curr:
+        case Some(curr):
+          Some((curr, left_stack))
+        case None:
+          match next_leaf_Vector(left_stack, fuel.sub(1)):
+            case None:
+              None
+            case Some((items, next_stack)):
+              Some(((items, 0), next_stack))
+
+      right_ready = match right_curr:
+        case Some(curr):
+          Some((curr, right_stack))
+        case None:
+          match next_leaf_Vector(right_stack, fuel.sub(1)):
+            case None:
+              None
+            case Some((items, next_stack)):
+              Some(((items, 0), next_stack))
+
+      match (left_ready, right_ready):
+        case (Some(((left_items, left_idx), next_left_stack)), Some(((right_items, right_idx), next_right_stack))):
+          left_avail = size_Array(left_items).sub(left_idx)
+          right_avail = size_Array(right_items).sub(right_idx)
+          step = min_Int(rem, min_Int(left_avail, right_avail))
+          if cmp_Int(step, 0) matches LT | EQ:
+            rev_pairs
+          else:
+            (next_left_idx, next_right_idx, rev_pairs_next) = zip_chunk_with_fuel(
+              left_items, left_idx, right_items, right_idx, step, rev_pairs
+            )
+            next_left_curr = if next_left_idx.eq_Int(size_Array(left_items)):
+              None
+            else:
+              Some((left_items, next_left_idx))
+            next_right_curr = if next_right_idx.eq_Int(size_Array(right_items)):
+              None
+            else:
+              Some((right_items, next_right_idx))
+            zip_rev_with_fuel(
+              next_left_stack,
+              next_right_stack,
+              next_left_curr,
+              next_right_curr,
+              rem.sub(step),
+              rev_pairs_next,
+              fuel.sub(1)
+            )
+        case _:
+          rev_pairs
+    case _:
+      rev_pairs
+
 # Appends a single element to the end of a vector.
 def append_Vector(vec: Vector[a], item: a) -> Vector[a]:
-  concat_Vector(vec, from_List_Vector([item]))
+  nodes = append_nodes_with_fuel(vec, item, height_Vector(vec).add(8))
+  cnt = size_Array(nodes)
+  if cnt.eq_Int(0):
+    vec
+  elif cnt.eq_Int(1):
+    get_or_Array(nodes, 0, _ -> vec)
+  else:
+    make_branch(height_Vector(vec).add(1), nodes)
 
 # Prepends a single element to the front of a vector.
 def prepend_Vector(vec: Vector[a], item: a) -> Vector[a]:
-  concat_Vector(from_List_Vector([item]), vec)
+  nodes = prepend_nodes_with_fuel(vec, item, height_Vector(vec).add(8))
+  cnt = size_Array(nodes)
+  if cnt.eq_Int(0):
+    vec
+  elif cnt.eq_Int(1):
+    get_or_Array(nodes, 0, _ -> vec)
+  else:
+    make_branch(height_Vector(vec).add(1), nodes)
 
 # Replaces the element at idx when in bounds.
 def updated_Vector(vec: Vector[a], idx: Int, item: a) -> Vector[a]:
-  arr = to_Array_Vector(vec)
-  from_Array_Vector(set_or_self_Array(arr, idx, item))
-
-# Returns a slice in the half-open interval [start, end).
-def slice_Vector(vec: Vector[a], start: Int, end: Int) -> Vector[a]:
-  arr = to_Array_Vector(vec)
-  from_Array_Vector(slice_Array(arr, start, end))
+  if cmp_Int(idx, 0) matches LT:
+    vec
+  elif cmp_Int(idx, size(vec)) matches GT | EQ:
+    vec
+  else:
+    match updated_with_fuel_Vector(vec, idx, item, height_Vector(vec).add(8)):
+      case Some(next_vec):
+        next_vec
+      case None:
+        vec
 
 # Takes the first count elements.
 def take_Vector(vec: Vector[a], count: Int) -> Vector[a]:
-  slice_Vector(vec, 0, count)
+  total = size(vec)
+  safe_count = clamp_Int(count, 0, total)
+  if safe_count.eq_Int(0):
+    empty_Vector
+  elif safe_count.eq_Int(total):
+    vec
+  else:
+    take_with_fuel_Vector(vec, safe_count, height_Vector(vec).add(8))
 
 # Drops the first count elements.
 def drop_Vector(vec: Vector[a], count: Int) -> Vector[a]:
-  slice_Vector(vec, count, size(vec))
+  total = size(vec)
+  safe_count = clamp_Int(count, 0, total)
+  if safe_count.eq_Int(0):
+    vec
+  elif safe_count.eq_Int(total):
+    empty_Vector
+  else:
+    drop_with_fuel_Vector(vec, safe_count, height_Vector(vec).add(8))
 
 # Splits at count into (take count, drop count).
 def split_Vector(vec: Vector[a], count: Int) -> (Vector[a], Vector[a]):
-  (take_Vector(vec, count), drop_Vector(vec, count))
+  total = size(vec)
+  safe_count = clamp_Int(count, 0, total)
+  (take_Vector(vec, safe_count), drop_Vector(vec, safe_count))
+
+# Returns a slice in the half-open interval [start, end).
+def slice_Vector(vec: Vector[a], start: Int, end: Int) -> Vector[a]:
+  total = size(vec)
+  safe_start = clamp_Int(start, 0, total)
+  safe_end = clamp_Int(end, 0, total)
+  if cmp_Int(safe_end, safe_start) matches LT | EQ:
+    empty_Vector
+  elif safe_start.eq_Int(0):
+    take_Vector(vec, safe_end)
+  elif safe_end.eq_Int(total):
+    drop_Vector(vec, safe_start)
+  else:
+    take_Vector(drop_Vector(vec, safe_start), safe_end.sub(safe_start))
 
 # Zips two vectors to the shorter length.
 def zip_Vector(left: Vector[a], right: Vector[b]) -> Vector[(a, b)]:
-  from_List_Vector(zip(to_List_Vector(left), to_List_Vector(right)))
+  rem = min_Int(size(left), size(right))
+  if rem.eq_Int(0):
+    empty_Vector
+  else:
+    fuel = rem.add(height_Vector(left)).add(height_Vector(right)).add(64)
+    rev_pairs = zip_rev_with_fuel([left], [right], None, None, rem, [], fuel)
+    from_List_Vector(rev_pairs.reverse())
 
 ############################
 # Property tests
