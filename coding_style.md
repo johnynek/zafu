@@ -16,13 +16,22 @@ This guide is for experienced programmers (or coding agents) who want to be prod
 ./bosatsu lib check
 ```
 
-3. Run tests when a unit of work is complete:
+3. Keep incomplete code compiling with `todo(...)` stubs.
+
+```bosatsu
+def hard_function(x, y):
+  todo((x, y))
+```
+
+This is a key iteration trick: stub unfinished logic, keep `lib check` green, and fill implementations incrementally.
+
+4. Run tests when a unit of work is complete:
 
 ```bash
 ./bosatsu lib test
 ```
 
-4. Validate publishability in CI/local without mutating repo config:
+5. Validate publishability in CI/local without mutating repo config:
 
 ```bash
 scripts/test.sh
