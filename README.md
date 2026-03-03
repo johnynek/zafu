@@ -4,7 +4,7 @@ Useful Bosatsu code, starting with a `Vector` implementation.
 
 ## Layout
 
-- `src/Zafu/Vector.bosatsu`: vector implementation and property tests.
+- `src/Zafu/Collection/Vector.bosatsu`: vector implementation and property tests.
 - `src/zafu_conf.json`: Bosatsu library configuration.
 - `bosatsu_libs.json`: maps library name to source root.
 - `scripts/test.sh`: runs `lib check`, `lib test`, and dry-run `lib publish`.
@@ -38,4 +38,4 @@ This runs:
 ## API docs
 
 - GitHub Pages index: [johnynek.github.io/zafu](https://johnynek.github.io/zafu/)
-- Current module docs: [Zafu/Vector](https://johnynek.github.io/zafu/Zafu/Vector.html)
+- Current module docs: [Zafu/Collection/Vector](https://johnynek.github.io/zafu/Zafu/Collection/Vector.html)
