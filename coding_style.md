@@ -69,7 +69,12 @@ tests = TestSuite("thing tests", [
 
 ### Prefer `loop` to `recur`
 
-Use `loop` in most recursive traversals/accumulator code. It reads more like imperative state updates while staying pure and tail-recursive.
+`loop` vs `recur` is about tail recursion semantics, not about integer vs structural recursion.
+
+- `loop`: recursion must be tail-recursive; it compiles to a `while` loop.
+- `recur`: allows both tail and non-tail recursion; tail-recursive forms may compile to a loop, non-tail forms do not.
+
+Use `loop` by default for iterative/tail-recursive code paths when you want guaranteed loop lowering.
 
 ```bosatsu
 def sum_to(n: Int) -> Int:
@@ -82,7 +87,7 @@ def sum_to(n: Int) -> Int:
   go(n, 0)
 ```
 
-Use explicit `recur` when direct structural recursion is clearer (e.g., simple list/tree destructuring).
+Use `recur` when non-tail recursion is intentional or when it is the clearer expression of the algorithm.
 
 ## 4) Prefer left-apply (`<-`) over deep nesting
 
