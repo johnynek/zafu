@@ -1,6 +1,9 @@
 package Zafu/Collection/Vector
 
-from Bosatsu/List import eq_List
+from Bosatsu/List import (
+  eq_List,
+  zip,
+)
 from Bosatsu/Collection/Array import (
   Array,
   empty_Array,
@@ -12,6 +15,7 @@ from Bosatsu/Collection/Array import (
   get_or_Array,
   foldl_Array,
   map_Array,
+  set_or_self_Array,
   concat_all_Array,
   slice_Array,
   reverse_Array,
@@ -48,6 +52,14 @@ export (
   filter_Vector,
   concat_Vector,
   concat_all_Vector,
+  append_Vector,
+  prepend_Vector,
+  updated_Vector,
+  slice_Vector,
+  take_Vector,
+  drop_Vector,
+  split_Vector,
+  zip_Vector,
 )
 
 chunk_width = 32
@@ -489,6 +501,40 @@ def concat_Vector(left: Vector[a], right: Vector[a]) -> Vector[a]:
 def concat_all_Vector(vecs: List[Vector[a]]) -> Vector[a]:
   vecs.foldl_List(empty_Vector, concat_Vector)
 
+# Appends a single element to the end of a vector.
+def append_Vector(vec: Vector[a], item: a) -> Vector[a]:
+  concat_Vector(vec, from_List_Vector([item]))
+
+# Prepends a single element to the front of a vector.
+def prepend_Vector(vec: Vector[a], item: a) -> Vector[a]:
+  concat_Vector(from_List_Vector([item]), vec)
+
+# Replaces the element at idx when in bounds.
+def updated_Vector(vec: Vector[a], idx: Int, item: a) -> Vector[a]:
+  arr = to_Array_Vector(vec)
+  from_Array_Vector(set_or_self_Array(arr, idx, item))
+
+# Returns a slice in the half-open interval [start, end).
+def slice_Vector(vec: Vector[a], start: Int, end: Int) -> Vector[a]:
+  arr = to_Array_Vector(vec)
+  from_Array_Vector(slice_Array(arr, start, end))
+
+# Takes the first count elements.
+def take_Vector(vec: Vector[a], count: Int) -> Vector[a]:
+  slice_Vector(vec, 0, count)
+
+# Drops the first count elements.
+def drop_Vector(vec: Vector[a], count: Int) -> Vector[a]:
+  slice_Vector(vec, count, size(vec))
+
+# Splits at count into (take count, drop count).
+def split_Vector(vec: Vector[a], count: Int) -> (Vector[a], Vector[a]):
+  (take_Vector(vec, count), drop_Vector(vec, count))
+
+# Zips two vectors to the shorter length.
+def zip_Vector(left: Vector[a], right: Vector[b]) -> Vector[(a, b)]:
+  from_List_Vector(zip(to_List_Vector(left), to_List_Vector(right)))
+
 ############################
 # Property tests
 ############################
@@ -530,6 +576,28 @@ def flat_map_model(list: List[Int]) -> List[Int]:
 def foldr_list_model(list: List[Int], init: Int) -> Int:
   list.reverse().foldl_List(init, (acc, item) -> item.sub(acc))
 
+def eq_Int_pair(left: (Int, Int), right: (Int, Int)) -> Bool:
+  (left_0, left_1) = left
+  (right_0, right_1) = right
+  and_Bool(left_0.eq_Int(right_0), left_1.eq_Int(right_1))
+
+def slice_list_model(list: List[Int], start: Int, end: Int) -> List[Int]:
+  arr = from_List_Array(list)
+  to_List_Array(slice_Array(arr, start, end))
+
+def take_list_model(list: List[Int], count: Int) -> List[Int]:
+  slice_list_model(list, 0, count)
+
+def drop_list_model(list: List[Int], count: Int) -> List[Int]:
+  slice_list_model(list, count, list_size(list))
+
+def split_list_model(list: List[Int], count: Int) -> (List[Int], List[Int]):
+  (take_list_model(list, count), drop_list_model(list, count))
+
+def updated_list_model(list: List[Int], idx: Int, item: Int) -> List[Int]:
+  arr = from_List_Array(list)
+  to_List_Array(set_or_self_Array(arr, idx, item))
+
 rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
 
 rand_list_int: Rand[List[Int]] = flat_map_Rand(
@@ -540,6 +608,20 @@ rand_list_int: Rand[List[Int]] = flat_map_Rand(
 rand_list_with_index: Rand[(List[Int], Int)] = flat_map_Rand(rand_list_int, list -> (
   upper = list_size(list).add(3)
   map_Rand(int_range(upper), i -> (list, i.sub(1)))
+))
+
+rand_list_with_index_item: Rand[(List[Int], Int, Int)] = flat_map_Rand(rand_list_int, list -> (
+  upper = list_size(list).add(4)
+  map_Rand(prod_Rand(int_range(upper), rand_int), ((idx_0, item)) -> (
+    (list, idx_0.sub(2), item)
+  ))
+))
+
+rand_list_with_slice_bounds: Rand[(List[Int], Int, Int)] = flat_map_Rand(rand_list_int, list -> (
+  upper = list_size(list).add(6)
+  map_Rand(prod_Rand(int_range(upper), int_range(upper)), ((start_0, end_0)) -> (
+    (list, start_0.sub(2), end_0.sub(2))
+  ))
 ))
 
 rand_deep_len: Rand[Int] = map_Rand(int_range(3072), i -> i.add(1024))
@@ -565,6 +647,89 @@ index_prop: Prop = forall_Prop(
     expected = index_List(list, idx)
     actual = index_Vector(vec, idx)
     Assertion(eq_Option(eq_Int)(actual, expected), "index at ${int_to_String(idx)}")
+  ))
+
+append_prop: Prop = forall_Prop(
+  prod_Rand(rand_list_int, rand_int),
+  "append_Vector agrees with list append",
+  ((list, item)) -> (
+    vec = from_List_Vector(list)
+    expected = list.concat([item])
+    actual = append_Vector(vec, item).to_List_Vector()
+    Assertion(eq_List(eq_Int)(actual, expected), "append law")
+  ))
+
+prepend_prop: Prop = forall_Prop(
+  prod_Rand(rand_list_int, rand_int),
+  "prepend_Vector agrees with list prepend",
+  ((list, item)) -> (
+    vec = from_List_Vector(list)
+    expected = [item, *list]
+    actual = prepend_Vector(vec, item).to_List_Vector()
+    Assertion(eq_List(eq_Int)(actual, expected), "prepend law")
+  ))
+
+updated_prop: Prop = forall_Prop(
+  rand_list_with_index_item,
+  "updated_Vector agrees with set_or_self model",
+  ((list, idx, item)) -> (
+    vec = from_List_Vector(list)
+    expected = updated_list_model(list, idx, item)
+    actual = updated_Vector(vec, idx, item).to_List_Vector()
+    Assertion(eq_List(eq_Int)(actual, expected), "updated at ${int_to_String(idx)}")
+  ))
+
+slice_prop: Prop = forall_Prop(
+  rand_list_with_slice_bounds,
+  "slice_Vector agrees with array slice model",
+  ((list, start, end)) -> (
+    vec = from_List_Vector(list)
+    expected = slice_list_model(list, start, end)
+    actual = slice_Vector(vec, start, end).to_List_Vector()
+    Assertion(eq_List(eq_Int)(actual, expected), "slice ${int_to_String(start)} ${int_to_String(end)}")
+  ))
+
+take_prop: Prop = forall_Prop(
+  rand_list_with_index,
+  "take_Vector agrees with slice model",
+  ((list, count)) -> (
+    vec = from_List_Vector(list)
+    expected = take_list_model(list, count)
+    actual = take_Vector(vec, count).to_List_Vector()
+    Assertion(eq_List(eq_Int)(actual, expected), "take ${int_to_String(count)}")
+  ))
+
+drop_prop: Prop = forall_Prop(
+  rand_list_with_index,
+  "drop_Vector agrees with slice model",
+  ((list, count)) -> (
+    vec = from_List_Vector(list)
+    expected = drop_list_model(list, count)
+    actual = drop_Vector(vec, count).to_List_Vector()
+    Assertion(eq_List(eq_Int)(actual, expected), "drop ${int_to_String(count)}")
+  ))
+
+split_prop: Prop = forall_Prop(
+  rand_list_with_index,
+  "split_Vector agrees with take/drop model",
+  ((list, count)) -> (
+    vec = from_List_Vector(list)
+    (expected_left, expected_right) = split_list_model(list, count)
+    (actual_left_vec, actual_right_vec) = split_Vector(vec, count)
+    actual_left = to_List_Vector(actual_left_vec)
+    actual_right = to_List_Vector(actual_right_vec)
+    same_left = eq_List(eq_Int)(actual_left, expected_left)
+    same_right = eq_List(eq_Int)(actual_right, expected_right)
+    Assertion(and_Bool(same_left, same_right), "split ${int_to_String(count)}")
+  ))
+
+zip_prop: Prop = forall_Prop(
+  prod_Rand(rand_list_int, rand_list_int),
+  "zip_Vector agrees with list zip",
+  ((left, right)) -> (
+    expected = zip(left, right)
+    actual = zip_Vector(from_List_Vector(left), from_List_Vector(right)).to_List_Vector()
+    Assertion(eq_List(eq_Int_pair)(actual, expected), "zip law")
   ))
 
 concat_prop: Prop = forall_Prop(
@@ -652,6 +817,14 @@ vector_props: Prop = suite_Prop(
   [
     size_prop,
     index_prop,
+    append_prop,
+    prepend_prop,
+    updated_prop,
+    slice_prop,
+    take_prop,
+    drop_prop,
+    split_prop,
+    zip_prop,
     concat_prop,
     map_prop,
     filter_prop,
