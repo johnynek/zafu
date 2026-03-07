@@ -1,24 +1,5 @@
 ---
 issue: 31
-priority: 3
-touch_paths:
-  - docs/design/31-implement-pairing-heap.md
-  - src/Zafu/Collection/Heap.bosatsu
-depends_on: []
-estimated_size: M
-generated_at: 2026-03-07T23:31:17Z
----
-
-# Design doc for issue #31: implement pairing heap
-
-_Issue: #31 (https://github.com/johnynek/zafu/issues/31)_
-
-## Summary
-
-Proposed architecture and implementation plan for `Zafu/Collection/Heap` using a pairing heap with O(1) size, explicit `Ord`-driven operations, abstraction support mapping, acceptance criteria, risks, and rollout notes.
-
----
-issue: 31
 priority: 2
 touch_paths:
   - docs/design/31-implement-pairing-heap.md
@@ -26,7 +7,7 @@ touch_paths:
 depends_on:
   - 28
 estimated_size: M
-generated_at: 2026-03-07T23:50:00Z
+generated_at: 2026-03-08T00:35:00Z
 ---
 
 # Design: Zafu/Collection/Heap (pairing heap)
@@ -35,7 +16,7 @@ _Issue: #31 (https://github.com/johnynek/zafu/issues/31)_
 
 ## Summary
 
-Add a persistent pairing heap at `Zafu/Collection/Heap` with explicit `Ord`-driven operations, O(1) size lookup, and APIs aligned with existing `Zafu/Collection` naming. The module will provide core heap operations, sorted extraction, structural folds, and adapters for the `Zafu/Abstract` typeclass dictionaries that are lawful for this data type.
+Add a persistent pairing heap at `Zafu/Collection/Heap` with O(1) size lookup, min-ordered folds, short API names, and an implementation strategy that keeps heap structure opaque.
 
 ## Status
 
@@ -43,172 +24,197 @@ Proposed
 
 ## Context
 
-Zafu currently has sequence-like collections (`Vector`, `Chain`, `LazyList`, `Deque`) but no priority queue. Issue #31 asks for a pairing heap design that:
+Zafu has sequence collections (`Vector`, `Chain`, `LazyList`, `Deque`) but no priority queue. Issue #31 asks for a pairing heap design that:
 
-1. Uses `Ord` from the `Zafu/Abstract` direction in issue #28.
-2. Uses a pairing heap strategy.
-3. Guarantees O(1) `size` to support recursion-by-size patterns in Bosatsu.
-4. Lists which `Zafu/Abstract` abstractions the heap can support.
-
-Pairing heap is selected because it keeps `meld` simple and fast while providing strong amortized performance for immutable priority-queue use.
+1. Uses `Ord` from `Zafu/Abstract`.
+2. Is implemented as a pairing heap.
+3. Guarantees O(1) `size` to support recursion-on-size in Bosatsu.
+4. Lists which `Zafu/Abstract` abstractions Heap can support.
 
 ## Goals
 
-1. Add `src/Zafu/Collection/Heap.bosatsu` with an opaque `Heap[a]`.
-2. Keep `size_Heap` O(1) by storing cached size in each non-empty node.
-3. Provide efficient `combine` (meld), `insert`, `peek/min`, and `pop_min`.
-4. Keep API naming consistent with `Vector`/`Chain` style (`*_Heap` plus `size` alias).
-5. Add property tests in-module following existing `Collection` module practice.
-6. Document support and non-support for `Zafu/Abstract` abstractions.
+1. Add `src/Zafu/Collection/Heap.bosatsu` with opaque `Heap[a]`.
+2. Keep `size` O(1) with cached subtree size.
+3. Keep heap operations ordered by a single comparator for each non-empty heap.
+4. Use short names (`empty`, `size`, `insert`, ...) and rely on `as` import aliasing.
+5. Keep chaining ergonomics by taking `heap` as the first argument for primary operations.
+6. Provide ordered folds from min to max without materializing a full intermediate list.
 
 ## Non-goals
 
-1. Mutable or in-place heap operations.
-2. `decrease_key`/handle-based APIs.
+1. Mutable heap operations.
+2. `decrease_key` or handle-based updates.
 3. Stability guarantees among equal-priority values.
-4. Indexed access or arbitrary delete.
-5. Forcing a `Traverse`/`Monad` API that cannot be made lawful without extra constraints.
+4. Exposing internal tree constructors.
+5. Forcing unlawful `Traverse`/`Monad`/`Applicative` instances.
 
 ## Decision summary
 
-1. Represent heap as a tree of roots with child subheaps.
-2. Cache total subtree size on every `Node` for O(1) size.
-3. Implement `combine_Heap` with root linking based on `Ord`.
-4. Implement `pop_min_Heap` with classic two-pass pairwise child merging.
-5. Implement `to_List_Heap` in ascending order by repeatedly popping minimum.
-6. Implement `foldl_Heap` and `foldr_Heap` as structural folds (not priority-order folds).
-7. Provide abstraction adapters where lawful (`Semigroup`, `Monoid`, `Foldable`, plus canonical comparison helpers).
+1. Heap internals are opaque; only functions are exported.
+2. Every non-empty heap carries an `Ord[a]` chosen at creation time.
+3. `size` is cached in heap nodes and read in O(1).
+4. Core operations use pairing-heap link and two-pass child merge.
+5. `foldl` and `foldr` iterate in min-to-max logical order (the same order as repeated `pop_min`), implemented as a streaming loop to avoid building a full list.
+6. Public functions use short names and heap-first argument order where practical.
 
-## Proposed module API
+## API shape
 
 Proposed exports:
 
 1. `Heap`
-2. `empty_Heap`
-3. `singleton_Heap`
-4. `size`
-5. `size_Heap`
-6. `is_empty_Heap`
-7. `min_Heap`
-8. `combine_Heap`
-9. `insert_Heap`
-10. `pop_min_Heap`
-11. `from_List_Heap`
-12. `to_List_Heap`
-13. `foldl_Heap`
-14. `foldr_Heap`
-15. `eq_Heap`
-16. `cmp_Heap`
-17. `semigroup_Heap`
-18. `monoid_Heap`
-19. `foldable_Heap`
-20. `hash_Heap` (only if `Zafu/Abstract/Hash` API from issue #28 is available when implementation lands)
+2. `empty`
+3. `singleton`
+4. `is_empty`
+5. `size`
+6. `min`
+7. `insert`
+8. `combine`
+9. `pop_min`
+10. `from_List`
+11. `to_List`
+12. `foldl`
+13. `foldr`
+14. `eq`
+15. `cmp`
+16. `semigroup`
+17. `monoid`
+18. `foldable`
+19. `hash` (if `Zafu/Abstract/Hash` from issue #28 is available at implementation time)
 
-Operational contracts:
+Representative signatures (heap-first style):
 
-1. `size_Heap(heap)` is O(1).
-2. `min_Heap(heap)` is O(1).
-3. `combine_Heap(ord, left, right)` is O(1) worst-case.
-4. `insert_Heap(ord, item, heap)` is O(1) amortized.
-5. `pop_min_Heap(ord, heap)` is O(log n) amortized, O(n) worst-case.
-6. `from_List_Heap(ord, items)` targets O(n) amortized by pairwise build.
-7. `to_List_Heap(ord, heap)` is O(n log n), returning ascending order.
+1. `insert(heap: Heap[a], item: a) -> Heap[a]`
+2. `combine(heap: Heap[a], other: Heap[a]) -> Heap[a]`
+3. `pop_min(heap: Heap[a]) -> Option[(a, Heap[a])]`
+4. `foldl(heap: Heap[a], init: b, fn: (b, a) -> b) -> b`
+5. `foldr(heap: Heap[a], init: b, fn: (a, b) -> b) -> b`
 
-## Data model and invariants
+Creation signatures:
 
-Internal representation:
+1. `empty(ord: Ord[a]) -> Heap[a]`
+2. `singleton(ord: Ord[a], item: a) -> Heap[a]`
+3. `from_List(ord: Ord[a], items: List[a]) -> Heap[a]`
 
-`enum Heap[a: +*]:`
-`  Empty`
-`  Node(size: Int, min: a, children: List[Heap[a]])`
+## Ordering ownership: pros/cons and choice
 
-Invariants:
+Pairing heaps are only valid relative to one ordering. Re-supplying arbitrary `Ord` per operation is unsafe because existing structure was built under a prior comparator.
 
-1. `Empty` represents size `0`.
-2. `Node(size, _, _)` always has `size > 0`.
-3. `size` equals `1 + sum(size(child))`.
-4. Children never contain `Empty`.
-5. Heap order: for each child root `c`, `min <= c` under provided `Ord[a]`.
-6. All exported constructors/operations preserve these invariants.
+### Option A: caller passes `Ord` on every operation
+
+Pros:
+
+1. Keeps `Heap[a]` easier to make covariant.
+2. No comparator stored in heap nodes.
+
+Cons:
+
+1. Easy to call one operation with a different `Ord` and silently corrupt semantics.
+2. Every compare-based operation repeats comparator threading.
+
+### Option B: non-empty heap keeps its own `Ord` (chosen)
+
+Pros:
+
+1. Comparator consistency is preserved by construction after first non-empty creation.
+2. Simpler call sites for chained operations (`heap.insert(x).insert(y).pop_min()`).
+3. Fewer API surfaces that require passing comparator repeatedly.
+
+Cons:
+
+1. Covariance is harder (or impossible) for the concrete heap representation because `Ord[a]` consumes `a`.
+2. Merging heaps created with different orderings needs defined behavior.
+
+Chosen behavior for `combine`:
+
+1. `empty(ord).combine(other)` and `heap.combine(empty(ord))` are fast-paths.
+2. For two non-empty heaps, when orderings are not known identical, implementation must preserve correctness by rebuilding the right heap under the left heap's ordering (stream right via `pop_min` and `insert`).
+3. This keeps semantics correct even if it sacrifices the ideal O(1) meld in cross-ordering cases.
+
+## Covariance note
+
+Covariance is valuable in Bosatsu for nested recursion patterns such as `struct Foo(a: Int, foos: Heap[Foo])`.
+
+This design prioritizes ordering safety first (heap-owned `Ord`) and documents the covariance tradeoff explicitly. If recursive covariant use-cases become important, we can add a follow-up design for a split representation (covariant tree payload + separate ordering witness wrapper) while preserving the same external operations.
+
+## Data model and invariants (opaque)
+
+Internal representation is intentionally private. Invariants that must hold:
+
+1. Size is cached and exact for every non-empty subtree.
+2. `size(empty(ord)) == 0` and `size(non_empty) > 0`.
+3. Heap-order property is maintained under the heap's stored `Ord`.
+4. No exported API leaks node/child constructors.
+5. All public mutators preserve invariants.
 
 ## Core algorithms
 
-1. Link/combine:
-- Compare two roots with `Ord`.
-- Smaller root becomes new root.
-- Larger heap is prepended to winner's child list.
-- New size is sum of both cached sizes.
+1. Link/meld:
+- Compare roots with stored ordering.
+- Smaller root becomes parent; larger root becomes first child.
+- Size cache is updated by addition.
 
-2. Pop minimum:
+2. `pop_min`:
 - Remove root.
-- Merge children with two-pass strategy:
-  - Pass 1: pair adjacent children and meld each pair.
-  - Pass 2: meld pair-results from right to left.
-- Return popped element and merged remainder.
+- Merge children using two-pass pairing:
+  - Pair adjacent children left-to-right and meld each pair.
+  - Meld resulting heaps right-to-left.
 
-3. Build from list:
-- Turn each item into singleton heap.
-- Reuse pairwise merging rounds until one heap remains.
-- Avoid long one-sided insertion chains.
+3. `from_List`:
+- Build singleton heaps and merge in rounds.
+- Avoid pathological one-sided insertion chains.
 
-4. Sorted extraction:
-- Repeatedly call `pop_min_Heap`.
-- Accumulate popped values to list.
+4. Ordered folds:
+- `foldl`/`foldr` consume heap in ascending order using repeated `pop_min` on a local working heap state.
+- Implementation streams directly into accumulator to avoid allocating `to_List`.
 
-5. Structural folds:
-- `foldl_Heap` and `foldr_Heap` traverse internal tree shape with explicit loop/fuel from cached size for stack safety.
-- Priority-order fold is intentionally expressed via `to_List_Heap` + list fold when needed.
+5. `to_List`:
+- Defined via the same ordered pop stream, producing ascending output.
 
 ## Abstraction support from `Zafu/Abstract`
 
 | Abstraction | Support | Notes |
 | --- | --- | --- |
-| `Eq` | Yes | Canonical multiset equality via sorted pop stream (`cmp_Heap == EQ`). |
+| `Eq` | Yes | Canonical equality via ascending pop stream. |
 | `Ord` | Yes | Lexicographic compare of ascending pop streams. |
-| `Hash` | Yes | Hash canonical sorted stream so equal heaps hash equally. |
-| `Show` | Yes | Render from canonical sorted list. |
-| `Semigroup` | Yes | `combine_Heap(ord)` is associative under fixed `Ord`. |
-| `Monoid` | Yes | `empty_Heap` + `combine_Heap(ord)`. |
-| `Foldable` | Yes | Structural fold over heap nodes. |
-| `Traverse` | No | Would require `Ord[b]` after mapping, which `Traverse` cannot require. |
-| `Applicative` | No | No lawful instance matching heap semantics. |
-| `Alternative` | No | Depends on `Applicative` lawfulness. |
-| `Monad` | No | Depends on lawful `Applicative`/`flat_map` semantics with heap-order constraints. |
-| `Compose` helpers | Not applicable | No `Traverse`/`Applicative` instance to compose. |
-
-Initial implementation scope for issue #31: core heap API plus `Semigroup`/`Monoid`/`Foldable` adapters and explicit `eq_Heap`/`cmp_Heap` helpers. `hash_Heap` and `show` adapters can land in the same PR if issue #28 APIs exist on `main`; otherwise they are follow-up additions.
+| `Hash` | Yes | Hash ascending pop stream so `Eq`/`Hash` stay coherent. |
+| `Show` | Yes | Render from ascending iteration. |
+| `Semigroup` | Yes | `semigroup(ord)` uses `combine` under fixed ordering semantics. |
+| `Monoid` | Yes | `monoid(ord)` provides `empty(ord)` + `combine`. |
+| `Foldable` | Yes | `foldl`/`foldr` are min-to-max ordered folds. |
+| `Traverse` | No | Would require `Ord[b]` after mapping. |
+| `Applicative` | No | No lawful instance consistent with heap semantics. |
+| `Alternative` | No | Depends on lawful `Applicative`. |
+| `Monad` | No | Depends on lawful `Applicative`/`flat_map` under ordering constraints. |
+| `Compose` helpers | Not applicable | No `Traverse`/`Applicative` instance. |
 
 ## Implementation plan
 
-### Phase 1: module skeleton and invariants
+### Phase 1: module skeleton
 
 1. Add `src/Zafu/Collection/Heap.bosatsu`.
-2. Define `Heap` representation and O(1) `size_Heap`.
-3. Add `empty_Heap`, `singleton_Heap`, `is_empty_Heap`, `min_Heap`.
+2. Implement opaque heap type and O(1) cached `size`.
+3. Add `empty`, `singleton`, `is_empty`, `min`.
 
-### Phase 2: core pairing heap operations
+### Phase 2: pairing-heap core
 
-1. Implement internal `link` and exported `combine_Heap`.
-2. Implement `insert_Heap`.
-3. Implement two-pass `pop_min_Heap` and helper pair-merge functions.
-4. Add internal invariant checker for tests.
+1. Implement internal link and two-pass merge helpers.
+2. Implement `insert`, `combine`, `pop_min`.
+3. Add correctness path for combining heaps that may carry different orderings.
 
-### Phase 3: conversions and folds
+### Phase 3: ordered iteration and folds
 
-1. Implement `from_List_Heap` using pairwise build rounds.
-2. Implement `to_List_Heap` via repeated `pop_min_Heap`.
-3. Implement stack-safe `foldl_Heap` and `foldr_Heap`.
+1. Implement `from_List`.
+2. Implement streaming `foldl` and `foldr` over ascending pop stream.
+3. Implement `to_List` on top of the same stream.
 
 ### Phase 4: abstraction adapters
 
-1. Add `semigroup_Heap(ord)` and `monoid_Heap(ord)`.
-2. Add `foldable_Heap`.
-3. Add `eq_Heap` and `cmp_Heap` canonical comparisons.
-4. Add `hash_Heap` if `Zafu/Abstract/Hash` is available on `main`.
+1. Add `eq`, `cmp`, `semigroup`, `monoid`, `foldable`.
+2. Add `hash` if `Zafu/Abstract/Hash` is available on `main`.
 
 ### Phase 5: validation
 
-1. Add unit sanity assertions and property tests in the module.
+1. Add module property tests and sanity tests.
 2. Validate with:
 - `./bosatsu lib check`
 - `./bosatsu lib test`
@@ -216,45 +222,45 @@ Initial implementation scope for issue #31: core heap API plus `Semigroup`/`Mono
 
 ## Acceptance criteria
 
-1. `docs/design/31-implement-pairing-heap.md` is added with this plan.
-2. `src/Zafu/Collection/Heap.bosatsu` exists and exports the agreed API.
-3. `size_Heap` is O(1) and reads cached size directly.
-4. `combine_Heap` maintains heap-order and cached-size invariants.
-5. `pop_min_Heap` uses two-pass child pairing/merging.
-6. `from_List_Heap` and `to_List_Heap` are implemented and documented.
-7. `to_List_Heap` returns ascending order under supplied `Ord`.
-8. `foldl_Heap` and `foldr_Heap` are stack-safe for deep heaps.
-9. Abstraction support list is reflected in exported adapters/helpers (`Semigroup`, `Monoid`, `Foldable`, comparison helpers; `Hash` when available).
-10. Property tests cover ordering, size law, invariant preservation, and deep-stack behavior.
-11. `./bosatsu lib check` passes.
-12. `./bosatsu lib test` passes.
-13. `scripts/test.sh` passes before merge.
+1. `docs/design/31-implement-pairing-heap.md` reflects this design.
+2. `src/Zafu/Collection/Heap.bosatsu` exists with short-name exports.
+3. `size` is O(1) and reads cached size.
+4. `foldl` and `foldr` are min-to-max ordered folds.
+5. Ordered folds do not require building full `to_List` first.
+6. `combine`, `insert`, and `pop_min` preserve heap invariants.
+7. `pop_min` uses two-pass child pairing/merge.
+8. `to_List` returns ascending order.
+9. API supports heap-first chaining for primary operations.
+10. Abstraction support table is reflected in implemented adapters.
+11. Property tests cover ordering laws, size laws, invariant preservation, and deep-stack behavior.
+12. `./bosatsu lib check` passes.
+13. `./bosatsu lib test` passes.
+14. `scripts/test.sh` passes before merge.
 
 ## Risks and mitigations
 
-1. Risk: incorrect two-pass merge breaks amortized behavior or invariants.
-Mitigation: property tests that compare against list-model behavior and invariant checks after random operation sequences.
+1. Risk: cross-ordering `combine` semantics may be expensive.
+Mitigation: document behavior, fast-path empties and same-ordering internal cases, and test correctness first.
 
-2. Risk: recursive traversal can overflow on pathological heaps.
-Mitigation: implement iterative/loop-based traversal with fuel derived from cached size.
+2. Risk: two-pass merge bugs can violate invariants.
+Mitigation: randomized operation-sequence properties with invariant checks after each step.
 
-3. Risk: mismatch between `Eq` and `Hash` semantics if one is structural and the other canonical.
-Mitigation: define both over the same canonical sorted stream.
+3. Risk: ordered folds could accidentally regress to list-materialization.
+Mitigation: implement folds directly over pop stream and keep allocation-focused regression tests.
 
-4. Risk: dependency on issue #28 APIs may block typeclass adapter code.
-Mitigation: keep core heap operations independent; gate adapters behind available `Zafu/Abstract` modules or split into immediate follow-up PR.
+4. Risk: heap-owned ordering may limit covariance in some recursive type designs.
+Mitigation: track recursive-use demand and add a follow-up split-representation design if needed.
 
 ## Rollout notes
 
-1. Land as additive API on `main`; no existing collection API changes required.
-2. Start by exposing core heap operations; keep adapter exports small and explicit.
-3. Document that structural folds are not priority-order folds.
-4. If `Hash`/`Show` adapters are deferred due issue #28 timing, track in follow-up issue and keep core heap ship-ready.
-5. Prefer one PR for module + tests, then optional follow-up PR for additional adapters if dependencies lag.
+1. Ship as additive API on `main`.
+2. Land module + tests first; add optional adapters only when upstream abstractions are available.
+3. Keep representation opaque in docs and code.
+4. Call out short-name import style and recommend `as` aliasing at use sites.
 
 ## Out of scope
 
-1. Mutable heap optimizations.
-2. Fibonacci/binomial heap alternatives.
-3. Decrease-key or indexed-priority-queue APIs.
-4. Global/prelude-level re-export policy for new heap functions.
+1. Mutable priority queues.
+2. Decrease-key APIs.
+3. Indexed delete/update.
+4. Prelude/re-export policy changes.
