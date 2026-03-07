@@ -24,102 +24,117 @@ from Bosatsu/Testing/Properties import (
 
 export (
   LazyList,
-  uncons,
-  uncons_with_limit,
-  cons,
-  from_Lazy,
-  map,
-  flat_map,
   concat,
+  cons_take,
+  flat_map,
   from_List,
+  map,
+  uncons,
 )
 
-enum LazyList[a: +*]:
+
+enum VLazyList[a: +*]:
   Empty
-  Cons(head: Lazy[a], tail: LazyList[a])
-  Suspend(next: Lazy[LazyList[a]])
-  Concat(first: LazyList[a], second: LazyList[a])
-  Mapped[b](source: LazyList[b], fn: b -> a)
-  FlatMapped[b](source: LazyList[b], fn: b -> LazyList[a])
+  Cons(head: Lazy[a], tail: Lazy[VLazyList[a]])
+  Mapped[b](source: VLazyList[b], fn: b -> a)
 
-empty_LazyList: forall a. LazyList[a] = Empty
-default_uncons_limit = 2000000
+struct LazyList[a: +*](bound: Int, list: VLazyList[a]) 
 
-def cons(head: Lazy[a], tail: LazyList[a]) -> LazyList[a]:
-  Cons(head, tail)
+empty_LazyList: forall a. LazyList[a] = LazyList(0, Empty)
+lazy_empty_v = lazy(() -> Empty)
 
-def from_Lazy(ll: Lazy[LazyList[a]]) -> LazyList[a]:
-  Suspend(ll)
+# build a new lazy list at most a given size
+def cons_take(head: Lazy[a], tail: LazyList[a], size: Int) -> LazyList[a]:
+    #if cmp_Int(size, 0) matches LT | EQ: empty_LazyList
+    if cmp_Int(size, 0) matches LT | EQ: LazyList(0, Empty)
+    elif size matches 1:
+        #e: Lazy[LazyList[a]] = lazy_empty
+        LazyList(size, Cons(head, lazy(() -> Empty)))
+    else:
+        LazyList(tail_size, tailv) = tail
+        this_size =
+            if cmp_Int(tail_size, size) matches LT: tail_size
+            else: size
+        LazyList(this_size, Cons(head, lazy(() -> tailv)))
 
-def concat_internal(first: LazyList[a], second: LazyList[a]) -> LazyList[a]:
-  match (first, second):
-    case (Empty, s):
-      s
-    case (f, Empty):
-      f
-    case _:
-      Concat(first, second)
-
-def concat_pending(pending: List[LazyList[a]]) -> LazyList[a]:
-  pending.reverse().foldl_List(empty_LazyList, (acc, next) -> concat_internal(next, acc))
-
-def append_pending(base: LazyList[a], pending: List[LazyList[a]]) -> LazyList[a]:
-  concat_internal(base, concat_pending(pending))
-
-def concat(first: LazyList[a], second: LazyList[a]) -> LazyList[a]:
-  concat_internal(first, second)
+# TODO we could maybe lift this into a FromList node
+def from_List(lst: List[a]) -> LazyList[a]:
+  (_, ll) = lst.reverse().foldl_List((0, empty_LazyList), ((sz, acc), item) -> (
+    size = sz.add(1)
+    (size, cons_take(lazy(() -> item), acc, size))
+  ))
+  ll
 
 def map(ll: LazyList[a], fn: a -> b) -> LazyList[b]:
-  Mapped(ll, fn)
+    LazyList(sz, vll) = ll
+    vll1 = match vll:
+        case Empty: Empty
+        case Mapped(mll, fn1): Mapped(mll, x -> fn(fn1(x)))
+        case notEmptyMapped: Mapped(notEmptyMapped, fn)
+    LazyList(sz, vll1)
 
-def flat_map(ll: LazyList[a], fn: a -> LazyList[b]) -> LazyList[b]:
-  FlatMapped(ll, fn)
+def concat(first: LazyList[a], second: LazyList[a]) -> LazyList[a]:
+    LazyList(size_second, vsecond) = second
+    def loop(size_first: Int, vfirst: VLazyList[a]) -> VLazyList[a]:
+        recur (size_first, vfirst):
+            case _ if cmp_Int(size_first, 0) matches LT | EQ: vsecond
+            case (_, Empty): vsecond
+            case (sz, Cons(h, t)):
+                Cons(h, lazy(() -> loop(sz.sub(1), get_Lazy(t))))
+            case (sz, Mapped(Cons(h, t), fn)):
+                Cons(lazy(() -> fn(get_Lazy(h))), lazy(() -> (
+                    next_size = sz.sub(1)
+                    LazyList(_, inner) = LazyList(next_size, get_Lazy(t)).map(fn)
+                    loop(next_size, inner))
+                ))
+            case (_, Mapped(_, _)):
+                # by invariant this never happens:
+                vsecond
+    LazyList(size_first, vfirst) = first
+    cat = loop(size_first, vfirst)
+    LazyList(size_first.add(size_second), cat)
 
-def uncons_step(rem: Int, current: LazyList[a], pending: List[LazyList[a]]) -> Option[(Lazy[a], LazyList[a])]:
-  recur (rem, current):
-    case _ if cmp_Int(rem, 0) matches LT | EQ:
-      None
-    case (_, Empty):
-      match pending:
-        case []:
-          None
-        case [next, *rest]:
-          uncons_step(rem.sub(1), next, rest)
-    case (_, Cons(head, tail)):
-      Some((head, append_pending(tail, pending)))
-    case (_, Suspend(next)):
-      uncons_step(rem.sub(1), get_Lazy(next), pending)
-    case (_, Concat(first, second)):
-      uncons_step(rem, first, [second, *pending])
-    case (_, Mapped(source, fn)):
-      match uncons_step(rem.sub(1), source, []):
-        case None:
-          uncons_step(rem.sub(1), Empty, pending)
+def concat_pending(pending: List[LazyList[a]]) -> LazyList[a]:
+  pending.reverse().foldl_List(empty_LazyList, (acc, next) -> concat(next, acc))
+
+def append_pending(base: LazyList[a], pending: List[LazyList[a]]) -> LazyList[a]:
+  concat(base, concat_pending(pending))
+
+# invariant: neither current nor pending should be empty, so if we see either we can return None
+def uncons_step(sz: Int, current: VLazyList[a], pending: List[LazyList[a]]) -> Option[(Lazy[a], LazyList[a])]:
+  recur (sz, current, pending):
+    case _ if cmp_Int(sz, 0) matches LT | EQ: None
+    case (_, Empty, _): None
+    case (sz, Cons(head, tail), _):
+        tail_ll = LazyList(sz.sub(1), get_Lazy(tail))
+        Some((head, append_pending(tail_ll, pending)))
+    case (sz, Mapped(source, fn), pending):
+      match uncons_step(sz, source, []):
         case Some((head, tail)):
           mapped_head = lazy(() -> fn(get_Lazy(head)))
           mapped_tail = map(tail, fn)
           Some((mapped_head, append_pending(mapped_tail, pending)))
-    case (_, FlatMapped(source, fn)):
-      match uncons_step(rem.sub(1), source, []):
         case None:
-          uncons_step(rem.sub(1), Empty, pending)
-        case Some((head, tail)):
-          mapped = fn(get_Lazy(head))
-          uncons_step(rem.sub(1), mapped, [flat_map(tail, fn), *pending])
-
-def uncons_with_limit(ll: LazyList[a], limit: Int) -> Option[(Lazy[a], LazyList[a])]:
-  safe_limit = if cmp_Int(limit, 0) matches LT:
-    0
-  else:
-    limit
-
-  uncons_step(safe_limit, ll, [])
+            #due to invariant: Mapped is not empty, so just return None
+            None
 
 def uncons(ll: LazyList[a]) -> Option[(Lazy[a], LazyList[a])]:
-  uncons_with_limit(ll, default_uncons_limit)
+  LazyList(size, vll) = ll
+  uncons_step(size, vll, [])
 
-def from_List(lst: List[a]) -> LazyList[a]:
-  lst.reverse().foldl_List(empty_LazyList, (acc, item) -> cons(lazy(() -> item), acc))
+def flat_map(ll: LazyList[a], fn: a -> LazyList[b]) -> LazyList[b]:
+    def go(max_calls, ll):
+        recur max_calls:
+            case _ if cmp_Int(max_calls, 0) matches LT | EQ: empty_LazyList
+            case _:
+                match uncons(ll):
+                    case None: empty_LazyList
+                    case Some((h, t)):
+                        concat(fn(get_Lazy(h)), go(max_calls.sub(1), t))
+
+    LazyList(fn_call_max, _) = ll
+    go(fn_call_max, ll)
+
 
 ############################
 # Property tests
@@ -154,15 +169,12 @@ def take_to_List(ll: LazyList[a], limit: Int) -> List[a]:
   else:
     limit
 
-  def fuel_for_take(rem: Int) -> Int:
-    rem.mul(8).add(128)
-
   def step(rem: Int, current: LazyList[a], rev: List[a]) -> List[a]:
     recur rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         rev.reverse()
       case _ if cmp_Int(rem, 0) matches GT:
-        match uncons_with_limit(current, fuel_for_take(rem)):
+        match uncons(current):
           case None:
             rev.reverse()
           case Some((head, tail)):
@@ -193,7 +205,7 @@ def concat_List(left: List[a], right: List[a]) -> List[a]:
   left.reverse().foldl_List(right, (acc, item) -> [item, *acc])
 
 def singleton(item: a) -> LazyList[a]:
-  cons(lazy(() -> item), empty_LazyList)
+    LazyList(1, Cons(lazy(() -> item), lazy_empty_v))
 
 def deep_concat(size: Int) -> LazyList[Int]:
   def loop_deep(rem: Int, acc: LazyList[Int]) -> LazyList[Int]:
@@ -231,11 +243,19 @@ uncons_prop: Prop = forall_Prop(
     Assertion(eq_uncons(actual, expected), "uncons law")
   ))
 
+def len_List(list):
+    def go(list, acc):
+        loop list:
+            case [_, *tail]: go(tail, acc.add(1))
+            case []: acc
+    go(list, 0)
+
 cons_prop: Prop = forall_Prop(
   prod_Rand(rand_int, rand_list_int),
   "cons then uncons returns the same head and tail",
   ((head, tail_list)) -> (
-    ll = cons(lazy(() -> head), from_List(tail_list))
+    size = len_List(tail_list)
+    ll = cons_take(lazy(() -> head), from_List(tail_list), size.add(1))
     limit = list_size(tail_list).add(1)
     match uncons(ll):
       case Some((actual_head, actual_tail)):
@@ -248,15 +268,6 @@ cons_prop: Prop = forall_Prop(
         )
       case None:
         Assertion(False, "cons law")
-  ))
-
-from_lazy_prop: Prop = forall_Prop(
-  rand_list_int,
-  "from_Lazy(lazy(() -> from_List(list))) == from_List(list)",
-  list -> (
-    wrapped = from_Lazy(lazy(() -> from_List(list)))
-    limit = list_size(list).add(1)
-    Assertion(eq_List(eq_Int)(take_to_List(wrapped, limit), list), "from_Lazy law")
   ))
 
 concat_prop: Prop = forall_Prop(
@@ -297,7 +308,6 @@ lazy_list_props: Prop = suite_Prop(
     roundtrip_prop,
     uncons_prop,
     cons_prop,
-    from_lazy_prop,
     concat_prop,
     map_prop,
     flat_map_prop,
@@ -320,48 +330,8 @@ tests = TestSuite("LazyList tests", [
     "take_to_List limit"
   ),
   Assertion(
-    uncons_with_limit(from_Lazy(lazy(() -> from_List([1]))), 1) matches None,
-    "uncons_with_limit can stop early"
-  ),
-  Assertion(
-    match from_Lazy(lazy(() -> from_List([1]))):
-      case Suspend(_):
-        True
-      case _:
-        False,
-    "from_Lazy preserves suspension"
-  ),
-  Assertion(
-    match map(from_List([1, 2]), i -> i.add(1)):
-      case Mapped(_, _):
-        True
-      case _:
-        False,
+    map(from_List([1, 2]), i -> i.add(1)) matches LazyList(_, Mapped(_, _)),
     "map is deferred"
-  ),
-  Assertion(
-    match flat_map(from_List([1, 2]), i -> from_List([i])):
-      case FlatMapped(_, _):
-        True
-      case _:
-        False,
-    "flat_map is deferred"
-  ),
-  Assertion(
-    match concat(cons(lazy(() -> 1), empty_LazyList), from_Lazy(lazy(() -> from_List([2])))):
-      case Concat(_, _):
-        True
-      case _:
-        False,
-    "concat preserves laziness"
-  ),
-  Assertion(
-    match uncons(concat(cons(lazy(() -> 1), empty_LazyList), from_Lazy(lazy(() -> from_List([2]))))):
-      case Some((head, _)):
-        get_Lazy(head).eq_Int(1)
-      case None:
-        False,
-    "concat head before suspended second"
   ),
   (
     deep = deep_concat(20000)
