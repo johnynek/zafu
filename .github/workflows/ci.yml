@@ -20,11 +20,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          SOURCE_REPO="${{ github.event.pull_request.head.repo.full_name }}"
+          SOURCE_REF="${{ github.event.pull_request.head.sha }}"
           mkdir -p docs/markdown docs/html
           ./bosatsu lib fetch
           ./bosatsu lib doc \
             --outdir docs/markdown \
-            --source_repo_url "https://github.com/${{ github.repository }}/blob/main"
+            --source_repo_url "https://github.com/${SOURCE_REPO}/blob/${SOURCE_REF}"
           mapfile -t source_urls < <(
             grep -RhoE '\(https://github.com/[^)]*\)' docs/markdown --include='*.md' \
               | tr -d '()' \
