@@ -1,0 +1,532 @@
+package Zafu/Abstract/Instances/Predef
+
+from Bosatsu/Char import cmp_Char
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_from_eq,
+  eq as eq_Eq,
+)
+
+from Zafu/Abstract/Ord import (
+  Ord,
+  ord_from_cmp,
+  cmp as cmp_Ord,
+  ord_to_eq,
+)
+
+export (
+  eq_Unit,
+  ord_Unit,
+  eq_Bool,
+  ord_Bool,
+  eq_Char,
+  ord_Char,
+  eq_Comparison,
+  ord_Comparison,
+  eq_Int,
+  ord_Int,
+  eq_Float64,
+  ord_Float64,
+  eq_String,
+  ord_String,
+  eq_Option,
+  ord_Option,
+  eq_List,
+  ord_List,
+  eq_Dict,
+  ord_Dict,
+  eq_Test,
+  ord_Test,
+  eq_Order,
+  ord_Order,
+  eq_Fn1,
+  eq_Fn2,
+  eq_Fn3,
+  eq_Fn4,
+  eq_Fn5,
+  eq_Fn6,
+  eq_Fn7,
+  eq_Fn8,
+  eq_Fn9,
+  eq_Fn10,
+  eq_Fn11,
+  eq_Fn12,
+  eq_Fn13,
+  eq_Fn14,
+  eq_Fn15,
+  eq_Fn16,
+  eq_Fn17,
+  eq_Fn18,
+  eq_Fn19,
+  eq_Fn20,
+  eq_Fn21,
+  eq_Fn22,
+  eq_Fn23,
+  eq_Fn24,
+  eq_Fn25,
+  eq_Fn26,
+  eq_Fn27,
+  eq_Fn28,
+  eq_Fn29,
+  eq_Fn30,
+  eq_Fn31,
+  eq_Fn32,
+  ord_Fn1,
+  ord_Fn2,
+  ord_Fn3,
+  ord_Fn4,
+  ord_Fn5,
+  ord_Fn6,
+  ord_Fn7,
+  ord_Fn8,
+  ord_Fn9,
+  ord_Fn10,
+  ord_Fn11,
+  ord_Fn12,
+  ord_Fn13,
+  ord_Fn14,
+  ord_Fn15,
+  ord_Fn16,
+  ord_Fn17,
+  ord_Fn18,
+  ord_Fn19,
+  ord_Fn20,
+  ord_Fn21,
+  ord_Fn22,
+  ord_Fn23,
+  ord_Fn24,
+  ord_Fn25,
+  ord_Fn26,
+  ord_Fn27,
+  ord_Fn28,
+  ord_Fn29,
+  ord_Fn30,
+  ord_Fn31,
+  ord_Fn32,
+  eq_Tuple1,
+  eq_Tuple2,
+  eq_Tuple3,
+  eq_Tuple4,
+  eq_Tuple5,
+  eq_Tuple6,
+  eq_Tuple7,
+  eq_Tuple8,
+  eq_Tuple9,
+  eq_Tuple10,
+  eq_Tuple11,
+  eq_Tuple12,
+  eq_Tuple13,
+  eq_Tuple14,
+  eq_Tuple15,
+  eq_Tuple16,
+  eq_Tuple17,
+  eq_Tuple18,
+  eq_Tuple19,
+  eq_Tuple20,
+  eq_Tuple21,
+  eq_Tuple22,
+  eq_Tuple23,
+  eq_Tuple24,
+  eq_Tuple25,
+  eq_Tuple26,
+  eq_Tuple27,
+  eq_Tuple28,
+  eq_Tuple29,
+  eq_Tuple30,
+  eq_Tuple31,
+  eq_Tuple32,
+  ord_Tuple1,
+  ord_Tuple2,
+  ord_Tuple3,
+  ord_Tuple4,
+  ord_Tuple5,
+  ord_Tuple6,
+  ord_Tuple7,
+  ord_Tuple8,
+  ord_Tuple9,
+  ord_Tuple10,
+  ord_Tuple11,
+  ord_Tuple12,
+  ord_Tuple13,
+  ord_Tuple14,
+  ord_Tuple15,
+  ord_Tuple16,
+  ord_Tuple17,
+  ord_Tuple18,
+  ord_Tuple19,
+  ord_Tuple20,
+  ord_Tuple21,
+  ord_Tuple22,
+  ord_Tuple23,
+  ord_Tuple24,
+  ord_Tuple25,
+  ord_Tuple26,
+  ord_Tuple27,
+  ord_Tuple28,
+  ord_Tuple29,
+  ord_Tuple30,
+  ord_Tuple31,
+  ord_Tuple32,
+)
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def cmp_then(first: Comparison, next: Unit -> Comparison) -> Comparison:
+  match first:
+    case EQ:
+      next(Unit)
+    case not_eq:
+      not_eq
+
+def cmp_Bool(left: Bool, right: Bool) -> Comparison:
+  match (left, right):
+    case (False, True):
+      LT
+    case (True, False):
+      GT
+    case _:
+      EQ
+
+def rank_Comparison(value: Comparison) -> Int:
+  match value:
+    case LT:
+      0
+    case EQ:
+      1
+    case GT:
+      2
+
+def cmp_Comparison(left: Comparison, right: Comparison) -> Comparison:
+  cmp_Int(rank_Comparison(left), rank_Comparison(right))
+
+def eq_list(eq_item: Eq[a], left: List[a], right: List[a]) -> Bool:
+  def go(left: List[a], right: List[a]) -> Bool:
+    loop (left, right):
+      case ([], []):
+        True
+      case ([left_h, *left_t], [right_h, *right_t]):
+        if eq_Eq(eq_item, left_h, right_h):
+          go(left_t, right_t)
+        else:
+          False
+      case _:
+        False
+  go(left, right)
+
+def cmp_list(ord_item: Ord[a], left: List[a], right: List[a]) -> Comparison:
+  def go(left: List[a], right: List[a]) -> Comparison:
+    recur (left, right):
+      case ([], []):
+        EQ
+      case ([], [_, *_]):
+        LT
+      case ([_, *_], []):
+        GT
+      case ([left_h, *left_t], [right_h, *right_t]):
+        cmp_then(cmp_Ord(ord_item, left_h, right_h), _ -> go(left_t, right_t))
+  go(left, right)
+
+ord_Unit: Ord[Unit] = ord_from_cmp((_, _) -> EQ)
+eq_Unit: Eq[Unit] = ord_to_eq(ord_Unit)
+
+ord_Bool: Ord[Bool] = ord_from_cmp(cmp_Bool)
+eq_Bool: Eq[Bool] = ord_to_eq(ord_Bool)
+
+ord_Char: Ord[Char] = ord_from_cmp(cmp_Char)
+eq_Char: Eq[Char] = ord_to_eq(ord_Char)
+
+ord_Comparison: Ord[Comparison] = ord_from_cmp(cmp_Comparison)
+eq_Comparison: Eq[Comparison] = ord_to_eq(ord_Comparison)
+
+ord_Int: Ord[Int] = ord_from_cmp(cmp_Int)
+eq_Int: Eq[Int] = ord_to_eq(ord_Int)
+
+ord_Float64: Ord[Float64] = ord_from_cmp(cmp_Float64)
+eq_Float64: Eq[Float64] = ord_to_eq(ord_Float64)
+
+ord_String: Ord[String] = ord_from_cmp(cmp_String)
+eq_String: Eq[String] = ord_to_eq(ord_String)
+
+def eq_Option(eq_item: Eq[a]) -> Eq[Option[a]]:
+  eq_from_eq((left, right) -> (
+    match (left, right):
+      case (Some(left_v), Some(right_v)):
+        eq_Eq(eq_item, left_v, right_v)
+      case (None, None):
+        True
+      case _:
+        False
+  ))
+
+def ord_Option(ord_item: Ord[a]) -> Ord[Option[a]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (None, None):
+        EQ
+      case (None, Some(_)):
+        LT
+      case (Some(_), None):
+        GT
+      case (Some(left_v), Some(right_v)):
+        cmp_Ord(ord_item, left_v, right_v)
+  ))
+
+def eq_List(eq_item: Eq[a]) -> Eq[List[a]]:
+  eq_from_eq((left, right) -> eq_list(eq_item, left, right))
+
+def ord_List(ord_item: Ord[a]) -> Ord[List[a]]:
+  ord_from_cmp((left, right) -> cmp_list(ord_item, left, right))
+
+def eq_Tuple1(eq1: Eq[a1]) -> Eq[Tuple1[a1]]:
+  eq_from_eq((left, right) -> (
+    match (left, right):
+      case (Tuple1(left1), Tuple1(right1)):
+        eq_Eq(eq1, left1, right1)
+  ))
+
+def ord_Tuple1(ord1: Ord[a1]) -> Ord[Tuple1[a1]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple1(left1), Tuple1(right1)):
+        cmp_Ord(ord1, left1, right1)
+  ))
+
+def eq_Tuple2(eq1: Eq[a1], eq2: Eq[a2]) -> Eq[Tuple2[a1, a2]]:
+  eq_from_eq((left, right) -> (
+    match (left, right):
+      case (Tuple2(left1, left2), Tuple2(right1, right2)):
+        and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2))
+  ))
+
+def ord_Tuple2(ord1: Ord[a1], ord2: Ord[a2]) -> Ord[Tuple2[a1, a2]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple2(left1, left2), Tuple2(right1, right2)):
+        cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2))
+  ))
+
+ord_Test: Ord[Test] = ord_from_cmp((_, _) -> EQ)
+eq_Test: Eq[Test] = ord_to_eq(ord_Test)
+
+ord_Order: forall a. Ord[Order[a]] = ord_from_cmp((_, _) -> EQ)
+eq_Order: forall a. Eq[Order[a]] = ord_to_eq(ord_Order)
+
+eq_Fn1: forall a1, a2. Eq[Fn1[a1, a2]] = eq_from_eq((_, _) -> True)
+ord_Fn1: forall a1, a2. Ord[Fn1[a1, a2]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn2: forall a1, a2, a3. Eq[Fn2[a1, a2, a3]] = eq_from_eq((_, _) -> True)
+ord_Fn2: forall a1, a2, a3. Ord[Fn2[a1, a2, a3]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn3: forall a1, a2, a3, a4. Eq[Fn3[a1, a2, a3, a4]] = eq_from_eq((_, _) -> True)
+ord_Fn3: forall a1, a2, a3, a4. Ord[Fn3[a1, a2, a3, a4]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn4: forall a1, a2, a3, a4, a5. Eq[Fn4[a1, a2, a3, a4, a5]] = eq_from_eq((_, _) -> True)
+ord_Fn4: forall a1, a2, a3, a4, a5. Ord[Fn4[a1, a2, a3, a4, a5]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn5: forall a1, a2, a3, a4, a5, a6. Eq[Fn5[a1, a2, a3, a4, a5, a6]] = eq_from_eq((_, _) -> True)
+ord_Fn5: forall a1, a2, a3, a4, a5, a6. Ord[Fn5[a1, a2, a3, a4, a5, a6]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn6: forall a1, a2, a3, a4, a5, a6, a7. Eq[Fn6[a1, a2, a3, a4, a5, a6, a7]] = eq_from_eq((_, _) -> True)
+ord_Fn6: forall a1, a2, a3, a4, a5, a6, a7. Ord[Fn6[a1, a2, a3, a4, a5, a6, a7]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn7: forall a1, a2, a3, a4, a5, a6, a7, a8. Eq[Fn7[a1, a2, a3, a4, a5, a6, a7, a8]] = eq_from_eq((_, _) -> True)
+ord_Fn7: forall a1, a2, a3, a4, a5, a6, a7, a8. Ord[Fn7[a1, a2, a3, a4, a5, a6, a7, a8]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn8: forall a1, a2, a3, a4, a5, a6, a7, a8, a9. Eq[Fn8[a1, a2, a3, a4, a5, a6, a7, a8, a9]] = eq_from_eq((_, _) -> True)
+ord_Fn8: forall a1, a2, a3, a4, a5, a6, a7, a8, a9. Ord[Fn8[a1, a2, a3, a4, a5, a6, a7, a8, a9]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn9: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10. Eq[Fn9[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]] = eq_from_eq((_, _) -> True)
+ord_Fn9: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10. Ord[Fn9[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn10: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11. Eq[Fn10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]] = eq_from_eq((_, _) -> True)
+ord_Fn10: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11. Ord[Fn10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn11: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12. Eq[Fn11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]] = eq_from_eq((_, _) -> True)
+ord_Fn11: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12. Ord[Fn11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn12: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13. Eq[Fn12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]] = eq_from_eq((_, _) -> True)
+ord_Fn12: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13. Ord[Fn12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn13: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14. Eq[Fn13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]] = eq_from_eq((_, _) -> True)
+ord_Fn13: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14. Ord[Fn13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn14: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15. Eq[Fn14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]] = eq_from_eq((_, _) -> True)
+ord_Fn14: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15. Ord[Fn14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn15: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16. Eq[Fn15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]] = eq_from_eq((_, _) -> True)
+ord_Fn15: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16. Ord[Fn15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn16: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17. Eq[Fn16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]] = eq_from_eq((_, _) -> True)
+ord_Fn16: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17. Ord[Fn16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn17: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18. Eq[Fn17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]] = eq_from_eq((_, _) -> True)
+ord_Fn17: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18. Ord[Fn17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn18: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19. Eq[Fn18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]] = eq_from_eq((_, _) -> True)
+ord_Fn18: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19. Ord[Fn18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn19: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20. Eq[Fn19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]] = eq_from_eq((_, _) -> True)
+ord_Fn19: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20. Ord[Fn19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn20: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21. Eq[Fn20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]] = eq_from_eq((_, _) -> True)
+ord_Fn20: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21. Ord[Fn20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn21: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22. Eq[Fn21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]] = eq_from_eq((_, _) -> True)
+ord_Fn21: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22. Ord[Fn21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn22: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23. Eq[Fn22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]] = eq_from_eq((_, _) -> True)
+ord_Fn22: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23. Ord[Fn22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn23: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24. Eq[Fn23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]] = eq_from_eq((_, _) -> True)
+ord_Fn23: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24. Ord[Fn23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn24: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25. Eq[Fn24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]] = eq_from_eq((_, _) -> True)
+ord_Fn24: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25. Ord[Fn24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn25: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26. Eq[Fn25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]] = eq_from_eq((_, _) -> True)
+ord_Fn25: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26. Ord[Fn25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn26: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27. Eq[Fn26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]] = eq_from_eq((_, _) -> True)
+ord_Fn26: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27. Ord[Fn26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn27: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28. Eq[Fn27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]] = eq_from_eq((_, _) -> True)
+ord_Fn27: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28. Ord[Fn27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn28: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29. Eq[Fn28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]] = eq_from_eq((_, _) -> True)
+ord_Fn28: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29. Ord[Fn28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn29: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30. Eq[Fn29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]] = eq_from_eq((_, _) -> True)
+ord_Fn29: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30. Ord[Fn29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn30: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31. Eq[Fn30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]] = eq_from_eq((_, _) -> True)
+ord_Fn30: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31. Ord[Fn30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn31: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32. Eq[Fn31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]] = eq_from_eq((_, _) -> True)
+ord_Fn31: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32. Ord[Fn31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Fn32: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32, a33. Eq[Fn32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32, a33]] = eq_from_eq((_, _) -> True)
+ord_Fn32: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32, a33. Ord[Fn32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32, a33]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple3: forall a1, a2, a3. Eq[Tuple3[a1, a2, a3]] = eq_from_eq((_, _) -> True)
+ord_Tuple3: forall a1, a2, a3. Ord[Tuple3[a1, a2, a3]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple4: forall a1, a2, a3, a4. Eq[Tuple4[a1, a2, a3, a4]] = eq_from_eq((_, _) -> True)
+ord_Tuple4: forall a1, a2, a3, a4. Ord[Tuple4[a1, a2, a3, a4]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple5: forall a1, a2, a3, a4, a5. Eq[Tuple5[a1, a2, a3, a4, a5]] = eq_from_eq((_, _) -> True)
+ord_Tuple5: forall a1, a2, a3, a4, a5. Ord[Tuple5[a1, a2, a3, a4, a5]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple6: forall a1, a2, a3, a4, a5, a6. Eq[Tuple6[a1, a2, a3, a4, a5, a6]] = eq_from_eq((_, _) -> True)
+ord_Tuple6: forall a1, a2, a3, a4, a5, a6. Ord[Tuple6[a1, a2, a3, a4, a5, a6]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple7: forall a1, a2, a3, a4, a5, a6, a7. Eq[Tuple7[a1, a2, a3, a4, a5, a6, a7]] = eq_from_eq((_, _) -> True)
+ord_Tuple7: forall a1, a2, a3, a4, a5, a6, a7. Ord[Tuple7[a1, a2, a3, a4, a5, a6, a7]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple8: forall a1, a2, a3, a4, a5, a6, a7, a8. Eq[Tuple8[a1, a2, a3, a4, a5, a6, a7, a8]] = eq_from_eq((_, _) -> True)
+ord_Tuple8: forall a1, a2, a3, a4, a5, a6, a7, a8. Ord[Tuple8[a1, a2, a3, a4, a5, a6, a7, a8]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple9: forall a1, a2, a3, a4, a5, a6, a7, a8, a9. Eq[Tuple9[a1, a2, a3, a4, a5, a6, a7, a8, a9]] = eq_from_eq((_, _) -> True)
+ord_Tuple9: forall a1, a2, a3, a4, a5, a6, a7, a8, a9. Ord[Tuple9[a1, a2, a3, a4, a5, a6, a7, a8, a9]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple10: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10. Eq[Tuple10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]] = eq_from_eq((_, _) -> True)
+ord_Tuple10: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10. Ord[Tuple10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple11: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11. Eq[Tuple11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]] = eq_from_eq((_, _) -> True)
+ord_Tuple11: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11. Ord[Tuple11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple12: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12. Eq[Tuple12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]] = eq_from_eq((_, _) -> True)
+ord_Tuple12: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12. Ord[Tuple12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple13: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13. Eq[Tuple13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]] = eq_from_eq((_, _) -> True)
+ord_Tuple13: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13. Ord[Tuple13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple14: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14. Eq[Tuple14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]] = eq_from_eq((_, _) -> True)
+ord_Tuple14: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14. Ord[Tuple14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple15: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15. Eq[Tuple15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]] = eq_from_eq((_, _) -> True)
+ord_Tuple15: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15. Ord[Tuple15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple16: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16. Eq[Tuple16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]] = eq_from_eq((_, _) -> True)
+ord_Tuple16: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16. Ord[Tuple16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple17: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17. Eq[Tuple17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]] = eq_from_eq((_, _) -> True)
+ord_Tuple17: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17. Ord[Tuple17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple18: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18. Eq[Tuple18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]] = eq_from_eq((_, _) -> True)
+ord_Tuple18: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18. Ord[Tuple18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple19: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19. Eq[Tuple19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]] = eq_from_eq((_, _) -> True)
+ord_Tuple19: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19. Ord[Tuple19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple20: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20. Eq[Tuple20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]] = eq_from_eq((_, _) -> True)
+ord_Tuple20: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20. Ord[Tuple20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple21: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21. Eq[Tuple21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]] = eq_from_eq((_, _) -> True)
+ord_Tuple21: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21. Ord[Tuple21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple22: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22. Eq[Tuple22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]] = eq_from_eq((_, _) -> True)
+ord_Tuple22: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22. Ord[Tuple22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple23: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23. Eq[Tuple23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]] = eq_from_eq((_, _) -> True)
+ord_Tuple23: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23. Ord[Tuple23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple24: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24. Eq[Tuple24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]] = eq_from_eq((_, _) -> True)
+ord_Tuple24: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24. Ord[Tuple24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple25: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25. Eq[Tuple25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]] = eq_from_eq((_, _) -> True)
+ord_Tuple25: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25. Ord[Tuple25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple26: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26. Eq[Tuple26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]] = eq_from_eq((_, _) -> True)
+ord_Tuple26: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26. Ord[Tuple26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple27: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27. Eq[Tuple27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]] = eq_from_eq((_, _) -> True)
+ord_Tuple27: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27. Ord[Tuple27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple28: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28. Eq[Tuple28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]] = eq_from_eq((_, _) -> True)
+ord_Tuple28: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28. Ord[Tuple28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple29: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29. Eq[Tuple29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]] = eq_from_eq((_, _) -> True)
+ord_Tuple29: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29. Ord[Tuple29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple30: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30. Eq[Tuple30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]] = eq_from_eq((_, _) -> True)
+ord_Tuple30: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30. Ord[Tuple30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple31: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31. Eq[Tuple31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]] = eq_from_eq((_, _) -> True)
+ord_Tuple31: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31. Ord[Tuple31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]] = ord_from_cmp((_, _) -> EQ)
+
+eq_Tuple32: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32. Eq[Tuple32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]] = eq_from_eq((_, _) -> True)
+ord_Tuple32: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32. Ord[Tuple32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]] = ord_from_cmp((_, _) -> EQ)
+
+def eq_Dict(eq_key: Eq[k], eq_value: Eq[v]) -> Eq[Dict[k, v]]:
+  pair_eq = eq_Tuple2(eq_key, eq_value)
+  eq_from_eq((left, right) -> eq_list(pair_eq, items(left), items(right)))
+
+def ord_Dict(ord_key: Ord[k], ord_value: Ord[v]) -> Ord[Dict[k, v]]:
+  pair_ord = ord_Tuple2(ord_key, ord_value)
+  ord_from_cmp((left, right) -> cmp_list(pair_ord, items(left), items(right)))
+
+tests = TestSuite("Predef Eq/Ord instances", [
+  Assertion(eq_Eq(eq_Int, 1, 1), "eq_Int"),
+  Assertion(cmp_Ord(ord_Int, 1, 2) matches LT, "ord_Int"),
+  (
+    opt_eq = eq_Option(eq_Int)
+    Assertion(eq_Eq(opt_eq, Some(1), Some(1)), "eq_Option")
+  ),
+  (
+    pair_eq = eq_Tuple2(eq_Int, eq_String)
+    Assertion(eq_Eq(pair_eq, Tuple2(1, "a"), Tuple2(1, "a")), "eq_Tuple2")
+  ),
+  (
+    list_ord = ord_List(ord_Int)
+    Assertion(cmp_Ord(list_ord, [1, 2], [1, 3]) matches LT, "ord_List")
+  ),
+  (
+    tuple3_eq = eq_Tuple3
+    Assertion(eq_Eq(tuple3_eq, Tuple3(1, 2, 3), Tuple3(4, 5, 6)), "eq_Tuple3 fallback")
+  ),
+])

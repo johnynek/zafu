@@ -1,0 +1,164 @@
+package Zafu/Abstract/Ord
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_from_eq,
+  eq as eq_Eq,
+)
+
+export (
+  Ord,
+  ord_from_cmp,
+  ord_specialized,
+  cmp,
+  eq,
+  lt,
+  lteq,
+  gt,
+  gteq,
+  min,
+  max,
+  reverse,
+  ord_to_eq,
+  laws_Ord,
+)
+
+struct Ord[a](
+  cmp_fn: (a, a) -> Comparison,
+  lt_fn: (a, a) -> Bool,
+  lteq_fn: (a, a) -> Bool,
+  gt_fn: (a, a) -> Bool,
+  gteq_fn: (a, a) -> Bool,
+  min_fn: (a, a) -> a,
+  max_fn: (a, a) -> a,
+)
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def or_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    True
+  else:
+    right
+
+def eq_Comparison(left: Comparison, right: Comparison) -> Bool:
+  (left, right) matches (LT, LT) | (EQ, EQ) | (GT, GT)
+
+def inverse_Comparison(value: Comparison) -> Comparison:
+  match value:
+    case LT:
+      GT
+    case EQ:
+      EQ
+    case GT:
+      LT
+
+# Constructor for cases where specialized operations are provided.
+def ord_specialized(
+  cmp_fn: (a, a) -> Comparison,
+  lt_fn: (a, a) -> Bool,
+  lteq_fn: (a, a) -> Bool,
+  gt_fn: (a, a) -> Bool,
+  gteq_fn: (a, a) -> Bool,
+  min_fn: (a, a) -> a,
+  max_fn: (a, a) -> a,
+) -> Ord[a]:
+  Ord(cmp_fn, lt_fn, lteq_fn, gt_fn, gteq_fn, min_fn, max_fn)
+
+# Constructor from comparison function; all other operations are derived.
+def ord_from_cmp(cmp_fn: (a, a) -> Comparison) -> Ord[a]:
+  lt_fn = (left, right) -> cmp_fn(left, right) matches LT
+  lteq_fn = (left, right) -> cmp_fn(left, right) matches LT | EQ
+  gt_fn = (left, right) -> cmp_fn(left, right) matches GT
+  gteq_fn = (left, right) -> cmp_fn(left, right) matches GT | EQ
+  min_fn = (left, right) -> (
+    match cmp_fn(left, right):
+      case GT:
+        right
+      case LT | EQ:
+        left
+  )
+  max_fn = (left, right) -> (
+    match cmp_fn(left, right):
+      case LT:
+        right
+      case GT | EQ:
+        left
+  )
+  ord_specialized(cmp_fn, lt_fn, lteq_fn, gt_fn, gteq_fn, min_fn, max_fn)
+
+def cmp(inst: Ord[a], left: a, right: a) -> Comparison:
+  Ord(cmp_fn, _, _, _, _, _, _) = inst
+  cmp_fn(left, right)
+
+def eq(inst: Ord[a], left: a, right: a) -> Bool:
+  cmp(inst, left, right) matches EQ
+
+def lt(inst: Ord[a], left: a, right: a) -> Bool:
+  Ord(_, lt_fn, _, _, _, _, _) = inst
+  lt_fn(left, right)
+
+def lteq(inst: Ord[a], left: a, right: a) -> Bool:
+  Ord(_, _, lteq_fn, _, _, _, _) = inst
+  lteq_fn(left, right)
+
+def gt(inst: Ord[a], left: a, right: a) -> Bool:
+  Ord(_, _, _, gt_fn, _, _, _) = inst
+  gt_fn(left, right)
+
+def gteq(inst: Ord[a], left: a, right: a) -> Bool:
+  Ord(_, _, _, _, gteq_fn, _, _) = inst
+  gteq_fn(left, right)
+
+def min(inst: Ord[a], left: a, right: a) -> a:
+  Ord(_, _, _, _, _, min_fn, _) = inst
+  min_fn(left, right)
+
+def max(inst: Ord[a], left: a, right: a) -> a:
+  Ord(_, _, _, _, _, _, max_fn) = inst
+  max_fn(left, right)
+
+def reverse(inst: Ord[a]) -> Ord[a]:
+  ord_from_cmp((left, right) -> cmp(inst, right, left))
+
+def ord_to_eq(inst: Ord[a]) -> Eq[a]:
+  eq_from_eq((left, right) -> eq(inst, left, right))
+
+# Basic Ord law checker for three sample values.
+def laws_Ord(inst: Ord[a], x: a, y: a, z: a) -> Bool:
+  reflexive = eq(inst, x, x)
+  antisymmetric = eq_Comparison(cmp(inst, x, y), inverse_Comparison(cmp(inst, y, x)))
+  transitive = if and_Bool(lteq(inst, x, y), lteq(inst, y, z)):
+    lteq(inst, x, z)
+  else:
+    True
+  total = or_Bool(lteq(inst, x, y), lteq(inst, y, x))
+  and_Bool(and_Bool(reflexive, antisymmetric), and_Bool(transitive, total))
+
+tests = TestSuite("Ord tests", [
+  (
+    int_ord = ord_from_cmp(cmp_Int)
+    Assertion(lt(int_ord, 1, 2), "lt derived")
+  ),
+  (
+    int_ord = ord_from_cmp(cmp_Int)
+    Assertion(gteq(int_ord, 2, 2), "gteq derived")
+  ),
+  (
+    int_ord = ord_from_cmp(cmp_Int)
+    Assertion(min(int_ord, 2, 1).eq_Int(1), "min derived")
+  ),
+  (
+    int_ord = ord_from_cmp(cmp_Int)
+    int_eq = ord_to_eq(int_ord)
+    Assertion(eq_Eq(int_eq, 3, 3), "ord_to_eq")
+  ),
+  (
+    int_ord = ord_from_cmp(cmp_Int)
+    Assertion(laws_Ord(int_ord, 1, 2, 3), "laws_Ord sanity")
+  ),
+])
