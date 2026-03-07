@@ -26,6 +26,7 @@ export (
   LazyList,
   empty_LazyList,
   concat,
+  cons,
   cons_take,
   filter,
   flat_map,
@@ -75,6 +76,11 @@ def cons_take(head: Lazy[a], tail: Lazy[LazyList[a]], size: Int) -> LazyList[a]:
           tailv
         )))
       )
+
+# Prepends `head` to a strict tail.
+def cons(head: Lazy[a], tail: LazyList[a]) -> LazyList[a]:
+    LazyList(tail_size, _) = tail
+    cons_take(head, lazy(() -> tail), tail_size.add(1))
 
 def len_List(list):
     def go(list, acc):
@@ -391,7 +397,7 @@ uncons_prop: Prop = forall_Prop(
 
 cons_prop: Prop = forall_Prop(
   prod_Rand(rand_int, rand_list_int),
-  "cons then uncons returns the same head and tail",
+  "cons_take then uncons returns the same head and tail",
   ((head, tail_list)) -> (
     size = len_List(tail_list)
     ll = cons_take(lazy(() -> head), lazy(() -> from_List(tail_list)), size.add(1))
@@ -406,6 +412,24 @@ cons_prop: Prop = forall_Prop(
         )
       case None:
         Assertion(False, "cons law")
+  ))
+
+cons_strict_prop: Prop = forall_Prop(
+  prod_Rand(rand_int, rand_list_int),
+  "cons then uncons returns the same head and tail",
+  ((head, tail_list)) -> (
+    ll = cons(lazy(() -> head), from_List(tail_list))
+    match uncons(ll):
+      case Some((actual_head, actual_tail)):
+        Assertion(
+          and_Bool(
+            get_Lazy(actual_head).eq_Int(head),
+            eq_List(eq_Int)(to_List(actual_tail), tail_list)
+          ),
+          "cons strict law"
+        )
+      case None:
+        Assertion(False, "cons strict law")
   ))
 
 concat_prop: Prop = forall_Prop(
@@ -464,6 +488,7 @@ lazy_list_props: Prop = suite_Prop(
     roundtrip_prop,
     uncons_prop,
     cons_prop,
+    cons_strict_prop,
     concat_prop,
     map_prop,
     flat_map_prop,
