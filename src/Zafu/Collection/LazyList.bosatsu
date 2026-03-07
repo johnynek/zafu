@@ -26,7 +26,7 @@ export (
   LazyList,
   empty_LazyList,
   concat,
-  cons,
+  cons_take,
   filter,
   flat_map,
   from_List,
@@ -60,10 +60,21 @@ def take(ll: LazyList[a], count: Int) -> LazyList[a]:
     elif cmp_Int(count, 0) matches LT | EQ: empty_LazyList
     else: LazyList(count, vll)
 
-# Prepends `head` to `tail`.
-def cons(head: Lazy[a], tail: LazyList[a]) -> LazyList[a]:
-    LazyList(tail_size, tailv) = tail
-    LazyList(tail_size.add(1), Cons(head, lazy(() -> tailv)))
+# Prepends `head` to `tail`, capped to `size`.
+# `tail` is lazy so we don't force the right-hand side to build this node.
+def cons_take(head: Lazy[a], tail: Lazy[LazyList[a]], size: Int) -> LazyList[a]:
+    if cmp_Int(size, 0) matches LT | EQ:
+      empty_LazyList
+    elif size matches 1:
+      LazyList(1, Cons(head, lazy_empty_v))
+    else:
+      LazyList(
+        size,
+        Cons(head, lazy(() -> (
+          LazyList(_, tailv) = get_Lazy(tail)
+          tailv
+        )))
+      )
 
 def len_List(list):
     def go(list, acc):
@@ -382,7 +393,8 @@ cons_prop: Prop = forall_Prop(
   prod_Rand(rand_int, rand_list_int),
   "cons then uncons returns the same head and tail",
   ((head, tail_list)) -> (
-    ll = cons(lazy(() -> head), from_List(tail_list))
+    size = len_List(tail_list)
+    ll = cons_take(lazy(() -> head), lazy(() -> from_List(tail_list)), size.add(1))
     match uncons(ll):
       case Some((actual_head, actual_tail)):
         Assertion(
