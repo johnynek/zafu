@@ -26,7 +26,7 @@ export (
   LazyList,
   empty_LazyList,
   concat,
-  cons_take,
+  cons,
   filter,
   flat_map,
   from_List,
@@ -60,20 +60,10 @@ def take(ll: LazyList[a], count: Int) -> LazyList[a]:
     elif cmp_Int(count, 0) matches LT | EQ: empty_LazyList
     else: LazyList(count, vll)
 
-# Prepends `head` to `tail`, capping the resulting bound at `size`.
-def cons_take(head: Lazy[a], tail: LazyList[a], size: Int) -> LazyList[a]:
-    #if cmp_Int(size, 0) matches LT | EQ: empty_LazyList
-    if cmp_Int(size, 0) matches LT | EQ: empty_LazyList
-    elif size matches 1:
-        #e: Lazy[LazyList[a]] = lazy_empty
-        LazyList(size, Cons(head, lazy_empty_v))
-    else:
-        LazyList(tail_size, tailv) = tail
-        max_size = tail_size.add(1)
-        this_size =
-            if cmp_Int(max_size, size) matches LT: max_size
-            else: size
-        LazyList(this_size, Cons(head, lazy(() -> tailv)))
+# Prepends `head` to `tail`.
+def cons(head: Lazy[a], tail: LazyList[a]) -> LazyList[a]:
+    LazyList(tail_size, tailv) = tail
+    LazyList(tail_size.add(1), Cons(head, lazy(() -> tailv)))
 
 def len_List(list):
     def go(list, acc):
@@ -108,6 +98,7 @@ def filter(ll: LazyList[a], pred: a -> Bool) -> LazyList[a]:
     LazyList(sz, vll) = ll
     vll1 = match vll:
         case Empty: Empty
+        case Mapped(source, fn): Filtered(source, fn, x -> pred(fn(x)))
         case Filtered(source, to_value, pred1):
             Filtered(source, to_value, x -> pred1(x) if pred(to_value(x)) else False)
         case notEmptyFiltered: Filtered(notEmptyFiltered, x -> x, pred)
@@ -391,8 +382,7 @@ cons_prop: Prop = forall_Prop(
   prod_Rand(rand_int, rand_list_int),
   "cons then uncons returns the same head and tail",
   ((head, tail_list)) -> (
-    size = len_List(tail_list)
-    ll = cons_take(lazy(() -> head), from_List(tail_list), size.add(1))
+    ll = cons(lazy(() -> head), from_List(tail_list))
     match uncons(ll):
       case Some((actual_head, actual_tail)):
         Assertion(
