@@ -25,6 +25,22 @@ jobs:
           ./bosatsu lib doc \
             --outdir docs/markdown \
             --source_repo_url "https://github.com/${{ github.repository }}/blob/main"
+          mapfile -t source_urls < <(
+            grep -RhoE '\(https://github.com/[^)]*\)' docs/markdown --include='*.md' \
+              | tr -d '()' \
+              | sort -u
+          )
+          if [[ "${#source_urls[@]}" -eq 0 ]]; then
+            echo "No source URLs were generated in markdown docs." >&2
+            exit 1
+          fi
+          for source_url in "${source_urls[@]}"; do
+            http_code="$(curl -L -s -o /dev/null -w '%{http_code}' "$source_url")"
+            if [[ "$http_code" != "200" ]]; then
+              echo "Unreachable source URL ($http_code): $source_url" >&2
+              exit 1
+            fi
+          done
           converted=0
           while IFS= read -r -d '' md_file; do
             converted=1
