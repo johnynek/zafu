@@ -29,6 +29,7 @@ export (
   cons,
   cons_take,
   filter,
+  foldl,
   flat_map,
   from_List,
   to_List,
@@ -285,6 +286,106 @@ def uncons(ll: LazyList[a]) -> Option[(Lazy[a], LazyList[a])]:
   LazyList(size, vll) = ll
   uncons_step(size, vll, [])
 
+def foldl_from_list(sz: Int, items: List[a], init: b, fn: (b, a) -> b) -> b:
+  def loop_fold(rem: Int, rem_items: List[a], acc: b) -> b:
+    recur rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match rem_items:
+          case []:
+            acc
+          case [head, *tail]:
+            loop_fold(rem.sub(1), tail, fn(acc, head))
+  loop_fold(sz, items, init)
+
+def foldl_from_list_mapped(sz: Int, items: List[a], init: b, map_fn: a -> c, fn: (b, c) -> b) -> b:
+  def loop_fold(rem: Int, rem_items: List[a], acc: b) -> b:
+    recur rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match rem_items:
+          case []:
+            acc
+          case [head, *tail]:
+            loop_fold(rem.sub(1), tail, fn(acc, map_fn(head)))
+  loop_fold(sz, items, init)
+
+def foldl_from_list_filtered(sz: Int, items: List[a], init: b, to_value: a -> c, pred: a -> Bool, fn: (b, c) -> b) -> b:
+  def loop_fold(rem: Int, rem_items: List[a], acc: b) -> b:
+    recur rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match rem_items:
+          case []:
+            acc
+          case [head, *tail]:
+            next_acc = fn(acc, to_value(head)) if pred(head) else acc
+            loop_fold(rem.sub(1), tail, next_acc)
+  loop_fold(sz, items, init)
+
+def foldl_filtered(sz: Int, source: VLazyList[b], init: c, to_value: b -> a, pred: b -> Bool, fn: (c, a) -> c) -> c:
+  recur (sz, source):
+    case _ if cmp_Int(sz, 0) matches LT | EQ:
+      init
+    case (_, Empty):
+      init
+    case (sz, Cons(head, tail)):
+      item = get_Lazy(head)
+      next_acc = fn(init, to_value(item)) if pred(item) else init
+      foldl_filtered(sz.sub(1), get_Lazy(tail), next_acc, to_value, pred, fn)
+    case (sz, FromList(items)):
+      foldl_from_list_filtered(sz, items, init, to_value, pred, fn)
+    case (sz, Mapped(inner, map_fn)):
+      foldl_filtered(sz, inner, init, x -> to_value(map_fn(x)), x -> pred(map_fn(x)), fn)
+    case (sz, Filtered(inner, inner_to_value, inner_pred)):
+      foldl_filtered(
+        sz,
+        inner,
+        init,
+        x -> to_value(inner_to_value(x)),
+        x -> inner_pred(x) if pred(inner_to_value(x)) else False,
+        fn
+      )
+
+def foldl_mapped(sz: Int, source: VLazyList[b], init: c, map_fn: b -> a, fn: (c, a) -> c) -> c:
+  recur (sz, source):
+    case _ if cmp_Int(sz, 0) matches LT | EQ:
+      init
+    case (_, Empty):
+      init
+    case (sz, Cons(head, tail)):
+      next_acc = fn(init, map_fn(get_Lazy(head)))
+      foldl_mapped(sz.sub(1), get_Lazy(tail), next_acc, map_fn, fn)
+    case (sz, FromList(items)):
+      foldl_from_list_mapped(sz, items, init, map_fn, fn)
+    case (sz, Mapped(inner, inner_fn)):
+      foldl_mapped(sz, inner, init, x -> map_fn(inner_fn(x)), fn)
+    case (sz, Filtered(inner, to_value, pred)):
+      foldl_filtered(sz, inner, init, x -> map_fn(to_value(x)), pred, fn)
+
+# Strict left fold over values in iteration order.
+# Traversal works directly on VLazyList nodes to avoid repeated uncons reconstruction.
+def foldl(ll: LazyList[a], init: b, fn: (b, a) -> b) -> b:
+  LazyList(size, vll) = ll
+  def loop_fold(rem: Int, current: VLazyList[a], acc: b) -> b:
+    recur (rem, current):
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case (_, Empty):
+        acc
+      case (sz, Cons(head, tail)):
+        loop_fold(sz.sub(1), get_Lazy(tail), fn(acc, get_Lazy(head)))
+      case (sz, FromList(items)):
+        foldl_from_list(sz, items, acc, fn)
+      case (sz, Mapped(source, map_fn)):
+        foldl_mapped(sz, source, acc, map_fn, fn)
+      case (sz, Filtered(source, to_value, pred)):
+        foldl_filtered(sz, source, acc, to_value, pred, fn)
+  loop_fold(size, vll, init)
+
 # Lazily flat-maps elements with `fn`.
 # Expansion is bounded by the source list bound.
 def flat_map(ll: LazyList[a], fn: a -> LazyList[b]) -> LazyList[b]:
@@ -358,6 +459,9 @@ def eq_uncons(actual: Option[(Lazy[Int], LazyList[Int])], expected: Option[(Int,
 def flat_map_model(list: List[Int]) -> List[Int]:
   rev = list.foldl_List([], (acc, item) -> [item.add(1), item, *acc])
   rev.reverse()
+
+def foldl_step(acc: Int, item: Int) -> Int:
+  item.sub(acc)
 
 def singleton(item: a) -> LazyList[a]:
     LazyList(1, Cons(lazy(() -> item), lazy_empty_v))
@@ -482,6 +586,35 @@ filter_flat_map_prop: Prop = forall_Prop(
     Assertion(eq_List(eq_Int)(actual, expected), "filter via flat_map law")
   ))
 
+foldl_prop: Prop = forall_Prop(
+  rand_list_int,
+  "foldl(from_List(list), init, fn) matches list foldl",
+  list -> (
+    expected = list.foldl_List(0, foldl_step)
+    actual = foldl(from_List(list), 0, foldl_step)
+    Assertion(actual.eq_Int(expected), "foldl base law")
+  ))
+
+foldl_composed_prop: Prop = forall_Prop(
+  prod_Rand(prod_Rand(rand_list_int, rand_list_int), rand_int),
+  "foldl matches to_List(...).foldl_List for composed lazy lists",
+  (((left, right), take_count)) -> (
+    keep_even = i -> mod_Int(i, 2).eq_Int(0)
+    ll = take(
+      cons(
+        lazy(() -> 99),
+        concat(
+          map(from_List(left), i -> i.add(1)),
+          filter(map(from_List(right), i -> i.sub(1)), keep_even)
+        )
+      ),
+      take_count
+    )
+    expected = to_List(ll).foldl_List(0, foldl_step)
+    actual = foldl(ll, 0, foldl_step)
+    Assertion(actual.eq_Int(expected), "foldl composed law")
+  ))
+
 lazy_list_props: Prop = suite_Prop(
   "LazyList properties",
   [
@@ -494,6 +627,8 @@ lazy_list_props: Prop = suite_Prop(
     flat_map_prop,
     filter_prop,
     filter_flat_map_prop,
+    foldl_prop,
+    foldl_composed_prop,
   ]
 )
 
@@ -511,6 +646,10 @@ tests = TestSuite("LazyList tests", [
   Assertion(
     to_List(take(from_List([1, 2, 3]), 2)) matches [1, 2],
     "take limit"
+  ),
+  Assertion(
+    foldl(from_List([1, 2, 3]), 0, add).eq_Int(6),
+    "foldl sanity"
   ),
   Assertion(
     map(from_List([1, 2]), i -> i.add(1)) matches LazyList(_, Mapped(_, _)),
@@ -543,7 +682,7 @@ tests = TestSuite("LazyList tests", [
     deep = deep_concat(20000)
     deep_list = to_List(deep)
     expected_sum = 20000.mul(20001).div(2)
-    deep_sum = deep_list.foldl_List(0, add)
+    deep_sum = foldl(deep, 0, add)
     Assertion(
       and_Bool(
         list_size(deep_list).eq_Int(20000),
