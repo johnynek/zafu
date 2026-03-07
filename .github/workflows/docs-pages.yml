@@ -30,7 +30,9 @@ jobs:
         run: |
           mkdir -p docs/markdown
           ./bosatsu lib fetch
-          ./bosatsu lib doc --outdir docs/markdown
+          ./bosatsu lib doc \
+            --outdir docs/markdown \
+            --source_repo_url "https://github.com/${{ github.repository }}/blob/main"
       - name: Convert markdown docs to HTML
         shell: bash
         run: |
