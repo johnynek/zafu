@@ -14,15 +14,15 @@ touch_paths:
   - src/Zafu/Abstract/Applicative.bosatsu
   - src/Zafu/Abstract/Alternative.bosatsu
   - src/Zafu/Abstract/Monad.bosatsu
-  - src/Zafu/Abstract/Laws.bosatsu
+  - src/Zafu/Abstract/Compose.bosatsu
   - src/Zafu/Abstract/Instances/Primitive.bosatsu
-  - src/Zafu/Abstract/Instances/Vector.bosatsu
-  - src/Zafu/Abstract/Instances/Chain.bosatsu
-  - src/Zafu/Abstract/Instances/LazyList.bosatsu
-  - src/Zafu/Abstract/Instances/Deque.bosatsu
+  - src/Zafu/Collection/Vector.bosatsu
+  - src/Zafu/Collection/Chain.bosatsu
+  - src/Zafu/Collection/LazyList.bosatsu
+  - src/Zafu/Collection/Deque.bosatsu
 depends_on: []
 estimated_size: M
-generated_at: 2026-03-07T21:54:19Z
+generated_at: 2026-03-07T22:20:00Z
 ---
 
 # Design: Zafu/Abstract namespace
@@ -31,63 +31,50 @@ _Issue: #28 (https://github.com/johnynek/zafu/issues/28)_
 
 ## Summary
 
-Proposes an opaque, evolvable dictionary-based abstraction layer under Zafu/Abstract, with per-typeclass contracts, phased implementation, acceptance criteria, risks, and rollout strategy for issue #28.
+Define an opaque, evolvable typeclass-dictionary architecture under `Zafu/Abstract`, with canonical instances colocated with data types when possible, law helpers colocated with each typeclass, and composition support (`Compose`) for `Foldable`, `Traverse`, and `Applicative`.
 
----
-issue: 28
-title: design a Zafu/Abstract/ namespace
-status: proposed
-base_branch: main
----
+## Status
 
-# Design: Zafu/Abstract namespace
-
-Issue: #28
+Proposed
 
 ## Context
 
-Zafu currently ships concrete collection APIs under `Zafu/Collection/*` (`Vector`, `Chain`, `LazyList`, `Deque`) with explicit per-module functions. We do not yet have a unified abstraction namespace for typeclass-style programming.
+Zafu currently exposes concrete collection modules (`Vector`, `Chain`, `LazyList`, `Deque`) with explicit per-module APIs. We want a shared abstraction layer for typeclass-style programming that keeps representation details hidden while still allowing optimized implementations.
 
-Issue #28 asks for a representation that:
+Issue #28 asks for a design that:
 
-1. Models typeclasses as values.
-2. Allows default derivation from minimal primitives.
-3. Allows specialization for hot paths.
-4. Keeps internal representation hidden for long-term compatibility.
-5. Covers common abstractions: `Eq`, `Ord`, `Hash`, `Show`, `Semigroup`, `Monoid`, `Foldable`, `Traverse`, `Applicative`, `Alternative`, `Monad`.
-6. Supports generic loops/traversals without exposing collection internals.
+1. Represents typeclasses as values.
+2. Supports default derivation from minimal primitives.
+3. Allows future specialization without breaking callers.
+4. Covers `Eq`, `Ord`, `Hash`, `Show`, `Semigroup`, `Monoid`, `Foldable`, `Traverse`, `Applicative`, `Alternative`, `Monad`.
+5. Enables generic loops/traversals without forcing exposure of private data constructors.
 
 ## Goals
 
-1. Add a stable `Zafu/Abstract/*` architecture for explicit dictionary passing.
-2. Keep abstraction representations opaque so internals can evolve without downstream source breaks.
-3. Support both minimal and specialized constructors.
-4. Enable higher-kinded programming patterns needed for folds, traversals, and effect composition.
-5. Keep adoption incremental and additive to current `Zafu/Collection/*` APIs.
+1. Add `Zafu/Abstract/*` with opaque dictionary types and stable function-based APIs.
+2. Keep constructors private so internals can evolve compatibly.
+3. Keep API naming small and idiomatic.
+4. Support composition patterns needed in real code (`Compose` and hierarchy projections).
+5. Keep rollout additive and source-compatible with existing collection APIs.
 
 ## Non-goals
 
-1. No implicit/global instance search in this change.
-2. No forced migration of existing collection call sites.
-3. No prelude redesign in this issue.
+1. Implicit/global instance search.
+2. A full prelude redesign.
+3. Immediate migration of all existing call sites.
 
-## Decision
+## Decision summary
 
-Adopt an opaque dictionary design for each abstraction module.
+1. Use opaque dictionary structs for each abstraction module.
+2. Export minimal constructors and derived accessors as functions.
+3. Keep canonical instances with the type definition package when possible.
+4. Keep law helpers in each typeclass module (not one shared public `Laws` package).
+5. Add `Compose` support so `Foldable`, `Traverse`, and `Applicative` compose explicitly.
+6. Keep short names (`map`, `foldl`, `empty`, etc.) and rely on import aliasing (`as`) on collisions.
 
-1. Each abstraction exports an opaque type plus constructor/accessor functions.
-2. Constructors are not exported directly (`Ord` is exported, `Ord()` is not).
-3. Every abstraction has a minimal constructor from law-defining primitives.
-4. Abstractions with meaningful performance deltas also get a specialized constructor.
-5. Callers interact via module functions, not record field access.
+## Namespace layout
 
-This picks the "do both" direction from the issue: minimal primitives remain simple, and specialization remains possible without exposing internals.
-
-## Architecture
-
-### 1. Namespace layout
-
-New modules:
+Core abstraction modules:
 
 1. `src/Zafu/Abstract/Eq.bosatsu`
 2. `src/Zafu/Abstract/Ord.bosatsu`
@@ -100,24 +87,25 @@ New modules:
 9. `src/Zafu/Abstract/Applicative.bosatsu`
 10. `src/Zafu/Abstract/Alternative.bosatsu`
 11. `src/Zafu/Abstract/Monad.bosatsu`
-12. `src/Zafu/Abstract/Laws.bosatsu`
-13. `src/Zafu/Abstract/Instances/Primitive.bosatsu`
-14. `src/Zafu/Abstract/Instances/Vector.bosatsu`
-15. `src/Zafu/Abstract/Instances/Chain.bosatsu`
-16. `src/Zafu/Abstract/Instances/LazyList.bosatsu`
-17. `src/Zafu/Abstract/Instances/Deque.bosatsu`
+12. `src/Zafu/Abstract/Compose.bosatsu`
 
-### 2. Opaque dictionary pattern
+Instance location:
 
-Pattern used by every module:
+1. Canonical collection instances are exported from collection packages (`Zafu/Collection/Vector`, `Chain`, `LazyList`, `Deque`).
+2. Primitive/base-type instances live in `src/Zafu/Abstract/Instances/Primitive.bosatsu` (since those types are not defined in this repo).
+3. Optional orphan/compat instances may be added in dedicated modules only when colocating is impossible.
 
-1. Opaque dictionary type.
-2. Minimal constructor from primitives.
-3. Optional specialized constructor for overrides.
-4. Accessor and derived helper functions.
-5. Projection helpers for hierarchy edges.
+## Core API pattern
 
-Illustrative API shape for `Ord`:
+Each abstraction module follows this shape:
+
+1. Export opaque type (e.g., `Ord`) without exporting constructor syntax (`Ord()`).
+2. Export minimal constructor from law primitives.
+3. Optionally export specialized constructor for hot paths.
+4. Export all operations as module functions.
+5. Export law-check helper functions for that abstraction.
+
+Illustrative `Ord` shape:
 
     package Zafu/Abstract/Ord
 
@@ -134,9 +122,9 @@ Illustrative API shape for `Ord`:
       max,
       reverse,
       ord_to_eq,
+      laws_Ord,
     )
 
-    # constructor is private because Ord() is not exported
     struct Ord[a](
       cmp_fn: (a, a) -> Comparison,
       lt_fn: (a, a) -> Bool,
@@ -147,155 +135,166 @@ Illustrative API shape for `Ord`:
       max_fn: (a, a) -> a,
     )
 
-`ord_from_cmp` derives all secondary operations from `cmp`. `ord_specialized` permits overriding hot-path functions.
-
-### 3. Abstraction contracts
+## Abstraction contracts
 
 1. `Eq[a]`
 - Minimal: `eq`
 - Derived: `neq`
-- Constructor: `eq_from_fn`
+- Laws export: `laws_Eq`
 
 2. `Ord[a]`
 - Minimal: `cmp`
-- Derived: `lt`, `lteq`, `gt`, `gteq`, `min`, `max`, plus `Eq`
-- Constructors: `ord_from_cmp`, `ord_specialized`
+- Derived: `eq`, `lt`, `lteq`, `gt`, `gteq`, `min`, `max`
 - Projection: `ord_to_eq`
+- Constructors: `ord_from_cmp`, `ord_specialized`
+- Laws export: `laws_Ord`
 
 3. `Hash[a]`
-- Minimal: `hash` plus coherent `Eq[a]`
-- Constructor: `hash_from_fn(eq_inst, hash_fn)`
+- Minimal: `hash` with coherent `Eq[a]`
 - Accessors: `hash`, `hash_eq`
+- Laws export: `laws_Hash`
 
 4. `Show[a]`
 - Minimal: `show`
-- Constructor: `show_from_fn`
+- Laws export: lightweight round-trip/readability checks where applicable
 
 5. `Semigroup[a]`
 - Minimal: `combine`
-- Constructor: `semigroup_from_combine`
+- Laws export: `laws_Semigroup`
 
 6. `Monoid[a]`
-- Minimal: `empty` and `combine`
-- Constructor: `monoid_from_parts`
+- Minimal: `empty`, `combine`
 - Projection: `monoid_to_semigroup`
+- Laws export: `laws_Monoid`
 
-7. `Foldable[f]`
-- Minimal: `foldl` and `foldr`
-- Derived: `size`, `to_list`, `all`, `any`, `fold_map`
-
-8. `Applicative[f]`
+7. `Applicative[f]`
 - Minimal: `pure`, `ap`
 - Derived: `map`, `map2`, `product_l`, `product_r`
+- Laws export: `laws_Applicative`
+
+8. `Monad[f]`
+- Minimal: `pure`, `flat_map`
+- Derived: `map`, `ap`, `flatten`
+- Projection: `monad_to_applicative`
+- Laws export: `laws_Monad`
 
 9. `Alternative[f]`
 - Minimal: `applicative`, `empty`, `or_else`
 - Derived: `some`, `many`
 - Projection: `alternative_to_applicative`
+- Laws export: `laws_Alternative`
 
-10. `Monad[f]`
-- Minimal: `pure`, `flat_map`
-- Derived: `map`, `ap`, `flatten`
-- Projection: `monad_to_applicative`
-
-11. `Traverse[t]`
+10. `Traverse[t]`
 - Minimal: `traverse`
 - Derived: `sequence`, `map`
-- Dependency: consumes `Applicative[g]` to traverse into effect `g`
+- Projection: `traverse_to_foldable`
+- Laws export: `laws_Traverse`
 
-### 4. Hidden internals and generic loops
+11. `Foldable[f]`
+- Primary export: `foldl`, `foldr`, `fold_map`, `size`, `to_list`, `all`, `any`
+- Constructor strategy: direct constructor for performance-sensitive types and derived constructor `foldable_from_traverse` via `Traverse`
+- Laws export: `laws_Foldable`
 
-The design keeps collection internals private while enabling generic algorithms.
+## Composition support
 
-1. `Foldable` and `Traverse` instances are implemented in `Zafu/Abstract/Instances/*` using only exported collection operations.
-2. Generic code can run loops and traversals via dictionaries instead of pattern matching on internal enums.
-3. Existing collection modules remain free to change representation without breaking generic code.
+Add `Compose` in `src/Zafu/Abstract/Compose.bosatsu`:
 
-### 5. Instance strategy
+    struct Compose[f: * -> *, g: * -> *, a](fga: f[g[a]])
 
-Canonical instances live in `Zafu/Abstract/Instances/*`.
+Provide composition builders:
 
-1. `Primitive`: `Int`, `Bool`, `String`, `Comparison` dictionaries for first-order abstractions.
-2. `Vector`: first complete higher-kinded implementation target (`Foldable`, `Traverse`, `Applicative`, `Monad`) plus first-order dictionaries.
-3. `Chain`: same model as `Vector` once signatures are validated.
-4. `LazyList`: start with `Eq`, `Show`, `Foldable`; add `Traverse` and `Monad` only with law coverage over bounded semantics.
-5. `Deque`: start with `Eq`, `Ord`, `Show`, `Foldable`; add higher-kinded instances after law and performance review.
+1. `compose_foldable(fold_f, fold_g) -> Foldable[Compose[f, g, *]]`
+2. `compose_traverse(traverse_f, traverse_g) -> Traverse[Compose[f, g, *]]`
+3. `compose_applicative(app_f, app_g) -> Applicative[Compose[f, g, *]]`
+
+This gives reusable composition for the abstractions where laws support it.
+
+## Instance placement and performance
+
+Canonical instance exports should live with each data type package to preserve ergonomics and allow optimized implementations over private structures.
+
+1. `Vector` instance values exported from `src/Zafu/Collection/Vector.bosatsu`.
+2. `Chain` instance values exported from `src/Zafu/Collection/Chain.bosatsu`.
+3. `LazyList` instance values exported from `src/Zafu/Collection/LazyList.bosatsu`.
+4. `Deque` instance values exported from `src/Zafu/Collection/Deque.bosatsu`.
+
+This enables efficient `Traverse`/`Foldable` implementations that can use private internals when needed, while still exposing only abstraction dictionaries to callers.
+
+## Naming and imports
+
+Use minimal function names inside abstraction modules (`map`, `foldl`, `empty`, `combine`, etc.). Resolve collisions with explicit import aliasing:
+
+1. `from Zafu/Abstract/Foldable import (foldl as foldl_Foldable)`
+2. `from Zafu/Collection/Deque import (foldl as foldl_Deque)`
+
+Do not force globally unique long names at definition sites.
 
 ## Implementation plan
 
-### Phase 0: Representation spike
-
-1. Implement `Applicative` and `Traverse` shells plus one concrete `Vector` instance.
-2. Confirm Bosatsu type signatures and inference are practical for dictionary fields.
-3. Lock naming and constructor conventions only after this compiles.
-
-### Phase 1: First-order abstractions
+### Phase 1: first-order core
 
 1. Add `Eq`, `Ord`, `Hash`, `Show`, `Semigroup`, `Monoid` modules.
-2. Implement minimal and specialized constructors where relevant (`Ord` initially).
+2. Add per-module law helper exports (`laws_Eq`, `laws_Ord`, etc.).
 3. Add primitive instances in `Instances/Primitive`.
-4. Add first-order law checks in `Laws`.
 
-### Phase 2: Higher-kinded abstractions
+### Phase 2: higher-kinded core + composition
 
-1. Add `Foldable`, `Applicative`, `Alternative`, `Monad`, `Traverse` modules.
-2. Add derived helper functions only after minimal constructors compile.
-3. Implement `Vector` instances first.
+1. Add `Applicative`, `Monad`, `Alternative`, `Traverse`, `Foldable`.
+2. Add `foldable_from_traverse` / `traverse_to_foldable` helpers.
+3. Add `Compose` module and composition builders for `Foldable`, `Traverse`, `Applicative`.
 
-### Phase 3: Expand instances
+### Phase 3: colocated instances
 
-1. Add `Chain` instances matching `Vector` coverage.
-2. Add `LazyList` and `Deque` instances incrementally with law checks.
-3. Add specialization hooks only for measured hotspots.
+1. Export canonical abstraction dictionaries directly from each collection module.
+2. Start with `Vector` and `Chain` for full higher-kinded coverage.
+3. Add `LazyList` and `Deque` incrementally with law/property checks and performance review.
 
-### Phase 4: Adoption and examples
+### Phase 4: adoption and validation
 
-1. Add generic utilities that consume abstraction dictionaries.
-2. Keep existing concrete helpers intact for source compatibility.
-3. Add docs/examples showing explicit dictionary passing patterns.
+1. Add examples using explicit dictionary passing.
+2. Keep existing collection APIs source-compatible.
+3. Validate with `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh`.
 
 ## Acceptance criteria
 
-1. `docs/design/28-design-a-zafu-abstract-namespace.md` documents this architecture and plan.
-2. Modules exist for all requested abstractions under `src/Zafu/Abstract/*`.
-3. Constructors for abstraction dictionary internals are not exported.
-4. `Ord` supports creation from only `cmp` and exposes `lt/lteq/gt/gteq/min/max` through exported functions.
-5. Hierarchy projections exist: `ord_to_eq`, `monoid_to_semigroup`, `monad_to_applicative`, `alternative_to_applicative`.
-6. Primitive instances compile and satisfy core first-order laws.
-7. At least one collection (`Vector`) has working `Foldable`, `Traverse`, `Applicative`, and `Monad` instances with law checks.
-8. `Chain` has at least `Foldable` and `Traverse` instances.
-9. Existing `Zafu/Collection/*` public APIs remain source-compatible.
-10. `./bosatsu lib check` passes.
-11. `./bosatsu lib test` passes.
-12. `scripts/test.sh` passes before merge.
+1. Design doc is updated with this architecture.
+2. All requested abstraction modules exist under `src/Zafu/Abstract/*`.
+3. Abstraction constructors remain opaque (constructor syntax not exported).
+4. `Ord` can be built from `cmp` and exposes derived operations via exported functions.
+5. `Traverse` exposes `traverse_to_foldable` (or equivalent) to derive `Foldable`.
+6. `Compose` type exists and has composition builders for `Foldable`, `Traverse`, and `Applicative`.
+7. Law helper exports exist in each typeclass module (not only in a single central public laws package).
+8. Canonical instances for collection types are exported from their collection modules.
+9. Primitive/base instances exist for common primitive types.
+10. Naming guidance uses short names plus aliasing on collisions.
+11. Existing collection APIs remain source-compatible.
+12. `./bosatsu lib check` passes.
+13. `./bosatsu lib test` passes.
+14. `scripts/test.sh` passes before merge.
 
 ## Risks and mitigations
 
-1. Risk: higher-kinded dictionary signatures are harder than first-order dictionaries.
-- Mitigation: Phase 0 compile spike before broad rollout.
+1. Risk: higher-kinded signatures in Bosatsu may require iteration.
+- Mitigation: validate with an early compile spike in `Vector`.
 
-2. Risk: dictionary indirection can add runtime overhead.
-- Mitigation: keep minimal kernels small, precompute derived ops in constructors, add specialized constructors only where benchmarked.
+2. Risk: dictionary dispatch overhead in hot paths.
+- Mitigation: support specialized constructors and colocated optimized instances.
 
-3. Risk: multiple competing instances can cause incoherent behavior.
-- Mitigation: provide canonical instances under `Zafu/Abstract/Instances/*` and document naming/import conventions.
+3. Risk: law regressions for lazy structures and hashing coherence.
+- Mitigation: per-module law helpers plus property tests with supplied `Rand` generators.
 
-4. Risk: law regressions, especially around `Hash` coherence and lazy traversal semantics.
-- Mitigation: centralize law checks in `Zafu/Abstract/Laws` and require property coverage in CI.
-
-5. Risk: API name collisions (`map`, `empty`, `foldl`) across modules.
-- Mitigation: recommend qualified or aliased imports in examples and docs.
+4. Risk: name collisions across modules.
+- Mitigation: standardize on short names and explicit `as` aliases at import sites.
 
 ## Rollout notes
 
-1. Land as additive modules on `main`; do not remove current collection helpers.
-2. Land in small PRs by phase to isolate type-system and law failures.
-3. Keep first merge focused on module scaffolding plus `Vector` proof of viability.
-4. Delay broad deprecations until the abstraction API is exercised and benchmarked.
-5. Treat `LazyList` and `Deque` higher-kinded instances as opt-in follow-ups after correctness and perf validation.
+1. Ship as additive API on `main`.
+2. Use small phased PRs so type-system and law failures are isolated.
+3. Land collection-local instance exports before broad generic refactors.
+4. Defer deprecations until usage and performance are validated.
 
-## Follow-ups out of scope for this issue
+## Out of scope
 
-1. Implicit instance resolution.
-2. Prelude/re-export surface design.
-3. Cross-repo ecosystem alignment beyond this repository.
+1. Implicit instance search.
+2. Prelude/re-export strategy.
+3. Cross-repo ecosystem policy.
