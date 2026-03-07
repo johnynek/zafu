@@ -14,249 +14,288 @@ touch_paths:
   - src/Zafu/Abstract/Applicative.bosatsu
   - src/Zafu/Abstract/Alternative.bosatsu
   - src/Zafu/Abstract/Monad.bosatsu
+  - src/Zafu/Abstract/Laws.bosatsu
   - src/Zafu/Abstract/Instances/Primitive.bosatsu
   - src/Zafu/Abstract/Instances/Vector.bosatsu
   - src/Zafu/Abstract/Instances/Chain.bosatsu
   - src/Zafu/Abstract/Instances/LazyList.bosatsu
   - src/Zafu/Abstract/Instances/Deque.bosatsu
-  - src/Zafu/Abstract/Laws.bosatsu
-  - src/Zafu/Collection/Deque.bosatsu
-  - src/Zafu/Collection/Vector.bosatsu
-  - src/Zafu/Collection/Chain.bosatsu
-  - src/Zafu/Collection/LazyList.bosatsu
 depends_on: []
 estimated_size: M
-generated_at: 2026-03-07T21:36:05Z
+generated_at: 2026-03-07T21:54:19Z
 ---
 
-# Design: Zafu/Abstract Namespace (Issue #28)
+# Design: Zafu/Abstract namespace
 
 _Issue: #28 (https://github.com/johnynek/zafu/issues/28)_
 
 ## Summary
 
-Defines an opaque, evolvable typeclass-dictionary architecture for Zafu under `Zafu/Abstract`, with phased implementation for first-order and higher-kinded abstractions, canonical instances, laws, risks, and rollout guidance.
+Proposes an opaque, evolvable dictionary-based abstraction layer under Zafu/Abstract, with per-typeclass contracts, phased implementation, acceptance criteria, risks, and rollout strategy for issue #28.
 
-# Design: `Zafu/Abstract` Namespace (Issue #28)
+---
+issue: 28
+title: design a Zafu/Abstract/ namespace
+status: proposed
+base_branch: main
+---
 
-## Status
-Proposed
+# Design: Zafu/Abstract namespace
+
+Issue: #28
 
 ## Context
-Zafu currently exposes concrete collection APIs (`Vector`, `Chain`, `Deque`, `LazyList`) with explicit per-type helpers (`eq`, `cmp`, `foldl`, `map`, etc.). We do not yet have a common abstraction namespace for typeclass-style programming.
 
-Issue #28 asks for a design that:
-- Represents typeclasses as values (dictionary style, e.g., `Ord[a]` holds behavior for `a`).
-- Supports both default derivation from minimal primitives and future specialization for performance.
-- Preserves API evolution flexibility by keeping internals hidden (export `Ord`, not `Ord()`).
-- Works for common abstractions: `Eq`, `Ord`, `Hash`, `Show`, `Semigroup`, `Monoid`, `Foldable`, `Traverse`, `Applicative`, `Alternative`, `Monad`.
-- Enables generic loops/traversals without exposing collection internals.
+Zafu currently ships concrete collection APIs under `Zafu/Collection/*` (`Vector`, `Chain`, `LazyList`, `Deque`) with explicit per-module functions. We do not yet have a unified abstraction namespace for typeclass-style programming.
+
+Issue #28 asks for a representation that:
+
+1. Models typeclasses as values.
+2. Allows default derivation from minimal primitives.
+3. Allows specialization for hot paths.
+4. Keeps internal representation hidden for long-term compatibility.
+5. Covers common abstractions: `Eq`, `Ord`, `Hash`, `Show`, `Semigroup`, `Monoid`, `Foldable`, `Traverse`, `Applicative`, `Alternative`, `Monad`.
+6. Supports generic loops/traversals without exposing collection internals.
 
 ## Goals
-1. Define a stable `Zafu/Abstract/*` architecture for first-class typeclass dictionaries.
-2. Keep representation opaque so internals can evolve without downstream breaks.
-3. Provide minimal constructors plus derived operations for ergonomics.
-4. Make higher-kinded abstractions (`Foldable`, `Traverse`, `Applicative`, `Alternative`, `Monad`) practical for existing Zafu collections.
-5. Keep adoption incremental and non-breaking for current collection APIs.
+
+1. Add a stable `Zafu/Abstract/*` architecture for explicit dictionary passing.
+2. Keep abstraction representations opaque so internals can evolve without downstream source breaks.
+3. Support both minimal and specialized constructors.
+4. Enable higher-kinded programming patterns needed for folds, traversals, and effect composition.
+5. Keep adoption incremental and additive to current `Zafu/Collection/*` APIs.
 
 ## Non-goals
-1. Rewriting all existing collection APIs in one PR.
-2. Introducing implicit/global instance resolution.
-3. Solving all syntax ergonomics (import naming collisions, prelude design) in the first iteration.
 
-## Decision Summary
-Adopt **opaque dictionary structs per abstraction**, with:
-- **Minimal constructor(s)** from law-defining primitive operations.
-- **Optional specialized constructor(s)** for optimized overrides.
-- **Module-level accessor functions** (callers do not read fields directly).
-- **Projection helpers** for hierarchy edges (e.g., `ord_to_eq`, `monoid_to_semigroup`, `monad_to_applicative`).
+1. No implicit/global instance search in this change.
+2. No forced migration of existing collection call sites.
+3. No prelude redesign in this issue.
 
-This combines the flexibility of “store full function set” with long-term compatibility from hidden internals.
+## Decision
 
-## Namespace Layout
-Proposed modules:
+Adopt an opaque dictionary design for each abstraction module.
 
-- `src/Zafu/Abstract/Eq.bosatsu`
-- `src/Zafu/Abstract/Ord.bosatsu`
-- `src/Zafu/Abstract/Hash.bosatsu`
-- `src/Zafu/Abstract/Show.bosatsu`
-- `src/Zafu/Abstract/Semigroup.bosatsu`
-- `src/Zafu/Abstract/Monoid.bosatsu`
-- `src/Zafu/Abstract/Foldable.bosatsu`
-- `src/Zafu/Abstract/Traverse.bosatsu`
-- `src/Zafu/Abstract/Applicative.bosatsu`
-- `src/Zafu/Abstract/Alternative.bosatsu`
-- `src/Zafu/Abstract/Monad.bosatsu`
-- `src/Zafu/Abstract/Instances/*` (canonical instances)
-- `src/Zafu/Abstract/Laws.bosatsu` (property-law helpers)
+1. Each abstraction exports an opaque type plus constructor/accessor functions.
+2. Constructors are not exported directly (`Ord` is exported, `Ord()` is not).
+3. Every abstraction has a minimal constructor from law-defining primitives.
+4. Abstractions with meaningful performance deltas also get a specialized constructor.
+5. Callers interact via module functions, not record field access.
 
-## Core API Shape
-Pattern used by every abstraction module:
-1. Opaque type export only (no constructor export).
-2. One minimal constructor from primitives.
+This picks the "do both" direction from the issue: minimal primitives remain simple, and specialization remains possible without exposing internals.
+
+## Architecture
+
+### 1. Namespace layout
+
+New modules:
+
+1. `src/Zafu/Abstract/Eq.bosatsu`
+2. `src/Zafu/Abstract/Ord.bosatsu`
+3. `src/Zafu/Abstract/Hash.bosatsu`
+4. `src/Zafu/Abstract/Show.bosatsu`
+5. `src/Zafu/Abstract/Semigroup.bosatsu`
+6. `src/Zafu/Abstract/Monoid.bosatsu`
+7. `src/Zafu/Abstract/Foldable.bosatsu`
+8. `src/Zafu/Abstract/Traverse.bosatsu`
+9. `src/Zafu/Abstract/Applicative.bosatsu`
+10. `src/Zafu/Abstract/Alternative.bosatsu`
+11. `src/Zafu/Abstract/Monad.bosatsu`
+12. `src/Zafu/Abstract/Laws.bosatsu`
+13. `src/Zafu/Abstract/Instances/Primitive.bosatsu`
+14. `src/Zafu/Abstract/Instances/Vector.bosatsu`
+15. `src/Zafu/Abstract/Instances/Chain.bosatsu`
+16. `src/Zafu/Abstract/Instances/LazyList.bosatsu`
+17. `src/Zafu/Abstract/Instances/Deque.bosatsu`
+
+### 2. Opaque dictionary pattern
+
+Pattern used by every module:
+
+1. Opaque dictionary type.
+2. Minimal constructor from primitives.
 3. Optional specialized constructor for overrides.
-4. Accessor/derived operations as plain functions.
+4. Accessor and derived helper functions.
+5. Projection helpers for hierarchy edges.
 
-Illustrative shape for `Ord`:
+Illustrative API shape for `Ord`:
 
-```bosatsu
-package Zafu/Abstract/Ord
+    package Zafu/Abstract/Ord
 
-export (
-  Ord,
-  ord_from_cmp,
-  ord_specialized,
-  cmp,
-  lt,
-  lteq,
-  gt,
-  gteq,
-  min,
-  max,
-  reverse,
-  ord_to_eq,
-)
+    export (
+      Ord,
+      ord_from_cmp,
+      ord_specialized,
+      cmp,
+      lt,
+      lteq,
+      gt,
+      gteq,
+      min,
+      max,
+      reverse,
+      ord_to_eq,
+    )
 
-# constructor remains private because Ord() is not exported
-struct Ord[a](
-  cmp_fn: (a, a) -> Comparison,
-  lt_fn: (a, a) -> Bool,
-  lteq_fn: (a, a) -> Bool,
-  gt_fn: (a, a) -> Bool,
-  gteq_fn: (a, a) -> Bool,
-  min_fn: (a, a) -> a,
-  max_fn: (a, a) -> a,
-)
-```
+    # constructor is private because Ord() is not exported
+    struct Ord[a](
+      cmp_fn: (a, a) -> Comparison,
+      lt_fn: (a, a) -> Bool,
+      lteq_fn: (a, a) -> Bool,
+      gt_fn: (a, a) -> Bool,
+      gteq_fn: (a, a) -> Bool,
+      min_fn: (a, a) -> a,
+      max_fn: (a, a) -> a,
+    )
 
-`ord_from_cmp` derives defaults for all secondary ops. `ord_specialized` allows opt-in replacement of selected ops while preserving a single opaque public type.
+`ord_from_cmp` derives all secondary operations from `cmp`. `ord_specialized` permits overriding hot-path functions.
 
-## Abstraction-by-Abstraction Design
-Minimal primitives and key derived operations:
+### 3. Abstraction contracts
 
 1. `Eq[a]`
-- Primitive: `eq: (a, a) -> Bool`
+- Minimal: `eq`
 - Derived: `neq`
 - Constructor: `eq_from_fn`
 
 2. `Ord[a]`
-- Primitive: `cmp: (a, a) -> Comparison`
-- Derived: `eq`, `lt`, `lteq`, `gt`, `gteq`, `min`, `max`
+- Minimal: `cmp`
+- Derived: `lt`, `lteq`, `gt`, `gteq`, `min`, `max`, plus `Eq`
 - Constructors: `ord_from_cmp`, `ord_specialized`
 - Projection: `ord_to_eq`
 
 3. `Hash[a]`
-- Primitive: `hash: a -> Int`
-- Required companion: `Eq[a]` for hash/eq coherence
+- Minimal: `hash` plus coherent `Eq[a]`
 - Constructor: `hash_from_fn(eq_inst, hash_fn)`
+- Accessors: `hash`, `hash_eq`
 
 4. `Show[a]`
-- Primitive: `show: a -> String`
+- Minimal: `show`
 - Constructor: `show_from_fn`
 
 5. `Semigroup[a]`
-- Primitive: `combine: (a, a) -> a`
+- Minimal: `combine`
 - Constructor: `semigroup_from_combine`
 
 6. `Monoid[a]`
-- Primitive: `empty: a` plus semigroup combine
-- Constructor: `monoid_from_parts(empty, combine)`
+- Minimal: `empty` and `combine`
+- Constructor: `monoid_from_parts`
 - Projection: `monoid_to_semigroup`
 
 7. `Foldable[f]`
-- Primitive: `foldl` and `foldr` (or one + derived counterpart)
-- Derived: `to_list`, `size`, `all`, `any`, `fold_map`
+- Minimal: `foldl` and `foldr`
+- Derived: `size`, `to_list`, `all`, `any`, `fold_map`
 
 8. `Applicative[f]`
-- Primitive: `pure`, `ap`
+- Minimal: `pure`, `ap`
 - Derived: `map`, `map2`, `product_l`, `product_r`
 
-9. `Monad[f]`
-- Primitive: `pure`, `flat_map`
-- Derived: `map`, `ap`
-- Projection: `monad_to_applicative`
-
-10. `Alternative[f]`
-- Primitive: `applicative`, `empty`, `or_else`
+9. `Alternative[f]`
+- Minimal: `applicative`, `empty`, `or_else`
 - Derived: `some`, `many`
 - Projection: `alternative_to_applicative`
 
+10. `Monad[f]`
+- Minimal: `pure`, `flat_map`
+- Derived: `map`, `ap`, `flatten`
+- Projection: `monad_to_applicative`
+
 11. `Traverse[t]`
-- Primitive: `traverse`
-- Derived: `sequence`, `map` via identity applicative
-- Dependency: consumes `Applicative[g]` argument for effect `g`
+- Minimal: `traverse`
+- Derived: `sequence`, `map`
+- Dependency: consumes `Applicative[g]` to traverse into effect `g`
 
-## How This Supports Hidden Collection Internals
-`Foldable`/`Traverse` instances for `Vector`, `Chain`, and `LazyList` can be built from already exported operations (`foldl_*`, `foldr_*`, `map_*`, constructors like `empty_*`, `prepend_*`, `append_*`) without exposing internal enum constructors.
+### 4. Hidden internals and generic loops
 
-Result: generic algorithms can operate on abstract capabilities instead of concrete internals, while each collection preserves private representation.
+The design keeps collection internals private while enabling generic algorithms.
 
-## Instance Strategy
-Use dedicated instance modules under `src/Zafu/Abstract/Instances/` to avoid polluting collection modules and to centralize canonical dictionaries.
+1. `Foldable` and `Traverse` instances are implemented in `Zafu/Abstract/Instances/*` using only exported collection operations.
+2. Generic code can run loops and traversals via dictionaries instead of pattern matching on internal enums.
+3. Existing collection modules remain free to change representation without breaking generic code.
 
-Initial canonical instances:
-1. `Primitive.bosatsu`: `Int`, `Bool`, `String`, `Comparison` for `Eq`/`Ord`/`Show`/`Hash` as available.
-2. `Vector.bosatsu`: `Eq`, `Ord`, `Show`, `Foldable`, `Traverse`, `Applicative`, `Monad` (where lawful and practical).
-3. `Chain.bosatsu`: same profile as `Vector`.
-4. `LazyList.bosatsu`: `Eq`, `Show`, `Foldable`, and `Traverse`/`Monad` if law checks pass with bounded semantics.
-5. `Deque.bosatsu`: `Eq`, `Ord`, `Show`, `Foldable` first; add `Traverse`/`Monad` only after `map`/`flat_map` API exists and laws pass.
+### 5. Instance strategy
 
-## Implementation Plan
+Canonical instances live in `Zafu/Abstract/Instances/*`.
+
+1. `Primitive`: `Int`, `Bool`, `String`, `Comparison` dictionaries for first-order abstractions.
+2. `Vector`: first complete higher-kinded implementation target (`Foldable`, `Traverse`, `Applicative`, `Monad`) plus first-order dictionaries.
+3. `Chain`: same model as `Vector` once signatures are validated.
+4. `LazyList`: start with `Eq`, `Show`, `Foldable`; add `Traverse` and `Monad` only with law coverage over bounded semantics.
+5. `Deque`: start with `Eq`, `Ord`, `Show`, `Foldable`; add higher-kinded instances after law and performance review.
+
+## Implementation plan
+
+### Phase 0: Representation spike
+
+1. Implement `Applicative` and `Traverse` shells plus one concrete `Vector` instance.
+2. Confirm Bosatsu type signatures and inference are practical for dictionary fields.
+3. Lock naming and constructor conventions only after this compiles.
 
 ### Phase 1: First-order abstractions
+
 1. Add `Eq`, `Ord`, `Hash`, `Show`, `Semigroup`, `Monoid` modules.
-2. Keep constructors opaque and provide constructor/accessor/projection functions.
-3. Add basic primitive instances in `Instances/Primitive.bosatsu`.
+2. Implement minimal and specialized constructors where relevant (`Ord` initially).
+3. Add primitive instances in `Instances/Primitive`.
+4. Add first-order law checks in `Laws`.
 
 ### Phase 2: Higher-kinded abstractions
-1. Add `Foldable`, `Applicative`, `Monad`, `Alternative`, `Traverse` modules.
-2. Start with one “compile spike” instance (`Vector`) to validate type signatures and inference.
-3. Add derived helper operations only after minimal constructors compile cleanly.
 
-### Phase 3: Collection instances
-1. Implement instance modules for `Vector`, `Chain`, `LazyList`, `Deque`.
-2. Reuse existing exported collection operations; do not expose internal constructors.
-3. Where collection API lacks needed primitive ops, add minimal helpers in collection module (e.g., `map` for `Deque`) behind normal API review.
+1. Add `Foldable`, `Applicative`, `Alternative`, `Monad`, `Traverse` modules.
+2. Add derived helper functions only after minimal constructors compile.
+3. Implement `Vector` instances first.
 
-### Phase 4: Laws and integration
-1. Add `Zafu/Abstract/Laws.bosatsu` with reusable law test functions.
-2. Validate core laws for each canonical instance (Eq reflexive/symmetric/transitive; Ord consistency; Monoid identity; Monad laws; Traverse naturality/composition/identity).
-3. Add one or two generic examples that use only abstraction dictionaries (no concrete collection assumptions).
+### Phase 3: Expand instances
 
-## Acceptance Criteria
-1. `docs/design/28-design-a-zafu-abstract-namespace.md` is added with this architecture and plan.
-2. New modules exist for all requested abstractions under `src/Zafu/Abstract/`.
-3. All abstraction types are opaque to callers (constructors not exported).
-4. `Ord` can be created from only `cmp` and supports `lt/lteq/gt/gteq/min/max` through exported functions.
-5. Hierarchy projection helpers exist where applicable (`ord_to_eq`, `monoid_to_semigroup`, `monad_to_applicative`, `alternative_to_applicative`).
-6. Canonical primitive instances compile and pass core laws.
-7. Collection instances exist at least for `Vector` and `Chain` for `Foldable` + `Traverse`, and for `Vector` or `Chain` for `Applicative` + `Monad`.
-8. Existing collection APIs remain source-compatible (no required call-site migration).
-9. `./bosatsu lib check` and `./bosatsu lib test` pass after integration.
+1. Add `Chain` instances matching `Vector` coverage.
+2. Add `LazyList` and `Deque` instances incrementally with law checks.
+3. Add specialization hooks only for measured hotspots.
 
-## Risks and Mitigations
-1. Higher-kinded signature limitations in Bosatsu.
-- Mitigation: run an early compile spike in `Applicative`/`Traverse` with `Vector`; adjust representation before broad rollout.
+### Phase 4: Adoption and examples
 
-2. Dictionary overhead (extra closures / indirect calls).
-- Mitigation: keep minimal primitive fields, precompute hot derived functions in constructors, and allow specialized constructors.
+1. Add generic utilities that consume abstraction dictionaries.
+2. Keep existing concrete helpers intact for source compatibility.
+3. Add docs/examples showing explicit dictionary passing patterns.
 
-3. Instance incoherence (multiple conflicting dictionaries for same type).
-- Mitigation: define canonical instances in `Zafu/Abstract/Instances/*`; document naming and import conventions.
+## Acceptance criteria
 
-4. Law regressions (especially `Hash` coherence and `Traverse` laws for lazy structures).
-- Mitigation: centralized law test helpers and CI-enforced property tests.
+1. `docs/design/28-design-a-zafu-abstract-namespace.md` documents this architecture and plan.
+2. Modules exist for all requested abstractions under `src/Zafu/Abstract/*`.
+3. Constructors for abstraction dictionary internals are not exported.
+4. `Ord` supports creation from only `cmp` and exposes `lt/lteq/gt/gteq/min/max` through exported functions.
+5. Hierarchy projections exist: `ord_to_eq`, `monoid_to_semigroup`, `monad_to_applicative`, `alternative_to_applicative`.
+6. Primitive instances compile and satisfy core first-order laws.
+7. At least one collection (`Vector`) has working `Foldable`, `Traverse`, `Applicative`, and `Monad` instances with law checks.
+8. `Chain` has at least `Foldable` and `Traverse` instances.
+9. Existing `Zafu/Collection/*` public APIs remain source-compatible.
+10. `./bosatsu lib check` passes.
+11. `./bosatsu lib test` passes.
+12. `scripts/test.sh` passes before merge.
 
-5. API naming collisions in explicit imports.
-- Mitigation: maintain module-scoped naming conventions and optionally provide suffixed aliases where collisions are common.
+## Risks and mitigations
 
-## Rollout Notes
-1. Roll out as additive API on `main`; keep existing concrete helper functions intact.
-2. Migrate selected internal/generic utilities to dictionary-based abstractions incrementally.
-3. Defer any deprecations of old helpers until abstraction APIs are exercised by real users and performance-tested.
-4. Prefer small PRs by phase to reduce review risk and isolate type-system issues.
+1. Risk: higher-kinded dictionary signatures are harder than first-order dictionaries.
+- Mitigation: Phase 0 compile spike before broad rollout.
 
-## Out of Scope / Follow-ups
-1. Implicit instance search or global coherence enforcement.
-2. Full prelude design and wildcard re-export strategy.
-3. Cross-package ecosystem alignment beyond this repository.
+2. Risk: dictionary indirection can add runtime overhead.
+- Mitigation: keep minimal kernels small, precompute derived ops in constructors, add specialized constructors only where benchmarked.
+
+3. Risk: multiple competing instances can cause incoherent behavior.
+- Mitigation: provide canonical instances under `Zafu/Abstract/Instances/*` and document naming/import conventions.
+
+4. Risk: law regressions, especially around `Hash` coherence and lazy traversal semantics.
+- Mitigation: centralize law checks in `Zafu/Abstract/Laws` and require property coverage in CI.
+
+5. Risk: API name collisions (`map`, `empty`, `foldl`) across modules.
+- Mitigation: recommend qualified or aliased imports in examples and docs.
+
+## Rollout notes
+
+1. Land as additive modules on `main`; do not remove current collection helpers.
+2. Land in small PRs by phase to isolate type-system and law failures.
+3. Keep first merge focused on module scaffolding plus `Vector` proof of viability.
+4. Delay broad deprecations until the abstraction API is exercised and benchmarked.
+5. Treat `LazyList` and `Deque` higher-kinded instances as opt-in follow-ups after correctness and perf validation.
+
+## Follow-ups out of scope for this issue
+
+1. Implicit instance resolution.
+2. Prelude/re-export surface design.
+3. Cross-repo ecosystem alignment beyond this repository.
