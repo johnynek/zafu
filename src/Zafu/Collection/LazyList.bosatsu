@@ -39,20 +39,26 @@ export (
 enum VLazyList[a: +*]:
   Empty
   Cons(head: Lazy[a], tail: Lazy[VLazyList[a]])
+  FromList(items: List[a])
   Mapped[b](source: VLazyList[b], fn: b -> a)
 
+# A lazy sequence with a known upper bound on its size.
+# The bound is used to keep traversals finite and stack-safe.
 struct LazyList[a: +*](bound: Int, list: VLazyList[a]) 
 
+# The empty lazy list.
 empty_LazyList: forall a. LazyList[a] = LazyList(0, Empty)
 lazy_empty_v = lazy(() -> Empty)
 
+# Returns a prefix with at most `count` elements.
+# Negative counts return the empty list.
 def take(ll: LazyList[a], count: Int) -> LazyList[a]:
     LazyList(b, vll) = ll
     if cmp_Int(b, count) matches LT | EQ: ll
     elif cmp_Int(count, 0) matches LT | EQ: empty_LazyList
     else: LazyList(count, vll)
 
-# build a new lazy list at most a given size
+# Prepends `head` to `tail`, capping the resulting bound at `size`.
 def cons_take(head: Lazy[a], tail: LazyList[a], size: Int) -> LazyList[a]:
     #if cmp_Int(size, 0) matches LT | EQ: empty_LazyList
     if cmp_Int(size, 0) matches LT | EQ: empty_LazyList
@@ -67,14 +73,24 @@ def cons_take(head: Lazy[a], tail: LazyList[a], size: Int) -> LazyList[a]:
             else: size
         LazyList(this_size, Cons(head, lazy(() -> tailv)))
 
-# TODO we could maybe lift this into a FromList node
-def from_List(lst: List[a]) -> LazyList[a]:
-  (_, ll) = lst.reverse().foldl_List((0, empty_LazyList), ((sz, acc), item) -> (
-    size = sz.add(1)
-    (size, cons_take(lazy(() -> item), acc, size))
-  ))
-  ll
+def len_List(list):
+    def go(list, acc):
+        loop list:
+            case [_, *tail]: go(tail, acc.add(1))
+            case []: acc
+    go(list, 0)
 
+# Builds a lazy list view over an existing strict list.
+# Construction is O(n) for length calculation, without rebuilding nodes.
+def from_List(lst: List[a]) -> LazyList[a]:
+  size = len_List(lst)
+  if cmp_Int(size, 0) matches LT | EQ:
+    empty_LazyList
+  else:
+    LazyList(size, FromList(lst))
+
+# Lazily maps elements with `fn`.
+# Nested maps are composed to avoid extra traversal layers.
 def map(ll: LazyList[a], fn: a -> b) -> LazyList[b]:
     LazyList(sz, vll) = ll
     vll1 = match vll:
@@ -83,6 +99,8 @@ def map(ll: LazyList[a], fn: a -> b) -> LazyList[b]:
         case notEmptyMapped: Mapped(notEmptyMapped, fn)
     LazyList(sz, vll1)
 
+# Concatenates two lazy lists while preserving laziness.
+# Empty inputs are returned directly without rebuilding.
 def concat(first: LazyList[a], second: LazyList[a]) -> LazyList[a]:
     LazyList(size_first, vfirst) = first
     LazyList(size_second, vsecond) = second
@@ -97,12 +115,27 @@ def concat(first: LazyList[a], second: LazyList[a]) -> LazyList[a]:
                 case (_, Empty): vsecond
                 case (sz, Cons(h, t)):
                     Cons(h, lazy(() -> loop(sz.sub(1), get_Lazy(t))))
+                case (sz, FromList(items)):
+                    match items:
+                        case []:
+                            vsecond
+                        case [head, *tail]:
+                            Cons(lazy(() -> head),
+                                lazy(() -> loop(sz.sub(1), FromList(tail))))
                 case (sz, Mapped(Cons(h, t), fn)):
                     Cons(lazy(() -> fn(get_Lazy(h))), lazy(() -> (
                         next_size = sz.sub(1)
                         LazyList(_, inner) = LazyList(next_size, get_Lazy(t)).map(fn)
                         loop(next_size, inner))
                     ))
+                case (sz, Mapped(FromList(items), fn)):
+                    match items:
+                        case []:
+                            vsecond
+                        case [head, *tail]:
+                            next_size = sz.sub(1)
+                            Cons(lazy(() -> fn(head)),
+                                lazy(() -> loop(next_size, Mapped(FromList(tail), fn))))
                 case (_, Mapped(_, _)):
                     # by invariant this never happens:
                     vsecond
@@ -124,6 +157,19 @@ def uncons_step(sz: Int, current: VLazyList[a], pending: List[LazyList[a]]) -> O
   recur (sz, current, pending):
     case _ if cmp_Int(sz, 0) matches LT | EQ: None
     case (_, Empty, _): None
+    case (sz, FromList(items), []):
+        match items:
+          case []:
+            None
+          case [head, *tail]:
+            Some((lazy(() -> head), LazyList(sz.sub(1), FromList(tail))))
+    case (sz, FromList(items), pending):
+        match items:
+          case []:
+            None
+          case [head, *tail]:
+            tail_ll = LazyList(sz.sub(1), FromList(tail))
+            Some((lazy(() -> head), append_pending(tail_ll, pending)))
     case (sz, Cons(head, tail), []):
         Some((head, LazyList(sz.sub(1), get_Lazy(tail))))
     case (sz, Cons(head, tail), pending):
@@ -143,10 +189,13 @@ def uncons_step(sz: Int, current: VLazyList[a], pending: List[LazyList[a]]) -> O
             #due to invariant: Mapped is not empty, so just return None
             None
 
+# Extracts the head and remaining tail if the list is non-empty.
 def uncons(ll: LazyList[a]) -> Option[(Lazy[a], LazyList[a])]:
   LazyList(size, vll) = ll
   uncons_step(size, vll, [])
 
+# Lazily flat-maps elements with `fn`.
+# Expansion is bounded by the source list bound.
 def flat_map(ll: LazyList[a], fn: a -> LazyList[b]) -> LazyList[b]:
     def go(max_calls, ll):
         recur max_calls:
@@ -188,6 +237,7 @@ def uncons_List(list: List[a]) -> Option[(a, List[a])]:
     case [head, *tail]:
       Some((head, tail))
 
+# Converts a lazy list to a strict list in iteration order.
 def to_List(ll: LazyList[a]) -> List[a]:
   LazyList(limit, _) = ll
   def step(rem: Int, current: LazyList[a], rev: List[a]) -> List[a]:
@@ -253,13 +303,6 @@ uncons_prop: Prop = forall_Prop(
     expected = uncons_List(list)
     Assertion(eq_uncons(actual, expected), "uncons law")
   ))
-
-def len_List(list):
-    def go(list, acc):
-        loop list:
-            case [_, *tail]: go(tail, acc.add(1))
-            case []: acc
-    go(list, 0)
 
 cons_prop: Prop = forall_Prop(
   prod_Rand(rand_int, rand_list_int),
