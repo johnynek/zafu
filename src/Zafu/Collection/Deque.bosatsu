@@ -69,8 +69,15 @@ def normalize(size: Int, front: List[a], back_rev: List[a]) -> Queue[a]:
         Queue(size, front, back_rev)
 
 def normalize_queue(queue: Queue[a]) -> Queue[a]:
-  Queue(size, front, back_rev) = queue
-  normalize(size, front, back_rev)
+  match queue:
+    case Queue(size, _, _) if cmp_Int(size, 0) matches LT | EQ:
+      empty
+    case Queue(_, [], []):
+      empty
+    case Queue(size, [], back_rev):
+      Queue(size, back_rev.reverse(), [])
+    case _:
+      queue
 
 # Builds a deque from a list in iteration order.
 def from_List(list: List[a]) -> Queue[a]:
@@ -92,15 +99,11 @@ def is_empty(queue: Queue[a]) -> Bool:
 
 # Returns the front item without removing it.
 def peek(queue: Queue[a]) -> Option[a]:
-  Queue(size, front, _) = normalize_queue(queue)
-  if size.eq_Int(0):
-    None
-  else:
-    match front:
-      case [head, *_]:
-        Some(head)
-      case []:
-        None
+  match normalize_queue(queue):
+    case Queue(_, [], _):
+      None
+    case Queue(_, [head, *_], _):
+      Some(head)
 
 # Pushes an item to the back.
 def enqueue(queue: Queue[a], item: a) -> Queue[a]:
@@ -114,15 +117,13 @@ def push_stack(queue: Queue[a], item: a) -> Queue[a]:
 
 # Pops the front item.
 def dequeue(queue: Queue[a]) -> Option[(a, Queue[a])]:
-  Queue(size, front, back_rev) = normalize_queue(queue)
-  if size.eq_Int(0):
-    None
-  else:
-    match front:
-      case [head, *tail]:
-        Some((head, normalize(size.sub(1), tail, back_rev)))
-      case []:
-        None
+  match normalize_queue(queue):
+    case Queue(0, _, _):
+      None
+    case Queue(size, [head, *tail], back_rev):
+      Some((head, normalize(size.sub(1), tail, back_rev)))
+    case Queue(_, [], _):
+      None
 
 def unqueue_List(list: List[a]) -> Option[(List[a], a)]:
   rev = list.reverse()
@@ -134,19 +135,17 @@ def unqueue_List(list: List[a]) -> Option[(List[a], a)]:
 
 # Pops the back item.
 def unqueue(queue: Queue[a]) -> Option[(Queue[a], a)]:
-  Queue(size, front, back_rev) = normalize_queue(queue)
-  if size.eq_Int(0):
-    None
-  else:
-    match back_rev:
-      case [last, *rest_back]:
-        Some((normalize(size.sub(1), front, rest_back), last))
-      case []:
-        match unqueue_List(front):
-          case Some((init, last)):
-            Some((normalize(size.sub(1), init, []), last))
-          case None:
-            None
+  match normalize_queue(queue):
+    case Queue(0, _, _):
+      None
+    case Queue(size, front, [last, *rest_back]):
+      Some((normalize(size.sub(1), front, rest_back), last))
+    case Queue(size, front, []):
+      match unqueue_List(front):
+        case Some((init, last)):
+          Some((normalize(size.sub(1), init, []), last))
+        case None:
+          None
 
 # Left fold in iteration order.
 def foldl(queue: Queue[a], init: b, fn: (b, a) -> b) -> b:
@@ -171,30 +170,37 @@ def concat(left: Queue[a], right: Queue[a]) -> Queue[a]:
   foldl(right, normalize_queue(left), (acc, item) -> enqueue(acc, item))
 
 def eq_list(fn: (a, b) -> Bool, left: List[a], right: List[b]) -> Bool:
-  recur (left, right):
-    case ([], []):
-      True
-    case ([left_h, *left_t], [right_h, *right_t]):
-      fn(left_h, right_h) if eq_list(fn, left_t, right_t) else False
-    case _:
-      False
+  def go(left: List[a], right: List[b]) -> Bool:
+    loop (left, right):
+      case ([], []):
+        True
+      case ([left_h, *left_t], [right_h, *right_t]):
+        if fn(left_h, right_h):
+          go(left_t, right_t)
+        else:
+          False
+      case _:
+        False
+  go(left, right)
 
 def cmp_list(fn: (a, b) -> Comparison, left: List[a], right: List[b]) -> Comparison:
-  recur (left, right):
-    case ([], []):
-      EQ
-    case ([], [_, *_]):
-      LT
-    case ([_, *_], []):
-      GT
-    case ([left_h, *left_t], [right_h, *right_t]):
-      match fn(left_h, right_h):
-        case LT:
-          LT
-        case GT:
-          GT
-        case EQ:
-          cmp_list(fn, left_t, right_t)
+  def go(left: List[a], right: List[b]) -> Comparison:
+    loop (left, right):
+      case ([], []):
+        EQ
+      case ([], [_, *_]):
+        LT
+      case ([_, *_], []):
+        GT
+      case ([left_h, *left_t], [right_h, *right_t]):
+        match fn(left_h, right_h):
+          case LT:
+            LT
+          case GT:
+            GT
+          case EQ:
+            go(left_t, right_t)
+  go(left, right)
 
 def eq(fn: (a, b) -> Bool)(q1: Queue[a], q2: Queue[b]) -> Bool:
   eq_list(fn, to_List(q1), to_List(q2))
@@ -231,11 +237,7 @@ def eq_Bool(left: Bool, right: Bool) -> Bool:
       True
 
 def eq_Comparison(left: Comparison, right: Comparison) -> Bool:
-  match (left, right):
-    case (LT, LT) | (EQ, EQ) | (GT, GT):
-      True
-    case _:
-      False
+  (left, right) matches (LT, LT) | (EQ, EQ) | (GT, GT)
 
 def peek_List(list: List[a]) -> Option[a]:
   match list:
