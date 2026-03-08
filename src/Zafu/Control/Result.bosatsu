@@ -1,0 +1,298 @@
+package Zafu/Control/Result
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_from_fn,
+  eq as eq_Eq,
+)
+
+from Zafu/Abstract/Ord import (
+  Ord,
+  ord_from_cmp,
+  cmp as cmp_Ord,
+)
+
+from Zafu/Abstract/Hash import (
+  Hash,
+  hash_specialized,
+  hash as hash_Hash,
+  hash_to_Eq,
+  mix_61,
+  finish_61,
+)
+
+from Zafu/Abstract/Instances/Predef import (
+  eq_Int as eq_Int_inst,
+  ord_Int as ord_Int_inst,
+  hash_Int as hash_Int_inst,
+)
+
+export (
+  Result(),
+  is_err,
+  is_ok,
+  err,
+  ok,
+  to_Option,
+  map,
+  map_err,
+  and_then,
+  flat_map,
+  or_else,
+  fold,
+  unwrap_or,
+  unwrap_or_else,
+  from_Option,
+  eq,
+  ord,
+  hash,
+)
+
+enum Result[e, a]:
+  Err(err: e)
+  Ok(ok: a)
+
+def is_err(result: Result[e, a]) -> Bool:
+  match result:
+    case Err(_):
+      True
+    case Ok(_):
+      False
+
+def is_ok(result: Result[e, a]) -> Bool:
+  match result:
+    case Err(_):
+      False
+    case Ok(_):
+      True
+
+def err(result: Result[e, a]) -> Option[e]:
+  match result:
+    case Err(err_value):
+      Some(err_value)
+    case Ok(_):
+      None
+
+def ok(result: Result[e, a]) -> Option[a]:
+  match result:
+    case Err(_):
+      None
+    case Ok(ok_value):
+      Some(ok_value)
+
+def to_Option(result: Result[e, a]) -> Option[a]:
+  ok(result)
+
+def map(result: Result[e, a], fn: a -> b) -> Result[e, b]:
+  match result:
+    case Err(err_value):
+      Err(err_value)
+    case Ok(ok_value):
+      Ok(fn(ok_value))
+
+def map_err(result: Result[e, a], fn: e -> f) -> Result[f, a]:
+  match result:
+    case Err(err_value):
+      Err(fn(err_value))
+    case Ok(ok_value):
+      Ok(ok_value)
+
+def and_then(result: Result[e, a], fn: a -> Result[e, b]) -> Result[e, b]:
+  match result:
+    case Err(err_value):
+      Err(err_value)
+    case Ok(ok_value):
+      fn(ok_value)
+
+def flat_map(result: Result[e, a], fn: a -> Result[e, b]) -> Result[e, b]:
+  and_then(result, fn)
+
+def or_else(result: Result[e, a], fn: e -> Result[f, a]) -> Result[f, a]:
+  match result:
+    case Err(err_value):
+      fn(err_value)
+    case Ok(ok_value):
+      Ok(ok_value)
+
+def fold(result: Result[e, a], on_err: e -> b, on_ok: a -> b) -> b:
+  match result:
+    case Err(err_value):
+      on_err(err_value)
+    case Ok(ok_value):
+      on_ok(ok_value)
+
+def unwrap_or(result: Result[e, a], fallback: a) -> a:
+  match result:
+    case Err(_):
+      fallback
+    case Ok(ok_value):
+      ok_value
+
+def unwrap_or_else(result: Result[e, a], on_err: e -> a) -> a:
+  match result:
+    case Err(err_value):
+      on_err(err_value)
+    case Ok(ok_value):
+      ok_value
+
+def from_Option(value: Option[a], on_none: () -> e) -> Result[e, a]:
+  match value:
+    case None:
+      Err(on_none())
+    case Some(item):
+      Ok(item)
+
+def eq(eq_err: Eq[e], eq_ok: Eq[a]) -> Eq[Result[e, a]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Err(left_err), Err(right_err)):
+        eq_Eq(eq_err, left_err, right_err)
+      case (Ok(left_ok), Ok(right_ok)):
+        eq_Eq(eq_ok, left_ok, right_ok)
+      case _:
+        False
+  ))
+
+def ord(ord_err: Ord[e], ord_ok: Ord[a]) -> Ord[Result[e, a]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Err(left_err), Err(right_err)):
+        cmp_Ord(ord_err, left_err, right_err)
+      case (Ok(left_ok), Ok(right_ok)):
+        cmp_Ord(ord_ok, left_ok, right_ok)
+      case (Err(_), Ok(_)):
+        LT
+      case (Ok(_), Err(_)):
+        GT
+  ))
+
+# Distinct seeds/tags keep Err(x) and Ok(x) in separate hash domains.
+hash_seed_err: Int = 1439
+hash_tag_err: Int = 1447
+hash_seed_ok: Int = 1451
+hash_tag_ok: Int = 1453
+
+def hash(hash_err: Hash[e], hash_ok: Hash[a]) -> Hash[Result[e, a]]:
+  eq_err = hash_to_Eq(hash_err)
+  eq_ok = hash_to_Eq(hash_ok)
+  hash_specialized((value) -> (
+    match value:
+      case Err(err_value):
+        finish_61(mix_61(hash_seed_err, hash_Hash(hash_err, err_value)), 1, hash_tag_err)
+      case Ok(ok_value):
+        finish_61(mix_61(hash_seed_ok, hash_Hash(hash_ok, ok_value)), 1, hash_tag_ok)
+  ), eq(eq_err, eq_ok))
+
+tests = TestSuite("Result tests", [
+  Assertion(is_err(Err(1)), "is_err Err"),
+  Assertion(
+    if is_err(Ok(1)):
+      False
+    else:
+      True,
+    "is_err Ok",
+  ),
+  Assertion(is_ok(Ok(1)), "is_ok Ok"),
+  Assertion(
+    if is_ok(Err(1)):
+      False
+    else:
+      True,
+    "is_ok Err",
+  ),
+  Assertion(err(Err(1)) matches Some(1), "err Err"),
+  Assertion(err(Ok(1)) matches None, "err Ok"),
+  Assertion(ok(Ok(1)) matches Some(1), "ok Ok"),
+  Assertion(ok(Err(1)) matches None, "ok Err"),
+  Assertion(to_Option(Ok(1)) matches Some(1), "to_Option Ok"),
+  Assertion(to_Option(Err(1)) matches None, "to_Option Err"),
+  Assertion(map(Ok(1), x -> x.add(1)) matches Ok(2), "map Ok"),
+  Assertion(map(Err(1), x -> x.add(1)) matches Err(1), "map Err"),
+  Assertion(map_err(Err(1), x -> x.add(1)) matches Err(2), "map_err Err"),
+  Assertion(map_err(Ok(1), x -> x.add(1)) matches Ok(1), "map_err Ok"),
+  Assertion(and_then(Ok(2), x -> Ok(x.mul(2))) matches Ok(4), "and_then Ok"),
+  Assertion(and_then(Err(1), x -> Ok(x.mul(2))) matches Err(1), "and_then Err"),
+  Assertion(flat_map(Ok(2), x -> Ok(x.mul(2))) matches Ok(4), "flat_map alias"),
+  Assertion(flat_map(Err(1), x -> Ok(x.mul(2))) matches Err(1), "flat_map Err"),
+  Assertion(or_else(Err(1), x -> Err(x.add(1))) matches Err(2), "or_else Err"),
+  Assertion(or_else(Ok(2), _ -> Err(0)) matches Ok(2), "or_else Ok"),
+  Assertion(fold(Err(1), x -> x.add(1), _ -> 0).eq_Int(2), "fold Err"),
+  Assertion(fold(Ok(2), _ -> 0, x -> x.add(1)).eq_Int(3), "fold Ok"),
+  Assertion(unwrap_or(Err(1), 10).eq_Int(10), "unwrap_or Err"),
+  Assertion(unwrap_or(Ok(2), 10).eq_Int(2), "unwrap_or Ok"),
+  Assertion(unwrap_or_else(Err(1), _ -> 7).eq_Int(7), "unwrap_or_else Err"),
+  Assertion(unwrap_or_else(Ok(2), _ -> 7).eq_Int(2), "unwrap_or_else Ok"),
+  Assertion(from_Option(Some(2), () -> 0) matches Ok(2), "from_Option Some"),
+  Assertion(from_Option(None, () -> 0) matches Err(0), "from_Option None"),
+  (
+    inst = eq(eq_Int_inst, eq_Int_inst)
+    left = Ok(2)
+    Assertion(eq_Eq(inst, map(left, x -> x), left), "map identity")
+  ),
+  (
+    inst = eq(eq_Int_inst, eq_Int_inst)
+    Assertion(eq_Eq(inst, Err(1), Err(1)), "eq Err payload")
+  ),
+  (
+    inst = eq(eq_Int_inst, eq_Int_inst)
+    Assertion(
+      if eq_Eq(inst, Err(1), Ok(1)):
+        False
+      else:
+        True,
+      "eq constructor-sensitive",
+    )
+  ),
+  (
+    inst = eq(eq_Int_inst, eq_Int_inst)
+    left = Ok(2)
+    mapped_twice = map(map(left, x -> x.add(1)), x -> x.mul(2))
+    mapped_once = map(left, x -> x.add(1).mul(2))
+    Assertion(eq_Eq(inst, mapped_twice, mapped_once), "map composition")
+  ),
+  (
+    inst = eq(eq_Int_inst, eq_Int_inst)
+    left = Err(1)
+    Assertion(eq_Eq(inst, and_then(left, x -> Ok(x.add(1))), left), "and_then short-circuits Err")
+  ),
+  (
+    inst = eq(eq_Int_inst, eq_Int_inst)
+    left = Ok(2)
+    Assertion(eq_Eq(inst, or_else(left, _ -> Err(0)), left), "or_else short-circuits Ok")
+  ),
+  (
+    inst = ord(ord_Int_inst, ord_Int_inst)
+    Assertion(cmp_Ord(inst, Err(1), Ok(0)) matches LT, "ord Err < Ok")
+  ),
+  (
+    inst = ord(ord_Int_inst, ord_Int_inst)
+    Assertion(cmp_Ord(inst, Err(1), Err(2)) matches LT, "ord Err payload")
+  ),
+  (
+    inst = ord(ord_Int_inst, ord_Int_inst)
+    Assertion(cmp_Ord(inst, Ok(1), Ok(2)) matches LT, "ord Ok payload")
+  ),
+  (
+    hash_inst = hash(hash_Int_inst, hash_Int_inst)
+    hash_eq = eq_Int(hash_Hash(hash_inst, Err(1)), hash_Hash(hash_inst, Ok(1)))
+    Assertion(
+      if hash_eq:
+        False
+      else:
+        True,
+      "hash tags constructors",
+    )
+  ),
+  (
+    hash_inst = hash(hash_Int_inst, hash_Int_inst)
+    hx = hash_Hash(hash_inst, Ok(2))
+    hy = hash_Hash(hash_inst, Ok(2))
+    Assertion(eq_Int(hx, hy), "hash equal values equal hashes")
+  ),
+  (
+    hash_inst = hash(hash_Int_inst, hash_Int_inst)
+    hx = hash_Hash(hash_inst, Err(2))
+    hy = hash_Hash(hash_inst, Err(2))
+    Assertion(eq_Int(hx, hy), "hash Err values equal hashes")
+  ),
+])
