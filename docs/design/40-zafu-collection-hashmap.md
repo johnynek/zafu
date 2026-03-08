@@ -1,24 +1,5 @@
 ---
 issue: 40
-priority: 3
-touch_paths:
-  - docs/design/40-zafu-collection-hashmap.md
-  - src/Zafu/Collection/HashMap.bosatsu
-depends_on: []
-estimated_size: M
-generated_at: 2026-03-08T07:32:12Z
----
-
-# Design: Zafu/Collection/HashMap (Issue #40)
-
-_Issue: #40 (https://github.com/johnynek/zafu/issues/40)_
-
-## Summary
-
-Persistent HAMT HashMap design with cached key hashes, shape-preserving transform, trie-native operations, acceptance criteria, risks, and rollout plan.
-
----
-issue: 40
 priority: 2
 touch_paths:
   - docs/design/40-zafu-collection-hashmap.md
@@ -51,7 +32,7 @@ Proposed
 2. Make lookup/insert/update/remove expected O(1) and structural O(log32 n), with O(1) `size`.
 3. Expose a complete, efficient map API with short names and map-first argument order.
 4. Implement `transform(map, fn)` by traversing existing nodes and rewriting only values, reusing key hashes and node shape.
-5. Keep operations node-native (`fold`, `filter`, `union`, etc.) without implementing them as `to_List`/`from_List` roundtrips.
+5. Keep operations node-native (`filter`, `partition`, `union`, etc.) without list-conversion roundtrips.
 6. Include property tests and invariants aligned with existing module testing style.
 
 ## Non-goals
@@ -59,7 +40,8 @@ Proposed
 1. Mutable/in-place hash map operations.
 2. Ordered-map semantics (`Ord`-sorted iteration).
 3. Key remapping APIs that require rehash/rebucket (`map_keys`) in initial scope.
-4. Global prelude/re-export policy changes.
+4. Deterministic views/folds in this PR scope (`items`, `keys`, `values`, `to_List`, `foldl`, `foldr`).
+5. Global prelude/re-export policy changes.
 
 ## Decision summary
 
@@ -67,7 +49,7 @@ Proposed
 2. Internal nodes use a bitmap-indexed HAMT (CHAMP-style split bitmaps for entries vs children) plus explicit collision nodes.
 3. Each stored entry caches normalized key hash (`Int` in 61-bit domain from `Hash`), so deep operations and `transform` never recompute key hashes.
 4. Structural updates are path-copy persistent updates with branch compression on delete.
-5. Bulk operations use trie-native traversal; list conversion is only for explicit `to_List`/`items`.
+5. Bulk operations use trie-native traversal rather than list-based intermediate conversions.
 6. Cross-map operations are always correct; optimized structural merge is used when hash semantics are assumed shared, with a safe fallback otherwise.
 
 ## Proposed API (`Zafu/Collection/HashMap`)
@@ -93,21 +75,12 @@ Persistent updates:
 2. `alter(map: HashMap[k, v], key: k, fn: Option[v] -> Option[v]) -> HashMap[k, v]`
 3. `remove(map: HashMap[k, v], key: k) -> HashMap[k, v]`
 
-Node-native transforms/folds:
+Node-native transforms:
 
 1. `transform(map: HashMap[k, v], fn: (k, v) -> w) -> HashMap[k, w]`
 2. `map_values(map: HashMap[k, v], fn: v -> w) -> HashMap[k, w]` (derived from `transform`)
 3. `filter(map: HashMap[k, v], pred: (k, v) -> Bool) -> HashMap[k, v]`
 4. `partition(map: HashMap[k, v], pred: (k, v) -> Bool) -> (HashMap[k, v], HashMap[k, v])`
-5. `foldl(map: HashMap[k, v], init: b, fn: (b, k, v) -> b) -> b`
-6. `foldr(map: HashMap[k, v], init: b, fn: (k, v, b) -> b) -> b`
-
-Views:
-
-1. `items(map: HashMap[k, v]) -> List[(k, v)]`
-2. `keys(map: HashMap[k, v]) -> List[k]`
-3. `values(map: HashMap[k, v]) -> List[v]`
-4. `to_List(map: HashMap[k, v]) -> List[(k, v)]` (alias of `items`)
 
 Bulk map operations:
 
@@ -180,9 +153,9 @@ Remove:
 3. Do not call `hash(hash_key, key)` during traversal.
 4. Complexity: O(n) time, O(log32 n) stack/recursion depth, shape-preserving output.
 
-Fold/filter/partition:
+Filter/partition:
 
-1. Explicit stack traversal over node arrays (no `to_List` dependency).
+1. Explicit stack traversal over node arrays.
 2. `filter`/`partition` reuse remove/collapse helpers to maintain invariants.
 
 Bulk operations:
@@ -195,7 +168,7 @@ Bulk operations:
 
 1. `size`, `is_empty`: O(1)
 2. `get`, `contains_key`, `updated`, `alter`, `remove`: expected O(1), structural O(log32 n), worst-case O(n) under extreme collisions
-3. `transform`, `foldl`, `foldr`, `filter`, `partition`, `items`, `keys`, `values`: O(n)
+3. `transform`, `filter`, `partition`: O(n)
 4. `from_List`: O(n) expected (amortized inserts)
 5. `union_with_assume_same_hash`: O(n + m) expected
 6. `union_with` safe fallback: O(m log32(n + 1))
@@ -216,9 +189,8 @@ Phase 2: core key operations
 
 Phase 3: traversal and transform
 
-1. Implement `foldl`, `foldr`, `items`, `keys`, `values`.
-2. Implement `transform` and `map_values` as node-native traversals.
-3. Implement `filter` and `partition` without list roundtrip.
+1. Implement `transform` and `map_values` as node-native traversals.
+2. Implement `filter` and `partition` without list roundtrip.
 
 Phase 4: bulk ops and adapters
 
@@ -263,7 +235,7 @@ Mitigation: dedicated collision node representation, targeted tests, and documen
 Mitigation: safe fallback path as default; make structural fast path explicit (`*_assume_same_hash`).
 
 4. Risk: implementation drift reintroduces list-based intermediate conversions.
-Mitigation: keep fold/transform/filter implementations node-native and add regression tests guarding direct traversal behavior.
+Mitigation: keep transform/filter implementations node-native and add regression tests guarding direct traversal behavior.
 
 5. Risk: module size/complexity becomes hard to maintain.
 Mitigation: keep clear internal helper boundaries (bitmap math, node edits, traversal, bulk ops) and document invariants near helpers.
@@ -273,7 +245,7 @@ Mitigation: keep clear internal helper boundaries (bitmap math, node edits, trav
 1. Land as additive module on `main`; no breaking changes to existing collections.
 2. Ship in phases: core map first, then traversal/transform, then bulk ops fast paths.
 3. Keep internal node constructors unexported so representation can evolve without API breakage.
-4. Document that iteration order is deterministic by internal trie traversal but not key-sorted.
+4. Defer deterministic views/folds to follow-up issues.
 5. After merge, profile large-map workloads and refine constants/helpers where benchmarks show hot spots.
 
 ## Out of scope (initial release)
