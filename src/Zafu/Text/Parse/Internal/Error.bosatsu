@@ -1,0 +1,124 @@
+package Zafu/Text/Parse/Internal/Error
+
+export (
+  Expectation(),
+  Caret(),
+  Error(),
+  expectation_eq,
+  merge_expectations,
+  merge_contexts,
+  merge_errors,
+  push_context,
+  replace_expected,
+)
+
+enum Expectation:
+  ExpectedChar(ch: Char)
+  ExpectedString(value: String)
+  InRange(lower: Char, upper: Char)
+  ExpectedEnd
+  ExpectedPredicate(label: String)
+  FailWith(message: String)
+  InContext(label: String)
+
+struct Caret(
+  offset: Int,
+  line: Int,
+  column: Int,
+)
+
+struct Error(
+  input: String,
+  failed_at: Int,
+  expected: List[Expectation],
+  contexts: List[String],
+)
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def string_eq(left: String, right: String) -> Bool:
+  cmp_String(left, right) matches EQ
+
+def char_eq(left: Char, right: Char) -> Bool:
+  char_to_Int(left).eq_Int(char_to_Int(right))
+
+def expectation_eq(left: Expectation, right: Expectation) -> Bool:
+  match (left, right):
+    case (ExpectedChar(ch_left), ExpectedChar(ch_right)):
+      char_eq(ch_left, ch_right)
+    case (ExpectedString(value_left), ExpectedString(value_right)):
+      string_eq(value_left, value_right)
+    case (InRange(low_left, high_left), InRange(low_right, high_right)):
+      and_Bool(char_eq(low_left, low_right), char_eq(high_left, high_right))
+    case (ExpectedEnd, ExpectedEnd):
+      True
+    case (ExpectedPredicate(label_left), ExpectedPredicate(label_right)):
+      string_eq(label_left, label_right)
+    case (FailWith(msg_left), FailWith(msg_right)):
+      string_eq(msg_left, msg_right)
+    case (InContext(ctx_left), InContext(ctx_right)):
+      string_eq(ctx_left, ctx_right)
+    case _:
+      False
+
+def contains_expectation(items: List[Expectation], item: Expectation) -> Bool:
+  items.foldl_List(False, (acc, next) -> (
+    if acc:
+      True
+    else:
+      expectation_eq(next, item)
+  ))
+
+def append_unique_expectations(items: List[Expectation], item: Expectation) -> List[Expectation]:
+  if contains_expectation(items, item):
+    items
+  else:
+    [*items, item]
+
+def merge_expectations(left: List[Expectation], right: List[Expectation]) -> List[Expectation]:
+  right.foldl_List(left, append_unique_expectations)
+
+def contains_string(items: List[String], item: String) -> Bool:
+  items.foldl_List(False, (acc, next) -> (
+    if acc:
+      True
+    else:
+      string_eq(next, item)
+  ))
+
+def append_unique_context(items: List[String], item: String) -> List[String]:
+  if contains_string(items, item):
+    items
+  else:
+    [*items, item]
+
+def merge_contexts(left: List[String], right: List[String]) -> List[String]:
+  right.foldl_List(left, append_unique_context)
+
+def merge_errors(left: Error, right: Error) -> Error:
+  Error(input_left, failed_left, expected_left, contexts_left) = left
+  Error(_, failed_right, expected_right, contexts_right) = right
+  match cmp_Int(failed_left, failed_right):
+    case GT:
+      left
+    case LT:
+      right
+    case EQ:
+      Error(
+        input_left,
+        failed_left,
+        merge_expectations(expected_left, expected_right),
+        merge_contexts(contexts_left, contexts_right),
+      )
+
+def push_context(err: Error, ctx: String) -> Error:
+  Error(input, failed_at, expected, contexts) = err
+  Error(input, failed_at, expected, [ctx, *contexts])
+
+def replace_expected(err: Error, expected_label: String) -> Error:
+  Error(input, failed_at, _, contexts) = err
+  Error(input, failed_at, [ExpectedPredicate(expected_label)], contexts)
