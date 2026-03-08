@@ -1,0 +1,1160 @@
+package Zafu/Collection/HashMap
+
+from Bosatsu/Collection/Array import (
+  Array,
+  empty_Array,
+  from_List_Array,
+  size_Array,
+  get_Array,
+  foldl_Array,
+  map_Array,
+  set_or_self_Array,
+  concat_all_Array,
+  slice_Array
+)
+from Bosatsu/Rand import (
+  Rand,
+  int_range,
+  geometric_Int,
+  map_Rand,
+  flat_map_Rand,
+  prod_Rand,
+  sequence_Rand
+)
+from Bosatsu/Testing/Properties import (
+  Prop,
+  forall_Prop,
+  suite_Prop,
+  run_Prop
+)
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_from_fn,
+  eq as eq_Eq
+)
+from Zafu/Abstract/Hash import (
+  Hash,
+  hash_specialized,
+  hash as hash_Hash,
+  hash_to_Eq,
+  normalize_61,
+  mix_61,
+  finish_61
+)
+from Zafu/Abstract/Instances/Predef import (
+  eq_Int as eq_Int_inst,
+  eq_Option,
+  hash_Int
+)
+
+export (
+  HashMap,
+  empty,
+  singleton,
+  from_List,
+  size,
+  is_empty,
+  contains_key,
+  get,
+  get_or,
+  updated,
+  alter,
+  remove,
+  transform,
+  map_values,
+  filter,
+  partition,
+  union_with,
+  intersection_with,
+  difference,
+  union_with_assume_same_hash,
+  eq,
+  hash
+)
+
+def operator +(a, b): a.add(b)
+def operator -(a, b): a.sub(b)
+def operator &(a, b): a.and_Int(b)
+def operator |(a, b): a.or_Int(b)
+def operator <<(a, b): a.shift_left_Int(b)
+def operator >>(a, b): a.shift_right_Int(b)
+
+fragment_bits: Int = 5
+fragment_mask: Int = 31
+hash_seed_map: Int = 1601
+hash_tag_entry: Int = 1607
+hash_tag_map: Int = 1609
+
+struct Entry(
+  hash: Int,
+  key: k,
+  value: v
+)
+
+def entry_hash(entry: Entry[k, v]) -> Int:
+  Entry(hash, _, _) = entry
+  hash
+
+def entry_key(entry: Entry[k, v]) -> k:
+  Entry(_, key, _) = entry
+  key
+
+def entry_value(entry: Entry[k, v]) -> v:
+  Entry(_, _, value) = entry
+  value
+
+enum Node:
+  Indexed(data_bitmap: Int, entries: Array[Entry[k, v]], node_bitmap: Int, children: Array[Node[k, v]])
+  Collision(hash: Int, entries: Array[Entry[k, v]])
+
+enum HashMap:
+  Empty(hash_key: Hash[k])
+  Root(hash_key: Hash[k], size: Int, root: Node[k, v])
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def not_Bool(value: Bool) -> Bool:
+  if value:
+    False
+  else:
+    True
+
+def eq_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    not_Bool(right)
+
+def list_size_loop(list: List[a], acc: Int) -> Int:
+  loop list:
+    case []:
+      acc
+    case [_, *tail]:
+      list_size_loop(tail, acc + 1)
+
+def list_size(list: List[a]) -> Int:
+  list_size_loop(list, 0)
+
+def popcount(value: Int) -> Int:
+  def go(rem: Int, bits: Int, acc: Int) -> Int:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _ if cmp_Int(bits, 0) matches LT | EQ:
+        acc
+      case _:
+        go(rem - 1, bits >> 1, acc + (bits & 1))
+  go(64, value, 0)
+
+def fragment(entry_hash: Int, shift: Int) -> Int:
+  (entry_hash >> shift) & fragment_mask
+
+def bitpos(fragment: Int) -> Int:
+  1 << fragment
+
+def has_bit(bitmap: Int, bit: Int) -> Bool:
+  cmp_Int(bitmap & bit, 0) matches GT
+
+def bitmap_index(bitmap: Int, bit: Int) -> Int:
+  popcount(bitmap & (bit - 1))
+
+def singleton_Array(item: a) -> Array[a]:
+  from_List_Array([item])
+
+def array_insert(items: Array[a], idx: Int, value: a) -> Array[a]:
+  cnt = size_Array(items)
+  left = slice_Array(items, 0, idx)
+  right = slice_Array(items, idx, cnt)
+  concat_all_Array([left, singleton_Array(value), right])
+
+def array_remove(items: Array[a], idx: Int) -> Array[a]:
+  cnt = size_Array(items)
+  left = slice_Array(items, 0, idx)
+  right = slice_Array(items, idx + 1, cnt)
+  concat_all_Array([left, right])
+
+def map_hash_key(map: HashMap[k, v]) -> Hash[k]:
+  match map:
+    case Empty(hash_key):
+      hash_key
+    case Root(hash_key, _, _):
+      hash_key
+
+def single_entry_node(entry: Entry[k, v], shift: Int) -> Node[k, v]:
+  bit = bitpos(fragment(entry_hash(entry), shift))
+  Indexed(bit, singleton_Array(entry), 0, empty_Array)
+
+def collapse_indexed(data_bitmap: Int, entries: Array[Entry[k, v]], node_bitmap: Int, children: Array[Node[k, v]]) -> Option[Node[k, v]]:
+  entry_cnt = size_Array(entries)
+  child_cnt = size_Array(children)
+  if and_Bool(entry_cnt.eq_Int(0), child_cnt.eq_Int(0)):
+    None
+  else:
+    Some(Indexed(data_bitmap, entries, node_bitmap, children))
+
+def find_entry_index(entries: Array[Entry[k, v]], key_hash: Int, key: k, eq_key: Eq[k]) -> Option[Int]:
+  cnt = size_Array(entries)
+  (_, found) = int_loop(cnt + 1, (0, None), (rem, state) -> (
+    (idx, found) = state
+    match found:
+      case Some(_):
+        (0, state)
+      case None:
+        if cmp_Int(idx, cnt) matches LT:
+          match get_Array(entries, idx):
+            case Some(Entry(entry_hash, entry_key, _)):
+              next_found = if and_Bool(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
+                Some(idx)
+              else:
+                None
+              (rem.sub(1), (idx + 1, next_found))
+            case None:
+              (rem.sub(1), (idx + 1, None))
+        else:
+          (0, state)
+  ))
+  found
+
+def merge_two_entries_with_fuel(left: Entry[k, v], right: Entry[k, v], shift: Int, fuel: Int) -> Node[k, v]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      Collision(entry_hash(left), from_List_Array([left, right]))
+    case _:
+      if entry_hash(left).eq_Int(entry_hash(right)):
+        Collision(entry_hash(left), from_List_Array([left, right]))
+      else:
+        left_frag = fragment(entry_hash(left), shift)
+        right_frag = fragment(entry_hash(right), shift)
+        if left_frag.eq_Int(right_frag):
+          bit = bitpos(left_frag)
+          child = merge_two_entries_with_fuel(left, right, shift + fragment_bits, fuel.sub(1))
+          Indexed(0, empty_Array, bit, singleton_Array(child))
+        else:
+          left_bit = bitpos(left_frag)
+          right_bit = bitpos(right_frag)
+          bitmap = left_bit | right_bit
+          ordered_entries = if cmp_Int(left_frag, right_frag) matches LT:
+            from_List_Array([left, right])
+          else:
+            from_List_Array([right, left])
+          Indexed(bitmap, ordered_entries, 0, empty_Array)
+
+def merge_two_entries(left: Entry[k, v], right: Entry[k, v], shift: Int) -> Node[k, v]:
+  merge_two_entries_with_fuel(left, right, shift, 24)
+
+def insert_entry_node_fuel(node: Node[k, v], entry: Entry[k, v], eq_key: Eq[k], shift: Int, fuel: Int) -> (Node[k, v], Int):
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      (node, 0)
+    case _:
+      match node:
+        case Indexed(data_bitmap, entries, node_bitmap, children):
+          frag = fragment(entry_hash(entry), shift)
+          bit = bitpos(frag)
+          if has_bit(data_bitmap, bit):
+            data_idx = bitmap_index(data_bitmap, bit)
+            match get_Array(entries, data_idx):
+              case Some(current):
+                same_key = and_Bool(entry_hash(current).eq_Int(entry_hash(entry)), eq_Eq(eq_key, entry_key(current), entry_key(entry)))
+                if same_key:
+                  (Indexed(data_bitmap, set_or_self_Array(entries, data_idx, entry), node_bitmap, children), 0)
+                else:
+                  merged_child = merge_two_entries(current, entry, shift + fragment_bits)
+                  next_entries = array_remove(entries, data_idx)
+                  next_data_bitmap = data_bitmap.xor_Int(bit)
+                  child_idx = bitmap_index(node_bitmap, bit)
+                  next_children = array_insert(children, child_idx, merged_child)
+                  (Indexed(next_data_bitmap, next_entries, node_bitmap | bit, next_children), 1)
+              case None:
+                insert_idx = bitmap_index(data_bitmap, bit)
+                next_entries = array_insert(entries, insert_idx, entry)
+                (Indexed(data_bitmap | bit, next_entries, node_bitmap, children), 1)
+          else:
+            if has_bit(node_bitmap, bit):
+              child_idx = bitmap_index(node_bitmap, bit)
+              match get_Array(children, child_idx):
+                case Some(child):
+                  (next_child, delta) = insert_entry_node_fuel(child, entry, eq_key, shift + fragment_bits, fuel.sub(1))
+                  (Indexed(data_bitmap, entries, node_bitmap, set_or_self_Array(children, child_idx, next_child)), delta)
+                case None:
+                  fallback_child = single_entry_node(entry, shift + fragment_bits)
+                  (Indexed(data_bitmap, entries, node_bitmap | bit, array_insert(children, child_idx, fallback_child)), 1)
+            else:
+              insert_idx = bitmap_index(data_bitmap, bit)
+              next_entries = array_insert(entries, insert_idx, entry)
+              (Indexed(data_bitmap | bit, next_entries, node_bitmap, children), 1)
+        case Collision(collision_hash, entries):
+          if collision_hash.eq_Int(entry_hash(entry)):
+            match find_entry_index(entries, entry_hash(entry), entry_key(entry), eq_key):
+              case Some(idx):
+                (Collision(collision_hash, set_or_self_Array(entries, idx, entry)), 0)
+              case None:
+                (Collision(collision_hash, concat_all_Array([entries, singleton_Array(entry)])), 1)
+          else:
+            match get_Array(entries, 0):
+              case None:
+                (single_entry_node(entry, shift), 1)
+              case Some(first):
+                base = merge_two_entries(first, entry, shift)
+                cnt = size_Array(entries)
+                (_, final_node) = int_loop(cnt + 1, (1, base), (rem, state) -> (
+                  (idx, acc) = state
+                  if cmp_Int(idx, cnt) matches LT:
+                    match get_Array(entries, idx):
+                      case Some(item):
+                        (next_acc, _) = insert_entry_node_fuel(acc, item, eq_key, shift, fuel.sub(1))
+                        (rem.sub(1), (idx + 1, next_acc))
+                      case None:
+                        (rem.sub(1), (idx + 1, acc))
+                  else:
+                    (0, state)
+                ))
+                (final_node, 1)
+
+def insert_entry_node(node: Node[k, v], entry: Entry[k, v], eq_key: Eq[k], shift: Int) -> (Node[k, v], Int):
+  insert_entry_node_fuel(node, entry, eq_key, shift, 4096)
+
+def remove_entry_node_fuel(node: Node[k, v], key_hash: Int, key: k, eq_key: Eq[k], shift: Int, fuel: Int) -> (Option[Node[k, v]], Int):
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      (Some(node), 0)
+    case _:
+      match node:
+        case Indexed(data_bitmap, entries, node_bitmap, children):
+          frag = fragment(key_hash, shift)
+          bit = bitpos(frag)
+          current_node = Indexed(data_bitmap, entries, node_bitmap, children)
+          if has_bit(data_bitmap, bit):
+            data_idx = bitmap_index(data_bitmap, bit)
+            match get_Array(entries, data_idx):
+              case Some(current):
+                same_key = and_Bool(entry_hash(current).eq_Int(key_hash), eq_Eq(eq_key, entry_key(current), key))
+                if same_key:
+                  next_entries = array_remove(entries, data_idx)
+                  next_data_bitmap = data_bitmap.xor_Int(bit)
+                  (collapse_indexed(next_data_bitmap, next_entries, node_bitmap, children), 1)
+                else:
+                  (Some(current_node), 0)
+              case None:
+                (Some(current_node), 0)
+          else:
+            if has_bit(node_bitmap, bit):
+              child_idx = bitmap_index(node_bitmap, bit)
+              match get_Array(children, child_idx):
+                case None:
+                  (Some(current_node), 0)
+                case Some(child):
+                  (next_child_opt, removed) = remove_entry_node_fuel(child, key_hash, key, eq_key, shift + fragment_bits, fuel.sub(1))
+                  if removed.eq_Int(0):
+                    (Some(current_node), 0)
+                  else:
+                    match next_child_opt:
+                      case None:
+                        next_children = array_remove(children, child_idx)
+                        next_node_bitmap = node_bitmap.xor_Int(bit)
+                        (collapse_indexed(data_bitmap, entries, next_node_bitmap, next_children), 1)
+                      case Some(next_child):
+                        next_children = set_or_self_Array(children, child_idx, next_child)
+                        (collapse_indexed(data_bitmap, entries, node_bitmap, next_children), 1)
+            else:
+              (Some(current_node), 0)
+        case Collision(collision_hash, entries):
+          current_node = Collision(collision_hash, entries)
+          if collision_hash.eq_Int(key_hash):
+            match find_entry_index(entries, key_hash, key, eq_key):
+              case None:
+                (Some(current_node), 0)
+              case Some(idx):
+                next_entries = array_remove(entries, idx)
+                next_cnt = size_Array(next_entries)
+                if next_cnt.eq_Int(0):
+                  (None, 1)
+                elif next_cnt.eq_Int(1):
+                  match get_Array(next_entries, 0):
+                    case Some(entry):
+                      (Some(single_entry_node(entry, shift)), 1)
+                    case None:
+                      (None, 1)
+                else:
+                  (Some(Collision(collision_hash, next_entries)), 1)
+          else:
+            (Some(current_node), 0)
+
+def remove_entry_node(node: Node[k, v], key_hash: Int, key: k, eq_key: Eq[k], shift: Int) -> (Option[Node[k, v]], Int):
+  remove_entry_node_fuel(node, key_hash, key, eq_key, shift, 4096)
+
+def get_node_fuel(node: Node[k, v], key_hash: Int, key: k, eq_key: Eq[k], shift: Int, fuel: Int) -> Option[v]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      None
+    case _:
+      match node:
+        case Indexed(data_bitmap, entries, node_bitmap, children):
+          frag = fragment(key_hash, shift)
+          bit = bitpos(frag)
+          if has_bit(data_bitmap, bit):
+            data_idx = bitmap_index(data_bitmap, bit)
+            match get_Array(entries, data_idx):
+              case Some(Entry(entry_hash, entry_key, value)):
+                if and_Bool(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
+                  Some(value)
+                else:
+                  None
+              case None:
+                None
+          else:
+            if has_bit(node_bitmap, bit):
+              child_idx = bitmap_index(node_bitmap, bit)
+              match get_Array(children, child_idx):
+                case Some(child):
+                  get_node_fuel(child, key_hash, key, eq_key, shift + fragment_bits, fuel.sub(1))
+                case None:
+                  None
+            else:
+              None
+        case Collision(collision_hash, entries):
+          if collision_hash.eq_Int(key_hash):
+            match find_entry_index(entries, key_hash, key, eq_key):
+              case Some(idx):
+                match get_Array(entries, idx):
+                  case Some(Entry(_, _, value)):
+                    Some(value)
+                  case None:
+                    None
+              case None:
+                None
+          else:
+            None
+
+def get_node(node: Node[k, v], key_hash: Int, key: k, eq_key: Eq[k], shift: Int) -> Option[v]:
+  get_node_fuel(node, key_hash, key, eq_key, shift, 4096)
+
+def get_with_hash(map: HashMap[k, v], key_hash: Int, key: k) -> Option[v]:
+  hash_key = map_hash_key(map)
+  eq_key = hash_to_Eq(hash_key)
+  match map:
+    case Empty(_):
+      None
+    case Root(_, _, root):
+      get_node(root, key_hash, key, eq_key, 0)
+
+def updated_with_hash(map: HashMap[k, v], key_hash: Int, key: k, value: v) -> HashMap[k, v]:
+  entry = Entry(key_hash, key, value)
+  match map:
+    case Empty(hash_key):
+      Root(hash_key, 1, single_entry_node(entry, 0))
+    case Root(hash_key, sz, root):
+      eq_key = hash_to_Eq(hash_key)
+      (next_root, delta) = insert_entry_node(root, entry, eq_key, 0)
+      Root(hash_key, sz + delta, next_root)
+
+def remove_with_hash(map: HashMap[k, v], key_hash: Int, key: k) -> HashMap[k, v]:
+  match map:
+    case Empty(_):
+      map
+    case Root(hash_key, sz, root):
+      eq_key = hash_to_Eq(hash_key)
+      (next_root_opt, removed) = remove_entry_node(root, key_hash, key, eq_key, 0)
+      if removed.eq_Int(0):
+        map
+      else:
+        match next_root_opt:
+          case Some(next_root):
+            Root(hash_key, sz - removed, next_root)
+          case None:
+            Empty(hash_key)
+
+# Empty map for a chosen key hash/equality dictionary.
+def empty(hash_key: Hash[k]) -> HashMap[k, v]:
+  Empty(hash_key)
+
+# Single-item map.
+def singleton(hash_key: Hash[k], key: k, value: v) -> HashMap[k, v]:
+  updated_with_hash(empty(hash_key), hash_Hash(hash_key, key), key, value)
+
+# Builds a map from pairs using last-write-wins for duplicate keys.
+def from_List(hash_key: Hash[k], items: List[(k, v)]) -> HashMap[k, v]:
+  items.foldl_List(empty(hash_key), (acc, item) -> (
+    (key, value) = item
+    updated_with_hash(acc, hash_Hash(hash_key, key), key, value)
+  ))
+
+# O(1) cached size.
+def size(map: HashMap[k, v]) -> Int:
+  match map:
+    case Empty(_):
+      0
+    case Root(_, sz, _):
+      sz
+
+# True if map has no entries.
+def is_empty(map: HashMap[k, v]) -> Bool:
+  size(map).eq_Int(0)
+
+# Returns value for key when present.
+def get(map: HashMap[k, v], key: k) -> Option[v]:
+  hash_key = map_hash_key(map)
+  get_with_hash(map, hash_Hash(hash_key, key), key)
+
+# True when key is present.
+def contains_key(map: HashMap[k, v], key: k) -> Bool:
+  get(map, key) matches Some(_)
+
+# Returns value for key or evaluates fallback when absent.
+def get_or(map: HashMap[k, v], key: k, on_missing: () -> v) -> v:
+  match get(map, key):
+    case Some(value):
+      value
+    case None:
+      on_missing(Unit)
+
+# Inserts/replaces one key/value.
+def updated(map: HashMap[k, v], key: k, value: v) -> HashMap[k, v]:
+  hash_key = map_hash_key(map)
+  updated_with_hash(map, hash_Hash(hash_key, key), key, value)
+
+# Unified insert/update/remove operation.
+def alter(map: HashMap[k, v], key: k, fn: Option[v] -> Option[v]) -> HashMap[k, v]:
+  hash_key = map_hash_key(map)
+  key_hash = hash_Hash(hash_key, key)
+  current = get_with_hash(map, key_hash, key)
+  match fn(current):
+    case None:
+      match current:
+        case None:
+          map
+        case Some(_):
+          remove_with_hash(map, key_hash, key)
+    case Some(value):
+      updated_with_hash(map, key_hash, key, value)
+
+# Removes one key when present.
+def remove(map: HashMap[k, v], key: k) -> HashMap[k, v]:
+  hash_key = map_hash_key(map)
+  remove_with_hash(map, hash_Hash(hash_key, key), key)
+
+def fold_entries_node_fuel(node: Node[k, v], init: b, fn: (b, Entry[k, v]) -> b, fuel: Int) -> b:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      init
+    case _:
+      match node:
+        case Indexed(_, entries, _, children):
+          acc1 = foldl_Array(entries, init, fn)
+          cnt = size_Array(children)
+          (_, acc_final) = int_loop(cnt + 1, (0, acc1), (rem, state) -> (
+            (idx, acc) = state
+            if cmp_Int(idx, cnt) matches LT:
+              match get_Array(children, idx):
+                case Some(child):
+                  (rem.sub(1), (idx + 1, fold_entries_node_fuel(child, acc, fn, fuel.sub(1))))
+                case None:
+                  (rem.sub(1), (idx + 1, acc))
+            else:
+              (0, state)
+          ))
+          acc_final
+        case Collision(_, entries):
+          foldl_Array(entries, init, fn)
+
+def fold_entries_node(node: Node[k, v], init: b, fn: (b, Entry[k, v]) -> b) -> b:
+  fold_entries_node_fuel(node, init, fn, 4096)
+
+def transform_node_fuel(node: Node[k, v], fn: (k, v) -> w, fuel: Int) -> Node[k, w]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      # Defensive fallback: normal HAMT depth for 61-bit hashes is far below this fuel budget.
+      match node:
+        case Indexed(data_bitmap, entries, node_bitmap, children):
+          next_entries = map_Array(entries, ((Entry(entry_hash, key, value)) -> Entry(entry_hash, key, fn(key, value))))
+          next_children = map_Array(children, _ -> Collision(0, empty_Array))
+          Indexed(data_bitmap, next_entries, node_bitmap, next_children)
+        case Collision(collision_hash, entries):
+          next_entries = map_Array(entries, ((Entry(entry_hash, key, value)) -> Entry(entry_hash, key, fn(key, value))))
+          Collision(collision_hash, next_entries)
+    case _:
+      match node:
+        case Indexed(data_bitmap, entries, node_bitmap, children):
+          next_entries = map_Array(entries, ((Entry(entry_hash, key, value)) -> Entry(entry_hash, key, fn(key, value))))
+          cnt = size_Array(children)
+          (_, rev_children) = int_loop(cnt + 1, (0, []), (rem, state) -> (
+            (idx, rev_children) = state
+            if cmp_Int(idx, cnt) matches LT:
+              match get_Array(children, idx):
+                case Some(child):
+                  (rem.sub(1), (idx + 1, [transform_node_fuel(child, fn, fuel.sub(1)), *rev_children]))
+                case None:
+                  (rem.sub(1), (idx + 1, rev_children))
+            else:
+              (0, state)
+          ))
+          next_children = from_List_Array(rev_children.reverse())
+          Indexed(data_bitmap, next_entries, node_bitmap, next_children)
+        case Collision(collision_hash, entries):
+          next_entries = map_Array(entries, ((Entry(entry_hash, key, value)) -> Entry(entry_hash, key, fn(key, value))))
+          Collision(collision_hash, next_entries)
+
+def transform_node(node: Node[k, v], fn: (k, v) -> w) -> Node[k, w]:
+  transform_node_fuel(node, fn, 4096)
+
+# Shape-preserving key/value transform without key rehashing.
+def transform(map: HashMap[k, v], fn: (k, v) -> w) -> HashMap[k, w]:
+  match map:
+    case Empty(hash_key):
+      Empty(hash_key)
+    case Root(hash_key, sz, root):
+      Root(hash_key, sz, transform_node(root, fn))
+
+# Value-only map transform.
+def map_values(map: HashMap[k, v], fn: v -> w) -> HashMap[k, w]:
+  transform(map, (_, value) -> fn(value))
+
+# Keep only entries satisfying pred.
+def filter(map: HashMap[k, v], pred: (k, v) -> Bool) -> HashMap[k, v]:
+  hash_key = map_hash_key(map)
+  match map:
+    case Empty(_):
+      map
+    case Root(_, _, root):
+      fold_entries_node(root, empty(hash_key), (acc, entry) -> (
+        if pred(entry_key(entry), entry_value(entry)):
+          updated_with_hash(acc, entry_hash(entry), entry_key(entry), entry_value(entry))
+        else:
+          acc
+      ))
+
+# Splits map by predicate.
+def partition(map: HashMap[k, v], pred: (k, v) -> Bool) -> (HashMap[k, v], HashMap[k, v]):
+  hash_key = map_hash_key(map)
+  match map:
+    case Empty(_):
+      (map, map)
+    case Root(_, _, root):
+      fold_entries_node(root, (empty(hash_key), empty(hash_key)), (state, entry) -> (
+        (left, right) = state
+        if pred(entry_key(entry), entry_value(entry)):
+          (updated_with_hash(left, entry_hash(entry), entry_key(entry), entry_value(entry)), right)
+        else:
+          (left, updated_with_hash(right, entry_hash(entry), entry_key(entry), entry_value(entry)))
+      ))
+
+# Fast path union when caller knows both maps share key hash semantics.
+def union_with_assume_same_hash(left: HashMap[k, v], right: HashMap[k, v], resolve: (k, v, v) -> v) -> HashMap[k, v]:
+  match left:
+    case Empty(_):
+      right
+    case Root(_, _, _):
+      match right:
+        case Empty(_):
+          left
+        case Root(_, _, right_root):
+          fold_entries_node(right_root, left, (acc, entry) -> (
+            next_value = match get_with_hash(acc, entry_hash(entry), entry_key(entry)):
+              case Some(left_value):
+                resolve(entry_key(entry), left_value, entry_value(entry))
+              case None:
+                entry_value(entry)
+            updated_with_hash(acc, entry_hash(entry), entry_key(entry), next_value)
+          ))
+
+# Safe union that always uses left-map key semantics.
+def union_with(left: HashMap[k, v], right: HashMap[k, v], resolve: (k, v, v) -> v) -> HashMap[k, v]:
+  match right:
+    case Empty(_):
+      left
+    case Root(_, _, right_root):
+      fold_entries_node(right_root, left, (acc, entry) -> (
+        alter(acc, entry_key(entry), current -> (
+          match current:
+            case Some(left_value):
+              Some(resolve(entry_key(entry), left_value, entry_value(entry)))
+            case None:
+              Some(entry_value(entry))
+        ))
+      ))
+
+# Builds values for keys present in both maps.
+def intersection_with(left: HashMap[k, v], right: HashMap[k, w], combine: (k, v, w) -> x) -> HashMap[k, x]:
+  left_hash = map_hash_key(left)
+  out0 = empty(left_hash)
+  match left:
+    case Empty(_):
+      out0
+    case Root(_, _, left_root):
+      fold_entries_node(left_root, out0, (acc, entry) -> (
+        match get(right, entry_key(entry)):
+          case Some(right_value):
+            updated_with_hash(acc, entry_hash(entry), entry_key(entry), combine(entry_key(entry), entry_value(entry), right_value))
+          case None:
+            acc
+      ))
+
+# Removes keys from left that appear in right (using left semantics).
+def difference(left: HashMap[k, v], right: HashMap[k, w]) -> HashMap[k, v]:
+  match right:
+    case Empty(_):
+      left
+    case Root(_, _, right_root):
+      fold_entries_node(right_root, left, (acc, entry) -> remove(acc, entry_key(entry)))
+
+def eq_fn(eq_value: Eq[v], left: HashMap[k, v], right: HashMap[k, v]) -> Bool:
+  if size(left).eq_Int(size(right)):
+    match left:
+      case Empty(_):
+        True
+      case Root(_, _, left_root):
+        fold_entries_node(left_root, True, (ok, entry) -> (
+          if ok:
+            match get(right, entry_key(entry)):
+              case Some(right_value):
+                eq_Eq(eq_value, entry_value(entry), right_value)
+              case None:
+                False
+          else:
+            False
+        ))
+  else:
+    False
+
+# Equality adapter for maps.
+def eq(eq_value: Eq[v]) -> Eq[HashMap[k, v]]:
+  eq_from_fn((left, right) -> eq_fn(eq_value, left, right))
+
+def hash_entry(hash_value: Hash[v], entry: Entry[k, v]) -> Int:
+  value_hash = hash_Hash(hash_value, entry_value(entry))
+  finish_61(mix_61(entry_hash(entry), value_hash), 2, hash_tag_entry)
+
+def hash_fn(hash_value: Hash[v], map: HashMap[k, v]) -> Int:
+  match map:
+    case Empty(_):
+      finish_61(hash_seed_map, 0, hash_tag_map)
+    case Root(_, sz, root):
+      (sum_acc, xor_acc) = fold_entries_node(root, (hash_seed_map, 0), (state, entry) -> (
+        (sum_acc, xor_acc) = state
+        item_hash = hash_entry(hash_value, entry)
+        (normalize_61(sum_acc + item_hash), xor_acc.xor_Int(item_hash))
+      ))
+      finish_61(mix_61(sum_acc, normalize_61(xor_acc)), sz, hash_tag_map)
+
+# Hash adapter for maps.
+def hash(hash_value: Hash[v]) -> Hash[HashMap[k, v]]:
+  eq_value = hash_to_Eq(hash_value)
+  hash_specialized(map -> hash_fn(hash_value, map), eq(eq_value))
+
+############################
+# Invariants and model (tests)
+############################
+
+def count_entries_node(node: Node[k, v]) -> Int:
+  fold_entries_node(node, 0, (acc, _) -> acc + 1)
+
+def invariants_ok(map: HashMap[k, v]) -> Bool:
+  match map:
+    case Empty(_):
+      True
+    case Root(_, sz, root):
+      sz.eq_Int(count_entries_node(root))
+
+def model_get(model: List[(Int, Int)], key: Int) -> Option[Int]:
+  loop model:
+    case []:
+      None
+    case [(model_key, model_value), *tail]:
+      if model_key.eq_Int(key):
+        Some(model_value)
+      else:
+        model_get(tail, key)
+
+def model_remove(model: List[(Int, Int)], key: Int) -> List[(Int, Int)]:
+  def go(rem: List[(Int, Int)], rev_acc: List[(Int, Int)]) -> List[(Int, Int)]:
+    loop rem:
+      case []:
+        rev_acc.reverse()
+      case [(model_key, model_value), *tail]:
+        if model_key.eq_Int(key):
+          go(tail, rev_acc)
+        else:
+          go(tail, [(model_key, model_value), *rev_acc])
+  go(model, [])
+
+def model_updated(model: List[(Int, Int)], key: Int, value: Int) -> List[(Int, Int)]:
+  [*model_remove(model, key), (key, value)]
+
+def model_alter(model: List[(Int, Int)], key: Int, value: Int, drop: Bool) -> List[(Int, Int)]:
+  if drop:
+    model_remove(model, key)
+  else:
+    model_updated(model, key, value)
+
+def model_contains(model: List[(Int, Int)], key: Int) -> Bool:
+  model_get(model, key) matches Some(_)
+
+def model_eq(left: List[(Int, Int)], right: List[(Int, Int)]) -> Bool:
+  if list_size(left).eq_Int(list_size(right)):
+    eq_opt_int = eq_Option(eq_Int_inst)
+    left.foldl_List(True, (ok, item) -> (
+      if ok:
+        (key, value) = item
+        and_Bool(ok, eq_Eq(eq_opt_int, model_get(right, key), Some(value)))
+      else:
+        False
+    ))
+  else:
+    False
+
+def map_matches_model(map: HashMap[Int, Int], model: List[(Int, Int)]) -> Bool:
+  if size(map).eq_Int(list_size(model)):
+    model.foldl_List(True, (ok, item) -> (
+      if ok:
+        (key, value) = item
+        got = get(map, key)
+        eq_opt_int = eq_Option(eq_Int_inst)
+        and_Bool(ok, eq_Eq(eq_opt_int, got, Some(value)))
+      else:
+        False
+    ))
+  else:
+    False
+
+enum Op:
+  Put(key: Int, value: Int)
+  Delete(key: Int)
+  Query(key: Int)
+  AlterValue(key: Int, value: Int, drop: Bool)
+
+def apply_put(map: HashMap[Int, Int], model: List[(Int, Int)], key: Int, value: Int, eq_opt_int: Eq[Option[Int]]) -> (HashMap[Int, Int], List[(Int, Int)], Bool):
+  next_map = updated(map, key, value)
+  next_model = model_updated(model, key, value)
+  (
+    next_map,
+    next_model,
+    and_Bool(
+      and_Bool(map_matches_model(next_map, next_model), invariants_ok(next_map)),
+      and_Bool(
+        eq_Eq(eq_opt_int, get(next_map, key), Some(value)),
+        contains_key(next_map, key)
+      )
+    )
+  )
+
+def apply_delete(map: HashMap[Int, Int], model: List[(Int, Int)], key: Int, eq_opt_int: Eq[Option[Int]]) -> (HashMap[Int, Int], List[(Int, Int)], Bool):
+  next_map = remove(map, key)
+  next_model = model_remove(model, key)
+  (
+    next_map,
+    next_model,
+    and_Bool(
+      and_Bool(map_matches_model(next_map, next_model), invariants_ok(next_map)),
+      and_Bool(
+        eq_Bool(contains_key(next_map, key), model_contains(next_model, key)),
+        eq_Eq(eq_opt_int, get(next_map, key), model_get(next_model, key))
+      )
+    )
+  )
+
+def apply_query(map: HashMap[Int, Int], model: List[(Int, Int)], key: Int, eq_opt_int: Eq[Option[Int]]) -> (HashMap[Int, Int], List[(Int, Int)], Bool):
+  expected = model_get(model, key)
+  actual = get(map, key)
+  contains_ok = eq_Bool(contains_key(map, key), model_contains(model, key))
+  (map, model, and_Bool(and_Bool(eq_Eq(eq_opt_int, actual, expected), contains_ok), map_matches_model(map, model)))
+
+def apply_alter(map: HashMap[Int, Int], model: List[(Int, Int)], key: Int, value: Int, drop: Bool) -> (HashMap[Int, Int], List[(Int, Int)], Bool):
+  next_map = alter(map, key, current -> (
+    match current:
+      case None:
+        if drop:
+          None
+        else:
+          Some(value)
+      case Some(_):
+        if drop:
+          None
+        else:
+          Some(value)
+  ))
+  next_model = model_alter(model, key, value, drop)
+  (
+    next_map,
+    next_model,
+    and_Bool(
+      and_Bool(map_matches_model(next_map, next_model), invariants_ok(next_map)),
+      eq_Bool(contains_key(next_map, key), model_contains(next_model, key))
+    )
+  )
+
+def apply_op(map: HashMap[Int, Int], model: List[(Int, Int)], op: Op) -> (HashMap[Int, Int], List[(Int, Int)], Bool):
+  eq_opt_int = eq_Option(eq_Int_inst)
+  match op:
+    case Put(key, value):
+      apply_put(map, model, key, value, eq_opt_int)
+    case Delete(key):
+      apply_delete(map, model, key, eq_opt_int)
+    case Query(key):
+      apply_query(map, model, key, eq_opt_int)
+    case AlterValue(key, value, drop):
+      apply_alter(map, model, key, value, drop)
+
+def run_ops(hash_key: Hash[Int], ops: List[Op]) -> Bool:
+  def go(rem: List[Op], map: HashMap[Int, Int], model: List[(Int, Int)], ok: Bool) -> Bool:
+    loop rem:
+      case []:
+        and_Bool(and_Bool(ok, map_matches_model(map, model)), invariants_ok(map))
+      case [op, *tail]:
+        if ok:
+          (next_map, next_model, step_ok) = apply_op(map, model, op)
+          go(tail, next_map, next_model, and_Bool(ok, step_ok))
+        else:
+          False
+  go(ops, empty(hash_key), [], True)
+
+def model_from_items(items: List[(Int, Int)]) -> List[(Int, Int)]:
+  items.foldl_List([], (acc, item) -> (
+    (key, value) = item
+    model_updated(acc, key, value)
+  ))
+
+rand_key: Rand[Int] = map_Rand(int_range(96), i -> i.sub(48))
+rand_value: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
+rand_bool: Rand[Bool] = map_Rand(int_range(2), i -> i.eq_Int(0))
+
+rand_op: Rand[Op] = map_Rand(
+  prod_Rand(prod_Rand(prod_Rand(int_range(4), rand_key), rand_value), rand_bool),
+  ((((tag, key), value), drop)) -> (
+    match mod_Int(tag, 4):
+      case 0:
+        Put(key, value)
+      case 1:
+        Delete(key)
+      case 2:
+        Query(key)
+      case _:
+        AlterValue(key, value, drop)
+  ))
+
+rand_ops: Rand[List[Op]] = flat_map_Rand(
+  geometric_Int,
+  len -> sequence_Rand(replicate_List(rand_op, len))
+)
+
+rand_item_list: Rand[List[(Int, Int)]] = flat_map_Rand(
+  geometric_Int,
+  len -> sequence_Rand(replicate_List(prod_Rand(rand_key, rand_value), len))
+)
+
+hash_int_collision: Hash[Int] = hash_specialized(_ -> 0, eq_Int_inst)
+hash_int_shifted: Hash[Int] = hash_specialized(i -> normalize_61(i + 17), eq_Int_inst)
+
+sequence_prop: Prop = forall_Prop(
+  rand_ops,
+  "random operation sequence matches model",
+  ops -> Assertion(run_ops(hash_Int, ops), "sequence model")
+)
+
+collision_sequence_prop: Prop = forall_Prop(
+  rand_ops,
+  "collision-heavy operation sequence matches model",
+  ops -> Assertion(run_ops(hash_int_collision, ops), "collision sequence")
+)
+
+transform_prop: Prop = forall_Prop(
+  rand_item_list,
+  "transform preserves keys/size and rewrites values",
+  items -> (
+    map = from_List(hash_Int, items)
+    transformed = transform(map, (key, value) -> key.mul(7).add(value))
+    model = model_from_items(items)
+    eq_opt_int = eq_Option(eq_Int_inst)
+    lookups_ok = model.foldl_List(True, (ok, item) -> (
+      if ok:
+        (key, value) = item
+        expected = Some(key.mul(7).add(value))
+        got = get(transformed, key)
+        and_Bool(ok, eq_Eq(eq_opt_int, got, expected))
+      else:
+        False
+    ))
+    Assertion(
+      and_Bool(
+        and_Bool(size(map).eq_Int(size(transformed)), invariants_ok(transformed)),
+        lookups_ok
+      ),
+      "transform laws"
+    )
+  ))
+
+union_cross_hash_prop: Prop = forall_Prop(
+  prod_Rand(rand_item_list, rand_item_list),
+  "union_with is correct across differing hash dictionaries",
+  ((left_items, right_items)) -> (
+    left = from_List(hash_Int, left_items)
+    right = from_List(hash_int_shifted, right_items)
+    merged = union_with(left, right, (key, left_v, right_v) -> left_v.add(right_v).add(key))
+
+    left_model = model_from_items(left_items)
+    right_model = model_from_items(right_items)
+
+    merged_model = right_model.foldl_List(left_model, (acc, item) -> (
+      (key, right_v) = item
+      match model_get(acc, key):
+        case Some(left_v):
+          model_updated(acc, key, left_v.add(right_v).add(key))
+        case None:
+          model_updated(acc, key, right_v)
+    ))
+
+    Assertion(and_Bool(map_matches_model(merged, merged_model), invariants_ok(merged)), "union cross-hash")
+  ))
+
+intersection_difference_prop: Prop = forall_Prop(
+  prod_Rand(rand_item_list, rand_item_list),
+  "intersection_with and difference agree with model",
+  ((left_items, right_items)) -> (
+    left = from_List(hash_Int, left_items)
+    right = from_List(hash_Int, right_items)
+    inter = intersection_with(left, right, (key, left_v, right_v) -> left_v.sub(right_v).add(key))
+    diff = difference(left, right)
+
+    left_model = model_from_items(left_items)
+    right_model = model_from_items(right_items)
+
+    inter_model = left_model.foldl_List([], (acc, item) -> (
+      (key, left_v) = item
+      match model_get(right_model, key):
+        case Some(right_v):
+          model_updated(acc, key, left_v.sub(right_v).add(key))
+        case None:
+          acc
+    ))
+
+    diff_model = right_model.foldl_List(left_model, (acc, item) -> (
+      (key, _) = item
+      model_remove(acc, key)
+    ))
+
+    Assertion(
+      and_Bool(
+        and_Bool(map_matches_model(inter, inter_model), map_matches_model(diff, diff_model)),
+        and_Bool(invariants_ok(inter), invariants_ok(diff))
+      ),
+      "intersection/difference model"
+    )
+  ))
+
+adapter_prop: Prop = forall_Prop(
+  prod_Rand(rand_item_list, rand_item_list),
+  "eq/hash adapters are coherent on map equality",
+  ((left_items, right_items)) -> (
+    left = from_List(hash_Int, left_items)
+    right = from_List(hash_Int, right_items)
+    left_model = model_from_items(left_items)
+    right_model = model_from_items(right_items)
+    map_eq = eq(eq_Int_inst)
+    map_hash = hash(hash_Int)
+    equal = eq_Eq(map_eq, left, right)
+    coherent = if equal:
+      hash_Hash(map_hash, left).eq_Int(hash_Hash(map_hash, right))
+    else:
+      True
+    Assertion(and_Bool(coherent, eq_Bool(equal, model_eq(left_model, right_model))), "adapter coherence")
+  ))
+
+hashmap_props: Prop = suite_Prop(
+  "HashMap properties",
+  [
+    sequence_prop,
+    collision_sequence_prop,
+    transform_prop,
+    union_cross_hash_prop,
+    intersection_difference_prop,
+    adapter_prop,
+  ])
+
+tests = TestSuite("HashMap tests", [
+  (
+    m = empty(hash_Int)
+    Assertion(and_Bool(is_empty(m), and_Bool(size(m).eq_Int(0), invariants_ok(m))), "empty sanity")
+  ),
+  (
+    m = singleton(hash_Int, 3, 9)
+    eq_opt_int = eq_Option(eq_Int_inst)
+    Assertion(
+      and_Bool(
+        and_Bool(size(m).eq_Int(1), contains_key(m, 3)),
+        eq_Eq(eq_opt_int, get(m, 3), Some(9))
+      ),
+      "singleton sanity"
+    )
+  ),
+  (
+    m = from_List(hash_Int, [(1, 10), (2, 20), (1, 30)])
+    eq_opt_int = eq_Option(eq_Int_inst)
+    Assertion(
+      and_Bool(
+        and_Bool(size(m).eq_Int(2), eq_Eq(eq_opt_int, get(m, 1), Some(30))),
+        invariants_ok(m)
+      ),
+      "from_List last-write-wins"
+    )
+  ),
+  (
+    m0 = empty(hash_int_collision)
+    m1 = updated(m0, 1, 11)
+    m2 = updated(m1, 2, 22)
+    m3 = updated(m2, 3, 33)
+    m4 = remove(m3, 2)
+    eq_opt_int = eq_Option(eq_Int_inst)
+    Assertion(
+      and_Bool(
+        and_Bool(
+          and_Bool(eq_Eq(eq_opt_int, get(m4, 1), Some(11)), eq_Eq(eq_opt_int, get(m4, 2), None)),
+          eq_Eq(eq_opt_int, get(m4, 3), Some(33))
+        ),
+        invariants_ok(m4)
+      ),
+      "collision insert/remove"
+    )
+  ),
+  (
+    m0 = empty(hash_Int)
+    m1 = alter(m0, 5, _ -> Some(50))
+    m2 = alter(m1, 5, _ -> Some(55))
+    m3 = alter(m2, 5, _ -> None)
+    Assertion(and_Bool(and_Bool(size(m3).eq_Int(0), contains_key(m3, 5) matches False), invariants_ok(m3)), "alter insert/update/delete")
+  ),
+  (
+    m0 = from_List(hash_Int, [(1, 1), (2, 2), (3, 3)])
+    m1 = transform(m0, (key, value) -> key.add(value))
+    m2 = map_values(m0, value -> value.mul(10))
+    eq_opt_int = eq_Option(eq_Int_inst)
+    Assertion(
+      and_Bool(
+        and_Bool(eq_Eq(eq_opt_int, get(m1, 3), Some(6)), eq_Eq(eq_opt_int, get(m2, 2), Some(20))),
+        and_Bool(size(m1).eq_Int(3), invariants_ok(m1))
+      ),
+      "transform/map_values"
+    )
+  ),
+  (
+    left = from_List(hash_Int, [(1, 10), (2, 20)])
+    right = from_List(hash_Int, [(2, 7), (3, 9)])
+    merged = union_with_assume_same_hash(left, right, (_, l, r) -> l.add(r))
+    inter = intersection_with(left, right, (_, l, r) -> l.sub(r))
+    diff = difference(left, right)
+    eq_opt_int = eq_Option(eq_Int_inst)
+    Assertion(
+      and_Bool(
+        and_Bool(
+          and_Bool(eq_Eq(eq_opt_int, get(merged, 2), Some(27)), eq_Eq(eq_opt_int, get(inter, 2), Some(13))),
+          eq_Eq(eq_opt_int, get(diff, 2), None)
+        ),
+        and_Bool(invariants_ok(merged), and_Bool(invariants_ok(inter), invariants_ok(diff)))
+      ),
+      "bulk ops sanity"
+    )
+  ),
+  run_Prop(hashmap_props, 200, 20260308),
+])
