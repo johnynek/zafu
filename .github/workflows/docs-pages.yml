@@ -47,8 +47,20 @@ jobs:
             exit 1
           fi
           for source_url in "${source_urls[@]}"; do
-            http_code="$(curl -L -s -o /dev/null -w '%{http_code}' "$source_url")"
-            if [[ "$http_code" != "200" ]]; then
+            url_ok=0
+            for attempt in 1 2 3; do
+              http_code="$(curl -L -s -o /dev/null -w '%{http_code}' "$source_url")"
+              if [[ "$http_code" == "200" ]]; then
+                url_ok=1
+                break
+              fi
+              if [[ "$http_code" == "429" || "$http_code" =~ ^5 ]]; then
+                sleep $((attempt * 2))
+                continue
+              fi
+              break
+            done
+            if [[ "$url_ok" -ne 1 ]]; then
               echo "Unreachable source URL ($http_code): $source_url" >&2
               exit 1
             fi
