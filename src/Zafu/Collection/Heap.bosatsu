@@ -1,0 +1,530 @@
+package Zafu/Collection/Heap
+
+from Bosatsu/List import (
+  eq_List,
+  sort,
+)
+from Bosatsu/Rand import (
+  Rand,
+  int_range,
+  geometric_Int,
+  map_Rand,
+  flat_map_Rand,
+  prod_Rand,
+  sequence_Rand,
+)
+from Bosatsu/Testing/Properties import (
+  Prop,
+  forall_Prop,
+  suite_Prop,
+  run_Prop,
+)
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_from_fn,
+  eq as eq_Eq,
+)
+from Zafu/Abstract/Ord import (
+  Ord,
+  ord_from_cmp,
+  cmp as cmp_Ord,
+  reverse as reverse_Ord,
+)
+from Zafu/Abstract/Instances/Predef import (
+  ord_Int,
+  eq_Int as eq_Int_inst,
+  eq_Bool as eq_Bool_inst,
+  eq_Comparison as eq_Comparison_inst,
+  eq_Option,
+)
+
+export (
+  Heap,
+  empty,
+  singleton,
+  is_empty,
+  size,
+  min,
+  insert,
+  combine,
+  combine_assume_same_order,
+  pop_min,
+  from_List,
+  to_List,
+  foldl,
+  eq,
+  ord,
+)
+
+# Internal node carrying cached subtree size.
+enum Tree:
+  Tree(size: Int, root: a, children: List[Tree[a]])
+
+# Pairing heap with ordering owned by each heap value.
+enum Heap:
+  Empty(ord: Ord[a])
+  NonEmpty(ord: Ord[a], tree: Tree[a])
+
+# Empty heap for a chosen ordering.
+def empty(ord: Ord[a]) -> Heap[a]:
+  Empty(ord)
+
+# Single-element heap.
+def singleton(ord: Ord[a], item: a) -> Heap[a]:
+  NonEmpty(ord, Tree(1, item, []))
+
+# O(1) cached size.
+def size(heap: Heap[a]) -> Int:
+  match heap:
+    case Empty(_):
+      0
+    case NonEmpty(_, Tree(sz, _, _)):
+      sz
+
+# True if heap has no elements.
+def is_empty(heap: Heap[a]) -> Bool:
+  size(heap).eq_Int(0)
+
+def list_size_loop(list: List[a], acc: Int) -> Int:
+  loop list:
+    case []:
+      acc
+    case [_, *tail]:
+      list_size_loop(tail, acc.add(1))
+
+def list_size(list: List[a]) -> Int:
+  list_size_loop(list, 0)
+
+# Returns the minimum element, if present.
+def min(heap: Heap[a]) -> Option[a]:
+  match heap:
+    case Empty(_):
+      None
+    case NonEmpty(_, Tree(_, item, _)):
+      Some(item)
+
+# Link two roots: smaller root wins and adopts the other as first child.
+def link(ord: Ord[a], left: Tree[a], right: Tree[a]) -> Tree[a]:
+  Tree(left_sz, left_root, left_children) = left
+  Tree(right_sz, right_root, right_children) = right
+  total = left_sz.add(right_sz)
+  match cmp_Ord(ord, left_root, right_root):
+    case GT:
+      Tree(total, right_root, [left, *right_children])
+    case LT | EQ:
+      Tree(total, left_root, [right, *left_children])
+
+def pair_pass(ord: Ord[a], trees: List[Tree[a]], rev_pairs: List[Tree[a]]) -> List[Tree[a]]:
+  loop trees:
+    case []:
+      rev_pairs
+    case [one]:
+      [one, *rev_pairs]
+    case [left, right, *tail]:
+      pair_pass(ord, tail, [link(ord, left, right), *rev_pairs])
+
+# Second pass melds right-to-left by folding the reversed pair list.
+def meld_rev(ord: Ord[a], rev_pairs: List[Tree[a]], acc: Option[Tree[a]]) -> Option[Tree[a]]:
+  loop rev_pairs:
+    case []:
+      acc
+    case [head, *tail]:
+      next = match acc:
+        case None:
+          head
+        case Some(prev):
+          link(ord, head, prev)
+      meld_rev(ord, tail, Some(next))
+
+def merge_children(ord: Ord[a], children: List[Tree[a]]) -> Option[Tree[a]]:
+  rev_pairs = pair_pass(ord, children, [])
+  meld_rev(ord, rev_pairs, None)
+
+# Inserts one item in O(1) amortized by linking with a singleton root.
+def insert(heap: Heap[a], item: a) -> Heap[a]:
+  match heap:
+    case Empty(ord):
+      singleton(ord, item)
+    case NonEmpty(ord, tree):
+      NonEmpty(ord, link(ord, tree, Tree(1, item, [])))
+
+# Remove minimum and rebuild remainder via two-pass child pairing.
+def pop_min(heap: Heap[a]) -> Option[(a, Heap[a])]:
+  match heap:
+    case Empty(_):
+      None
+    case NonEmpty(ord, Tree(_, item, children)):
+      next_heap = match merge_children(ord, children):
+        case None:
+          empty(ord)
+        case Some(tree):
+          NonEmpty(ord, tree)
+      Some((item, next_heap))
+
+def insert_all(base: Heap[a], source: Heap[a]) -> Heap[a]:
+  def go(fuel: Int, acc: Heap[a], rem: Heap[a]) -> Heap[a]:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        acc
+      case _:
+        match pop_min(rem):
+          case None:
+            acc
+          case Some((item, next)):
+            go(fuel.sub(1), insert(acc, item), next)
+  go(size(source).add(1), base, source)
+
+# Fast O(1) meld for heaps that share the same effective ordering.
+# If orderings differ, results are still memory-safe but may be incorrect.
+def combine_assume_same_order(heap: Heap[a], other: Heap[a]) -> Heap[a]:
+  match heap:
+    case Empty(_):
+      other
+    case NonEmpty(ord, left_tree):
+      match other:
+        case Empty(_):
+          heap
+        case NonEmpty(_, right_tree):
+          NonEmpty(ord, link(ord, left_tree, right_tree))
+
+# Combines two heaps. For non-empty heaps this rebuilds the right side
+# under the left ordering to preserve correctness when orderings differ.
+def combine(heap: Heap[a], other: Heap[a]) -> Heap[a]:
+  match heap:
+    case Empty(_):
+      other
+    case NonEmpty(_, _):
+      match other:
+        case Empty(_):
+          heap
+        case NonEmpty(_, _):
+          insert_all(heap, other)
+
+def trees_from_list(items: List[a]) -> List[Tree[a]]:
+  items.foldl_List([], (acc, item) -> [Tree(1, item, []), *acc]).reverse()
+
+def merge_round(ord: Ord[a], trees: List[Tree[a]]) -> List[Tree[a]]:
+  def go(rem: List[Tree[a]], rev_acc: List[Tree[a]]) -> List[Tree[a]]:
+    loop rem:
+      case []:
+        rev_acc.reverse()
+      case [one]:
+        [one, *rev_acc].reverse()
+      case [left, right, *tail]:
+        go(tail, [link(ord, left, right), *rev_acc])
+  go(trees, [])
+
+# Builds a heap with pairwise rounds to avoid one-sided insertion chains.
+def from_List(ord: Ord[a], items: List[a]) -> Heap[a]:
+  trees0 = trees_from_list(items)
+  fuel = list_size(items).add(8)
+  trees_final = int_loop(fuel, trees0, (rem, trees) -> (
+    match trees:
+      case [] | [_]:
+        (0, trees)
+      case _:
+        (rem.sub(1), merge_round(ord, trees))
+  ))
+  match trees_final:
+    case []:
+      empty(ord)
+    case [one]:
+      NonEmpty(ord, one)
+    case [head, *tail]:
+      merged = tail.foldl_List(head, (acc, next) -> link(ord, acc, next))
+      NonEmpty(ord, merged)
+
+# Ascending list view from repeated pop_min.
+def to_List(heap: Heap[a]) -> List[a]:
+  def go(fuel: Int, rem: Heap[a], rev_acc: List[a]) -> List[a]:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        rev_acc.reverse()
+      case _:
+        match pop_min(rem):
+          case None:
+            rev_acc.reverse()
+          case Some((item, next)):
+            go(fuel.sub(1), next, [item, *rev_acc])
+  go(size(heap).add(1), heap, [])
+
+# Fold in min-to-max order.
+def foldl(heap: Heap[a], init: b, fn: (b, a) -> b) -> b:
+  def go(fuel: Int, rem: Heap[a], acc: b) -> b:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        acc
+      case _:
+        match pop_min(rem):
+          case None:
+            acc
+          case Some((item, next)):
+            go(fuel.sub(1), next, fn(acc, item))
+  go(size(heap).add(1), heap, init)
+
+def eq_fn(inst: Eq[a], left: Heap[a], right: Heap[a]) -> Bool:
+  def go(fuel: Int, left_h: Heap[a], right_h: Heap[a]) -> Bool:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        True
+      case _:
+        match (pop_min(left_h), pop_min(right_h)):
+          case (None, None):
+            True
+          case (Some((left_item, left_tail)), Some((right_item, right_tail))):
+            if eq_Eq(inst, left_item, right_item):
+              go(fuel.sub(1), left_tail, right_tail)
+            else:
+              False
+          case _:
+            False
+  go(size(left).add(size(right)).add(1), left, right)
+
+def cmp_fn(inst: Ord[a], left: Heap[a], right: Heap[a]) -> Comparison:
+  def go(fuel: Int, left_h: Heap[a], right_h: Heap[a]) -> Comparison:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        EQ
+      case _:
+        match (pop_min(left_h), pop_min(right_h)):
+          case (None, None):
+            EQ
+          case (None, Some(_)):
+            LT
+          case (Some(_), None):
+            GT
+          case (Some((left_item, left_tail)), Some((right_item, right_tail))):
+            head_cmp = cmp_Ord(inst, left_item, right_item)
+            if head_cmp matches EQ:
+              go(fuel.sub(1), left_tail, right_tail)
+            else:
+              head_cmp
+  go(size(left).add(size(right)).add(1), left, right)
+
+def eq(inst: Eq[a]) -> Eq[Heap[a]]:
+  eq_from_fn((left, right) -> eq_fn(inst, left, right))
+
+def ord(inst: Ord[a]) -> Ord[Heap[a]]:
+  ord_from_cmp((left, right) -> cmp_fn(inst, left, right))
+
+############################
+# Property tests
+############################
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def sort_Int(list: List[Int]) -> List[Int]:
+  sort(Order(cmp_Int), list)
+
+def check_pop_sequence(heap: Heap[a]) -> Bool:
+  def go(fuel: Int, current: Heap[a], prev_item: Option[a], ok: Bool) -> Bool:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        ok
+      case _:
+        if ok:
+          match pop_min(current):
+            case None:
+              ok
+            case Some((item, next)):
+              step_size_ok = size(next).eq_Int(size(current).sub(1))
+              ord = match current:
+                case Empty(ord):
+                  ord
+                case NonEmpty(ord, _):
+                  ord
+              step_order_ok = match prev_item:
+                case None:
+                  True
+                case Some(prev):
+                  cmp_Ord(ord, prev, item) matches LT | EQ
+              next_ok = and_Bool(ok, and_Bool(step_size_ok, step_order_ok))
+              go(fuel.sub(1), next, Some(item), next_ok)
+        else:
+          False
+  go(size(heap).add(1), heap, None, True)
+
+def peek_list(list: List[a]) -> Option[a]:
+  match list:
+    case []:
+      None
+    case [head, *_]:
+      Some(head)
+
+def cmp_list(fn: (a, b) -> Comparison, left: List[a], right: List[b]) -> Comparison:
+  def go(left: List[a], right: List[b]) -> Comparison:
+    loop (left, right):
+      case ([], []):
+        EQ
+      case ([], [_, *_]):
+        LT
+      case ([_, *_], []):
+        GT
+      case ([left_h, *left_t], [right_h, *right_t]):
+        match fn(left_h, right_h):
+          case EQ:
+            go(left_t, right_t)
+          case LT:
+            LT
+          case GT:
+            GT
+  go(left, right)
+
+def deep_insert(count: Int) -> Heap[Int]:
+  def go(fuel: Int, heap: Heap[Int]) -> Heap[Int]:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        heap
+      case _:
+        go(fuel.sub(1), insert(heap, fuel))
+  go(count, empty(ord_Int))
+
+rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
+
+rand_list_int: Rand[List[Int]] = flat_map_Rand(
+  geometric_Int,
+  len -> sequence_Rand(replicate_List(rand_int, len))
+)
+
+rand_list_pair: Rand[(List[Int], List[Int])] = prod_Rand(rand_list_int, rand_list_int)
+
+roundtrip_prop: Prop = forall_Prop(
+  rand_list_int,
+  "to_List(from_List(ord, list)) is ascending sort",
+  list -> (
+    heap = from_List(ord_Int, list)
+    expected = sort_Int(list)
+    actual = to_List(heap)
+    Assertion(eq_List(eq_Int)(actual, expected), "roundtrip sorted")
+  ))
+
+size_prop: Prop = forall_Prop(
+  rand_list_int,
+  "size matches list size",
+  list -> (
+    heap = from_List(ord_Int, list)
+    Assertion(size(heap).eq_Int(list_size(list)), "size law")
+  ))
+
+min_prop: Prop = forall_Prop(
+  rand_list_int,
+  "min matches sorted list head",
+  list -> (
+    expected = peek_list(sort_Int(list))
+    actual = min(from_List(ord_Int, list))
+    eq_opt_int = eq_Option(eq_Int_inst)
+    Assertion(eq_Eq(eq_opt_int, actual, expected), "min law")
+  ))
+
+foldl_prop: Prop = forall_Prop(
+  rand_list_int,
+  "foldl matches ordered list foldl",
+  list -> (
+    heap = from_List(ord_Int, list)
+    ordered = sort_Int(list)
+    expected = ordered.foldl_List(0, (acc, item) -> acc.mul(31).add(item))
+    actual = foldl(heap, 0, (acc, item) -> acc.mul(31).add(item))
+    Assertion(actual.eq_Int(expected), "foldl ordered")
+  ))
+
+cmp_prop: Prop = forall_Prop(
+  rand_list_pair,
+  "cmp agrees with ordered list lexicographic compare",
+  ((left, right)) -> (
+    left_heap = from_List(ord_Int, left)
+    right_heap = from_List(ord_Int, right)
+    expected = cmp_list(cmp_Int, sort_Int(left), sort_Int(right))
+    heap_ord = ord(ord_Int)
+    actual = cmp_Ord(heap_ord, left_heap, right_heap)
+    Assertion(eq_Eq(eq_Comparison_inst, actual, expected), "cmp law")
+  ))
+
+eq_prop: Prop = forall_Prop(
+  rand_list_pair,
+  "eq agrees with ordered list equality",
+  ((left, right)) -> (
+    left_heap = from_List(ord_Int, left)
+    right_heap = from_List(ord_Int, right)
+    expected = eq_List(eq_Int)(sort_Int(left), sort_Int(right))
+    heap_eq = eq(eq_Int_inst)
+    actual = eq_Eq(heap_eq, left_heap, right_heap)
+    Assertion(eq_Eq(eq_Bool_inst, actual, expected), "eq law")
+  ))
+
+combine_cross_order_prop: Prop = forall_Prop(
+  rand_list_pair,
+  "combine rebuilds correctly when orderings differ",
+  ((left, right)) -> (
+    asc = from_List(ord_Int, left)
+    desc = from_List(reverse_Ord(ord_Int), right)
+    combined = combine(asc, desc)
+    expected = if list_size(left).eq_Int(0):
+      sort_Int(right).reverse()
+    else:
+      sort_Int([*left, *right])
+    actual = to_List(combined)
+    Assertion(eq_List(eq_Int)(actual, expected), "cross-order combine")
+  ))
+
+invariant_prop: Prop = forall_Prop(
+  rand_list_pair,
+  "invariants hold through build/combine/pop",
+  ((left, right)) -> (
+    base = from_List(ord_Int, left)
+    extra = from_List(reverse_Ord(ord_Int), right)
+    merged = combine(base, extra)
+    Assertion(check_pop_sequence(merged), "heap invariants")
+  ))
+
+heap_props: Prop = suite_Prop(
+  "Heap properties",
+  [
+    roundtrip_prop,
+    size_prop,
+    min_prop,
+    foldl_prop,
+    cmp_prop,
+    eq_prop,
+    combine_cross_order_prop,
+    invariant_prop,
+  ])
+
+tests = TestSuite("Heap tests", [
+  (
+    h = empty(ord_Int)
+    Assertion(and_Bool(is_empty(h), size(h).eq_Int(0)), "empty sanity")
+  ),
+  Assertion(min(empty(ord_Int)) matches None, "empty min"),
+  Assertion(pop_min(empty(ord_Int)) matches None, "empty pop"),
+  Assertion(to_List(from_List(ord_Int, [3, 1, 2])) matches [1, 2, 3], "from/to list sanity"),
+  Assertion(to_List(insert(empty(ord_Int), 2).insert(1).insert(3)) matches [1, 2, 3], "insert chaining"),
+  Assertion(
+    match pop_min(from_List(ord_Int, [5, 1, 3])):
+      case Some((head, tail)):
+        and_Bool(head.eq_Int(1), to_List(tail) matches [3, 5])
+      case None:
+        False,
+    "pop_min sanity"
+  ),
+  Assertion(
+    to_List(combine(from_List(ord_Int, [3, 1]), from_List(reverse_Ord(ord_Int), [4, 2]))) matches [1, 2, 3, 4],
+    "combine cross-order sanity"
+  ),
+  (
+    deep = deep_insert(20000)
+    expected_sum = 20000.mul(20001).div(2)
+    pop_ok = check_pop_sequence(deep)
+    Assertion(
+      and_Bool(
+        and_Bool(size(deep).eq_Int(20000), foldl(deep, 0, add).eq_Int(expected_sum)),
+        pop_ok
+      ),
+      "deep stack-safe operations"
+    )
+  ),
+  run_Prop(heap_props, 200, 20260308),
+])
