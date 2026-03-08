@@ -42,6 +42,7 @@ export (
   fold,
   unwrap_or,
   unwrap_or_else,
+  unwrap,
   from_Option,
   eq,
   ord,
@@ -53,18 +54,10 @@ enum Result[e, a]:
   Ok(ok: a)
 
 def is_err(result: Result[e, a]) -> Bool:
-  match result:
-    case Err(_):
-      True
-    case Ok(_):
-      False
+  result matches Err(_)
 
 def is_ok(result: Result[e, a]) -> Bool:
-  match result:
-    case Err(_):
-      False
-    case Ok(_):
-      True
+  result matches Ok(_)
 
 def err(result: Result[e, a]) -> Option[e]:
   match result:
@@ -134,6 +127,10 @@ def unwrap_or_else(result: Result[e, a], on_err: e -> a) -> a:
       on_err(err_value)
     case Ok(ok_value):
       ok_value
+
+def unwrap(ok: forall e. Result[e, a]) -> a:
+  Ok(value) = ok
+  value
 
 def from_Option(value: Option[a], on_none: () -> e) -> Result[e, a]:
   match value:
@@ -222,6 +219,7 @@ tests = TestSuite("Result tests", [
   Assertion(unwrap_or(Ok(2), 10).eq_Int(2), "unwrap_or Ok"),
   Assertion(unwrap_or_else(Err(1), _ -> 7).eq_Int(7), "unwrap_or_else Err"),
   Assertion(unwrap_or_else(Ok(2), _ -> 7).eq_Int(2), "unwrap_or_else Ok"),
+  Assertion(unwrap(Ok(3)).eq_Int(3), "unwrap polymorphic Ok"),
   Assertion(from_Option(Some(2), () -> 0) matches Ok(2), "from_Option Some"),
   Assertion(from_Option(None, () -> 0) matches Err(0), "from_Option None"),
   (
