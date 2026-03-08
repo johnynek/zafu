@@ -182,7 +182,7 @@ def single_entry_node(entry: Entry[k], shift: Int) -> Node[k]:
 def collapse_indexed(data_bitmap: Int, entries: Array[Entry[k]], node_bitmap: Int, children: Array[Node[k]]) -> Option[Node[k]]:
   entry_cnt = size_Array(entries)
   child_cnt = size_Array(children)
-  if and_Bool(entry_cnt.eq_Int(0), child_cnt.eq_Int(0)):
+  if (entry_cnt, child_cnt) matches (0, 0):
     None
   else:
     Some(Indexed(data_bitmap, entries, node_bitmap, children))
@@ -548,6 +548,7 @@ def partition(set: HashSet[k], pred: k -> Bool) -> (HashSet[k], HashSet[k]):
     case Empty(_):
       (set, set)
     case Root(_, _, root):
+      # Tuple state is (predicate True branch, predicate False branch).
       fold_entries_node(root, (empty(hash_item), empty(hash_item)), (state, entry) -> (
         (left, right) = state
         if pred(entry_key(entry)):
@@ -623,8 +624,7 @@ def eq_fn(left: HashSet[k], right: HashSet[k]) -> Bool:
     False
 
 # Equality adapter for sets.
-def eq() -> Eq[HashSet[k]]:
-  eq_from_fn(eq_fn)
+eq: forall k. Eq[HashSet[k]] = eq_from_fn(eq_fn)
 
 def hash_entry(entry: Entry[k]) -> Int:
   finish_61(entry_hash(entry), 1, hash_tag_entry)
@@ -642,8 +642,7 @@ def hash_fn(set: HashSet[k]) -> Int:
       finish_61(mix_61(sum_acc, normalize_61(xor_acc)), sz, hash_tag_set)
 
 # Hash adapter for sets.
-def hash() -> Hash[HashSet[k]]:
-  hash_specialized(hash_fn, eq())
+hash: forall k. Hash[HashSet[k]] = hash_specialized(hash_fn, eq)
 
 ############################
 # Invariants and model (tests)
@@ -882,8 +881,8 @@ adapter_prop: Prop = forall_Prop(
     right = from_List(hash_Int, right_items)
     left_model = model_from_items(left_items)
     right_model = model_from_items(right_items)
-    set_eq = eq()
-    set_hash = hash()
+    set_eq = eq
+    set_hash = hash
     equal = eq_Eq(set_eq, left, right)
     coherent = if equal:
       hash_Hash(set_hash, left).eq_Int(hash_Hash(set_hash, right))
