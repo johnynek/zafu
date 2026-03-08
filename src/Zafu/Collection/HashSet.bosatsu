@@ -26,6 +26,7 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop
 )
+from Zafu/Collection/List import size as size_List
 from Zafu/Abstract/Eq import (
   Eq,
   eq_from_fn,
@@ -119,16 +120,6 @@ def eq_Bool(left: Bool, right: Bool) -> Bool:
     right
   else:
     not_Bool(right)
-
-def list_size_loop(list: List[a], acc: Int) -> Int:
-  loop list:
-    case []:
-      acc
-    case [_, *tail]:
-      list_size_loop(tail, acc + 1)
-
-def list_size(list: List[a]) -> Int:
-  list_size_loop(list, 0)
 
 def popcount(value: Int) -> Int:
   def go(rem: Int, bits: Int, acc: Int) -> Int:
@@ -690,7 +681,7 @@ def model_alter(model: List[Int], key: Int, present: Bool) -> List[Int]:
     model_remove(model, key)
 
 def model_eq(left: List[Int], right: List[Int]) -> Bool:
-  if list_size(left).eq_Int(list_size(right)):
+  if size_List(left).eq_Int(size_List(right)):
     left.foldl_List(True, (ok, key) -> (
       if ok:
         model_contains(right, key)
@@ -701,7 +692,7 @@ def model_eq(left: List[Int], right: List[Int]) -> Bool:
     False
 
 def set_matches_model(set: HashSet[Int], model: List[Int]) -> Bool:
-  if size(set).eq_Int(list_size(model)):
+  if size(set).eq_Int(size_List(model)):
     model.foldl_List(True, (ok, key) -> (
       if ok:
         contains(set, key)

@@ -16,6 +16,7 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop,
 )
+from Zafu/Collection/List import size as size_List
 
 export (
   Queue,
@@ -42,16 +43,6 @@ enum Queue[a: +*]:
 
 # Canonical empty value.
 empty: forall a. Queue[a] = Queue(0, [], [])
-
-def list_size_loop(list: List[a], acc: Int) -> Int:
-  loop list:
-    case []:
-      acc
-    case [_, *tail]:
-      list_size_loop(tail, acc.add(1))
-
-def list_size(list: List[a]) -> Int:
-  list_size_loop(list, 0)
 
 def normalize(size: Int, front: List[a], back_rev: List[a]) -> Queue[a]:
   if cmp_Int(size, 0) matches LT | EQ:
@@ -81,7 +72,7 @@ def normalize_queue(queue: Queue[a]) -> Queue[a]:
 
 # Builds a deque from a list in iteration order.
 def from_List(list: List[a]) -> Queue[a]:
-  normalize(list_size(list), list, [])
+  normalize(size_List(list), list, [])
 
 # Returns items in iteration order.
 def to_List(queue: Queue[a]) -> List[a]:
@@ -311,7 +302,7 @@ size_prop: Prop = forall_Prop(
   "size agrees with list size",
   list -> (
     queue = from_List(list)
-    Assertion(size(queue).eq_Int(list_size(list)), "size law")
+    Assertion(size(queue).eq_Int(size_List(list)), "size law")
   ))
 
 is_empty_prop: Prop = forall_Prop(
@@ -319,7 +310,7 @@ is_empty_prop: Prop = forall_Prop(
   "is_empty agrees with list emptiness",
   list -> (
     queue = from_List(list)
-    expected = list_size(list).eq_Int(0)
+    expected = size_List(list).eq_Int(0)
     Assertion(eq_Bool(is_empty(queue), expected), "is_empty law")
   ))
 
@@ -468,7 +459,7 @@ tests = TestSuite("Deque tests", [
     deep_list = to_List(deep)
     Assertion(
       and_Bool(
-        and_Bool(size(deep).eq_Int(20000), list_size(deep_list).eq_Int(20000)),
+        and_Bool(size(deep).eq_Int(20000), size_List(deep_list).eq_Int(20000)),
         and_Bool(foldl(deep, 0, add).eq_Int(expected_sum), foldr(deep, 0, (item, acc) -> item.add(acc)).eq_Int(expected_sum))
       ),
       "deep stack-safe operations"

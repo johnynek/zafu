@@ -24,6 +24,7 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop,
 )
+from Zafu/Collection/List import size as size_List
 
 export (
   Chain,
@@ -56,16 +57,6 @@ enum Chain[a: +*]:
   WrapList(items: List[a])
   Concat(left: Chain[a], right: Chain[a])
 
-def list_size_Chain_loop(list: List[a], acc: Int) -> Int:
-  loop list:
-    case []:
-      acc
-    case [_, *tail]:
-      list_size_Chain_loop(tail, acc.add(1))
-
-def list_size_Chain(list: List[a]) -> Int:
-  list_size_Chain_loop(list, 0)
-
 def index_List_Chain_loop(list: List[a], idx: Int) -> Option[a]:
   loop list:
     case []:
@@ -90,7 +81,7 @@ def chain_size(chain: Chain[a]) -> Int:
     case WrapArray(items):
       size_Array(items)
     case WrapList(items):
-      list_size_Chain(items)
+      size_List(items)
     case Concat(left, right):
       chain_size(left).add(chain_size(right))
 
@@ -248,7 +239,7 @@ def find_with_Chain(chain: Chain[a], idx: Int, on_missing: () -> b, on_found: a 
               else:
                 loop_find(rem.sub(1), tail, rem_idx.sub(cnt))
             case [WrapList(items), *tail]:
-              cnt = list_size_Chain(items)
+              cnt = size_List(items)
               if cmp_Int(rem_idx, cnt) matches LT:
                 match index_List_Chain(items, rem_idx):
                   case Some(item):
@@ -319,16 +310,6 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
     right
   else:
     False
-
-def list_size_loop(list: List[a], acc: Int) -> Int:
-  loop list:
-    case []:
-      acc
-    case [_, *tail]:
-      list_size_loop(tail, acc.add(1))
-
-def list_size(list: List[a]) -> Int:
-  list_size_loop(list, 0)
 
 def index_List_loop(list: List[a], idx: Int) -> Option[a]:
   loop list:
@@ -421,7 +402,7 @@ rand_list_int: Rand[List[Int]] = flat_map_Rand(
 )
 
 rand_list_with_index: Rand[(List[Int], Int)] = flat_map_Rand(rand_list_int, list -> (
-  upper = list_size(list).add(3)
+  upper = size_List(list).add(3)
   map_Rand(int_range(upper), i -> (list, i.sub(1)))
 ))
 
@@ -450,7 +431,7 @@ size_prop: Prop = forall_Prop(
   "size_Chain agrees with list_size",
   list -> (
     chain = from_List_Chain(list)
-    Assertion(size_Chain(chain).eq_Int(list_size(list)), "size law")
+    Assertion(size_Chain(chain).eq_Int(size_List(list)), "size law")
   ))
 
 singleton_prop: Prop = forall_Prop(
@@ -657,7 +638,7 @@ tests = TestSuite("Chain tests", [
     Assertion(and_Bool(
       and_Bool(
         size_Chain(deep).eq_Int(20000),
-        list_size(deep_list).eq_Int(20000)),
+        size_List(deep_list).eq_Int(20000)),
       and_Bool(
         foldl_Chain(deep, 0, add).eq_Int(expected_sum),
         foldr_Chain(deep, 0, (item, acc) -> item.add(acc)).eq_Int(expected_sum))),

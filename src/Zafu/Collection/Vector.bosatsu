@@ -35,6 +35,7 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop,
 )
+from Zafu/Collection/List import size as size_List
 
 export (
   Vector,
@@ -106,16 +107,6 @@ def max_Int(a: Int, b: Int) -> Int:
 
 def clamp_Int(value: Int, low: Int, high: Int) -> Int:
   min_Int(max_Int(value, low), high)
-
-def list_size_loop(list: List[a], acc: Int) -> Int:
-  loop list:
-    case []:
-      acc
-    case [_, *tail]:
-      list_size_loop(tail, acc.add(1))
-
-def list_size(list: List[a]) -> Int:
-  list_size_loop(list, 0)
 
 def chunk_count(total: Int) -> Int:
   if cmp_Int(total, 0) matches LT | EQ:
@@ -930,7 +921,7 @@ def take_list_model(list: List[Int], count: Int) -> List[Int]:
   slice_list_model(list, 0, count)
 
 def drop_list_model(list: List[Int], count: Int) -> List[Int]:
-  slice_list_model(list, count, list_size(list))
+  slice_list_model(list, count, size_List(list))
 
 def split_list_model(list: List[Int], count: Int) -> (List[Int], List[Int]):
   (take_list_model(list, count), drop_list_model(list, count))
@@ -947,19 +938,19 @@ rand_list_int: Rand[List[Int]] = flat_map_Rand(
 )
 
 rand_list_with_index: Rand[(List[Int], Int)] = flat_map_Rand(rand_list_int, list -> (
-  upper = list_size(list).add(3)
+  upper = size_List(list).add(3)
   map_Rand(int_range(upper), i -> (list, i.sub(1)))
 ))
 
 rand_list_with_index_item: Rand[(List[Int], Int, Int)] = flat_map_Rand(rand_list_int, list -> (
-  upper = list_size(list).add(4)
+  upper = size_List(list).add(4)
   map_Rand(prod_Rand(int_range(upper), rand_int), ((idx_0, item)) -> (
     (list, idx_0.sub(2), item)
   ))
 ))
 
 rand_list_with_slice_bounds: Rand[(List[Int], Int, Int)] = flat_map_Rand(rand_list_int, list -> (
-  upper = list_size(list).add(6)
+  upper = size_List(list).add(6)
   map_Rand(prod_Rand(int_range(upper), int_range(upper)), ((start_0, end_0)) -> (
     (list, start_0.sub(2), end_0.sub(2))
   ))
@@ -974,10 +965,10 @@ rand_deep_list_int: Rand[List[Int]] = flat_map_Rand(
 
 size_prop: Prop = forall_Prop(
   rand_list_int,
-  "size(from_List_Vector(list)) == list_size(list)",
+  "size(from_List_Vector(list)) == size_List(list)",
   list -> (
     vec = from_List_Vector(list)
-    Assertion(size(vec).eq_Int(list_size(list)), "size law")
+    Assertion(size(vec).eq_Int(size_List(list)), "size law")
   ))
 
 index_prop: Prop = forall_Prop(
@@ -1080,7 +1071,7 @@ concat_prop: Prop = forall_Prop(
     vec = concat_Vector(from_List_Vector(left), from_List_Vector(right))
     expected = left.concat(right)
     same_list = eq_List(eq_Int)(to_List_Vector(vec), expected)
-    same_size = size(vec).eq_Int(list_size(expected))
+    same_size = size(vec).eq_Int(size_List(expected))
     Assertion(and_Bool(same_list, same_size), "concat law")
   ))
 
@@ -1091,9 +1082,9 @@ concat_deep_iso_prop: Prop = forall_Prop(
     vec = concat_Vector(from_List_Vector(left), from_List_Vector(right))
     expected = left.concat(right)
     same_list = eq_List(eq_Int)(to_List_Vector(vec), expected)
-    same_size = size(vec).eq_Int(list_size(expected))
-    left_sz = list_size(left)
-    boundary_ok = if cmp_Int(left_sz, list_size(expected)) matches LT:
+    same_size = size(vec).eq_Int(size_List(expected))
+    left_sz = size_List(left)
+    boundary_ok = if cmp_Int(left_sz, size_List(expected)) matches LT:
       eq_Option(eq_Int)(index_Vector(vec, left_sz), index_List(expected, left_sz))
     else:
       True
