@@ -20,8 +20,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE_REPO="${{ github.event.pull_request.head.repo.full_name }}"
-          SOURCE_REF="${{ github.event.pull_request.head.sha }}"
+          SOURCE_REPO="${{ github.repository }}"
+          # Use the checked-out merge SHA so generated links always match docs input.
+          SOURCE_REF="${{ github.sha }}"
           mkdir -p docs/markdown docs/html
           ./bosatsu lib fetch
           ./bosatsu lib doc \
