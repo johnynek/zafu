@@ -123,13 +123,7 @@ def max(inst: Ord[a], left: a, right: a) -> a:
   max_fn(left, right)
 
 def reverse(inst: Ord[a]) -> Ord[a]:
-  Ord { cmp_fn, ... } = inst
-  Ord { lt_fn, ... } = inst
-  Ord { lteq_fn, ... } = inst
-  Ord { gt_fn, ... } = inst
-  Ord { gteq_fn, ... } = inst
-  Ord { min_fn, ... } = inst
-  Ord { max_fn, ... } = inst
+  Ord { cmp_fn, lt_fn, lteq_fn, gt_fn, gteq_fn, min_fn, max_fn, ... } = inst
   ord_specialized(
     (left, right) -> cmp_fn(right, left),
     (left, right) -> gt_fn(left, right),
@@ -141,11 +135,10 @@ def reverse(inst: Ord[a]) -> Ord[a]:
   )
 
 def ord_to_eq(inst: Ord[a]) -> Eq[a]:
-  Ord { lteq_fn, ... } = inst
-  Ord { gt_fn, ... } = inst
+  Ord { cmp_fn, ... } = inst
   eq_specialized(
-    (left, right) -> and_Bool(lteq_fn(left, right), lteq_fn(right, left)),
-    (left, right) -> or_Bool(gt_fn(left, right), gt_fn(right, left)),
+    (left, right) -> cmp_fn(left, right) matches EQ,
+    (left, right) -> cmp_fn(left, right) matches LT | GT,
   )
 
 # Basic Ord law checker for three sample values.
