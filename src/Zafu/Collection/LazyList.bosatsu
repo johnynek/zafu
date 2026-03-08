@@ -21,6 +21,7 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop,
 )
+from Zafu/Collection/List import size as size_List
 
 export (
   LazyList,
@@ -83,17 +84,10 @@ def cons(head: Lazy[a], tail: LazyList[a]) -> LazyList[a]:
     LazyList(tail_size, _) = tail
     cons_take(head, lazy(() -> tail), tail_size.add(1))
 
-def len_List(list):
-    def go(list, acc):
-        loop list:
-            case [_, *tail]: go(tail, acc.add(1))
-            case []: acc
-    go(list, 0)
-
 # Builds a lazy list view over an existing strict list.
 # Construction is O(n) for length calculation, without rebuilding nodes.
 def from_List(lst: List[a]) -> LazyList[a]:
-  size = len_List(lst)
+  size = size_List(lst)
   if cmp_Int(size, 0) matches LT | EQ:
     empty_LazyList
   else:
@@ -412,16 +406,6 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
-def list_size_loop(list: List[a], acc: Int) -> Int:
-  loop list:
-    case []:
-      acc
-    case [_, *tail]:
-      list_size_loop(tail, acc.add(1))
-
-def list_size(list: List[a]) -> Int:
-  list_size_loop(list, 0)
-
 def uncons_List(list: List[a]) -> Option[(a, List[a])]:
   match list:
     case []:
@@ -503,7 +487,7 @@ cons_prop: Prop = forall_Prop(
   prod_Rand(rand_int, rand_list_int),
   "cons_take then uncons returns the same head and tail",
   ((head, tail_list)) -> (
-    size = len_List(tail_list)
+    size = size_List(tail_list)
     ll = cons_take(lazy(() -> head), lazy(() -> from_List(tail_list)), size.add(1))
     match uncons(ll):
       case Some((actual_head, actual_tail)):
@@ -685,7 +669,7 @@ tests = TestSuite("LazyList tests", [
     deep_sum = foldl(deep, 0, add)
     Assertion(
       and_Bool(
-        list_size(deep_list).eq_Int(20000),
+        size_List(deep_list).eq_Int(20000),
         deep_sum.eq_Int(expected_sum)
       ),
       "deep concat stack-safe"

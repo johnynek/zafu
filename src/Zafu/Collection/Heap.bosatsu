@@ -19,6 +19,7 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop,
 )
+from Zafu/Collection/List import size as size_List
 from Zafu/Abstract/Eq import (
   Eq,
   eq_from_fn,
@@ -84,16 +85,6 @@ def size(heap: Heap[a]) -> Int:
 # True if heap has no elements.
 def is_empty(heap: Heap[a]) -> Bool:
   size(heap).eq_Int(0)
-
-def list_size_loop(list: List[a], acc: Int) -> Int:
-  loop list:
-    case []:
-      acc
-    case [_, *tail]:
-      list_size_loop(tail, acc.add(1))
-
-def list_size(list: List[a]) -> Int:
-  list_size_loop(list, 0)
 
 # Returns the minimum element, if present.
 def min(heap: Heap[a]) -> Option[a]:
@@ -217,7 +208,7 @@ def merge_round(ord: Ord[a], trees: List[Tree[a]]) -> List[Tree[a]]:
 # Builds a heap with pairwise rounds to avoid one-sided insertion chains.
 def from_List(ord: Ord[a], items: List[a]) -> Heap[a]:
   trees0 = trees_from_list(items)
-  fuel = list_size(items).add(8)
+  fuel = size_List(items).add(8)
   trees_final = int_loop(fuel, trees0, (rem, trees) -> (
     match trees:
       case [] | [_]:
@@ -407,7 +398,7 @@ size_prop: Prop = forall_Prop(
   "size matches list size",
   list -> (
     heap = from_List(ord_Int, list)
-    Assertion(size(heap).eq_Int(list_size(list)), "size law")
+    Assertion(size(heap).eq_Int(size_List(list)), "size law")
   ))
 
 min_prop: Prop = forall_Prop(
@@ -462,7 +453,7 @@ combine_cross_order_prop: Prop = forall_Prop(
     asc = from_List(ord_Int, left)
     desc = from_List(reverse_Ord(ord_Int), right)
     combined = combine(asc, desc)
-    expected = if list_size(left).eq_Int(0):
+    expected = if size_List(left).eq_Int(0):
       sort_Int(right).reverse()
     else:
       sort_Int([*left, *right])
