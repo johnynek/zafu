@@ -7,6 +7,7 @@ from Bosatsu/IO/Bytes import (
   utf8_bytes_from_String,
 )
 from Bosatsu/Num/Float64 import (
+  addf,
   float64_bits_to_Int,
   int_bits_to_Float64,
   is_nan,
@@ -36,7 +37,55 @@ from Zafu/Abstract/Hash import (
   finish_61,
 )
 
+from Zafu/Abstract/Semigroup import (
+  Semigroup,
+  semigroup_from_combine,
+  combine as combine_Semigroup,
+)
+
 export (
+  semigroup_Unit,
+  semigroup_Bool_and,
+  semigroup_Bool_or,
+  semigroup_Int_add,
+  semigroup_Int_mul,
+  semigroup_Float64_add,
+  semigroup_Float64_mul,
+  semigroup_String,
+  semigroup_Option,
+  semigroup_List,
+  semigroup_Tuple1,
+  semigroup_Tuple2,
+  semigroup_Tuple3,
+  semigroup_Tuple4,
+  semigroup_Tuple5,
+  semigroup_Tuple6,
+  semigroup_Tuple7,
+  semigroup_Tuple8,
+  semigroup_Tuple9,
+  semigroup_Tuple10,
+  semigroup_Tuple11,
+  semigroup_Tuple12,
+  semigroup_Tuple13,
+  semigroup_Tuple14,
+  semigroup_Tuple15,
+  semigroup_Tuple16,
+  semigroup_Tuple17,
+  semigroup_Tuple18,
+  semigroup_Tuple19,
+  semigroup_Tuple20,
+  semigroup_Tuple21,
+  semigroup_Tuple22,
+  semigroup_Tuple23,
+  semigroup_Tuple24,
+  semigroup_Tuple25,
+  semigroup_Tuple26,
+  semigroup_Tuple27,
+  semigroup_Tuple28,
+  semigroup_Tuple29,
+  semigroup_Tuple30,
+  semigroup_Tuple31,
+  semigroup_Tuple32,
   eq_Unit,
   ord_Unit,
   hash_Unit,
@@ -170,6 +219,12 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
     right
   else:
     False
+
+def or_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    True
+  else:
+    right
 
 def cmp_then(first: Comparison, next: () -> Comparison) -> Comparison:
   if first matches EQ:
@@ -314,6 +369,19 @@ ord_String: Ord[String] = ord_from_cmp(cmp_String)
 eq_String: Eq[String] = ord_to_eq(ord_String)
 hash_String: Hash[String] = hash_specialized(hash_string_value, eq_String)
 
+semigroup_Unit: Semigroup[Unit] = semigroup_from_combine((left, _) -> left)
+
+semigroup_Bool_and: Semigroup[Bool] = semigroup_from_combine(and_Bool)
+semigroup_Bool_or: Semigroup[Bool] = semigroup_from_combine(or_Bool)
+
+semigroup_Int_add: Semigroup[Int] = semigroup_from_combine((left, right) -> left.add(right))
+semigroup_Int_mul: Semigroup[Int] = semigroup_from_combine((left, right) -> left.mul(right))
+
+semigroup_Float64_add: Semigroup[Float64] = semigroup_from_combine(addf)
+semigroup_Float64_mul: Semigroup[Float64] = semigroup_from_combine(timesf)
+
+semigroup_String: Semigroup[String] = semigroup_from_combine((left, right) -> concat_String([left, right]))
+
 def eq_Option(eq_item: Eq[a]) -> Eq[Option[a]]:
   eq_from_fn((left, right) -> (
     match (left, right):
@@ -348,6 +416,19 @@ def hash_Option(hash_item: Hash[a]) -> Hash[Option[a]]:
         finish_61(mix_61(hash_seed_option_some, hash_Hash(hash_item, item)), 1, hash_tag_option_some)
   ), eq_Option(eq_item))
 
+def semigroup_Option(semigroup_item: Semigroup[a]) -> Semigroup[Option[a]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Some(left_v), Some(right_v)):
+        Some(combine_Semigroup(semigroup_item, left_v, right_v))
+      case (Some(_), None):
+        left
+      case (None, Some(_)):
+        right
+      case (None, None):
+        None
+  ))
+
 def eq_List(eq_item: Eq[a]) -> Eq[List[a]]:
   eq_from_fn((left, right) -> eq_list(eq_item, left, right))
 
@@ -360,6 +441,8 @@ def hash_List(hash_item: Hash[a]) -> Hash[List[a]]:
     (value) -> hash_list(hash_item, hash_seed_list, hash_tag_list, value),
     eq_List(eq_item),
   )
+
+semigroup_List: Semigroup[List[a]] = semigroup_from_combine((left, right) -> left.concat(right))
 
 def eq_Tuple1(eq1: Eq[a1]) -> Eq[Tuple1[a1]]:
   eq_from_fn((left, right) -> (
@@ -2025,6 +2108,230 @@ def hash_Tuple32(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     finish_61(acc32, 32, hash_tuple_tag_base.add(32))
   )), eq_Tuple32(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21, eq22, eq23, eq24, eq25, eq26, eq27, eq28, eq29, eq30, eq31, eq32))
 
+def semigroup_Tuple1(semigroup1: Semigroup[a1]) -> Semigroup[Tuple1[a1]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple1(left1), Tuple1(right1)):
+        Tuple1(combine_Semigroup(semigroup1, left1, right1))
+  ))
+
+def semigroup_Tuple2(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2]) -> Semigroup[Tuple2[a1, a2]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple2(left1, left2), Tuple2(right1, right2)):
+        Tuple2(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2))
+  ))
+
+def semigroup_Tuple3(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3]) -> Semigroup[Tuple3[a1, a2, a3]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple3(left1, left2, left3), Tuple3(right1, right2, right3)):
+        Tuple3(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3))
+  ))
+
+def semigroup_Tuple4(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4]) -> Semigroup[Tuple4[a1, a2, a3, a4]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple4(left1, left2, left3, left4), Tuple4(right1, right2, right3, right4)):
+        Tuple4(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4))
+  ))
+
+def semigroup_Tuple5(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5]) -> Semigroup[Tuple5[a1, a2, a3, a4, a5]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple5(left1, left2, left3, left4, left5), Tuple5(right1, right2, right3, right4, right5)):
+        Tuple5(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5))
+  ))
+
+def semigroup_Tuple6(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6]) -> Semigroup[Tuple6[a1, a2, a3, a4, a5, a6]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple6(left1, left2, left3, left4, left5, left6), Tuple6(right1, right2, right3, right4, right5, right6)):
+        Tuple6(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6))
+  ))
+
+def semigroup_Tuple7(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7]) -> Semigroup[Tuple7[a1, a2, a3, a4, a5, a6, a7]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple7(left1, left2, left3, left4, left5, left6, left7), Tuple7(right1, right2, right3, right4, right5, right6, right7)):
+        Tuple7(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7))
+  ))
+
+def semigroup_Tuple8(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8]) -> Semigroup[Tuple8[a1, a2, a3, a4, a5, a6, a7, a8]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple8(left1, left2, left3, left4, left5, left6, left7, left8), Tuple8(right1, right2, right3, right4, right5, right6, right7, right8)):
+        Tuple8(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8))
+  ))
+
+def semigroup_Tuple9(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9]) -> Semigroup[Tuple9[a1, a2, a3, a4, a5, a6, a7, a8, a9]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple9(left1, left2, left3, left4, left5, left6, left7, left8, left9), Tuple9(right1, right2, right3, right4, right5, right6, right7, right8, right9)):
+        Tuple9(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9))
+  ))
+
+def semigroup_Tuple10(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10]) -> Semigroup[Tuple10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple10(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10), Tuple10(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10)):
+        Tuple10(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10))
+  ))
+
+def semigroup_Tuple11(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11]) -> Semigroup[Tuple11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple11(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11), Tuple11(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11)):
+        Tuple11(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11))
+  ))
+
+def semigroup_Tuple12(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12]) -> Semigroup[Tuple12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple12(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12), Tuple12(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12)):
+        Tuple12(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12))
+  ))
+
+def semigroup_Tuple13(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13]) -> Semigroup[Tuple13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple13(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13), Tuple13(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13)):
+        Tuple13(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13))
+  ))
+
+def semigroup_Tuple14(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14]) -> Semigroup[Tuple14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple14(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14), Tuple14(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14)):
+        Tuple14(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14))
+  ))
+
+def semigroup_Tuple15(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15]) -> Semigroup[Tuple15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple15(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15), Tuple15(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15)):
+        Tuple15(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15))
+  ))
+
+def semigroup_Tuple16(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16]) -> Semigroup[Tuple16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple16(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16), Tuple16(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16)):
+        Tuple16(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16))
+  ))
+
+def semigroup_Tuple17(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17]) -> Semigroup[Tuple17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple17(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17), Tuple17(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17)):
+        Tuple17(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17))
+  ))
+
+def semigroup_Tuple18(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18]) -> Semigroup[Tuple18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple18(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18), Tuple18(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18)):
+        Tuple18(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18))
+  ))
+
+def semigroup_Tuple19(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19]) -> Semigroup[Tuple19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple19(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19), Tuple19(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19)):
+        Tuple19(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19))
+  ))
+
+def semigroup_Tuple20(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20]) -> Semigroup[Tuple20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple20(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20), Tuple20(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20)):
+        Tuple20(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20))
+  ))
+
+def semigroup_Tuple21(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21]) -> Semigroup[Tuple21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple21(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21), Tuple21(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21)):
+        Tuple21(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20), combine_Semigroup(semigroup21, left21, right21))
+  ))
+
+def semigroup_Tuple22(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22]) -> Semigroup[Tuple22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple22(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22), Tuple22(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22)):
+        Tuple22(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20), combine_Semigroup(semigroup21, left21, right21), combine_Semigroup(semigroup22, left22, right22))
+  ))
+
+def semigroup_Tuple23(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23]) -> Semigroup[Tuple23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple23(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23), Tuple23(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23)):
+        Tuple23(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20), combine_Semigroup(semigroup21, left21, right21), combine_Semigroup(semigroup22, left22, right22), combine_Semigroup(semigroup23, left23, right23))
+  ))
+
+def semigroup_Tuple24(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24]) -> Semigroup[Tuple24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple24(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24), Tuple24(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24)):
+        Tuple24(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20), combine_Semigroup(semigroup21, left21, right21), combine_Semigroup(semigroup22, left22, right22), combine_Semigroup(semigroup23, left23, right23), combine_Semigroup(semigroup24, left24, right24))
+  ))
+
+def semigroup_Tuple25(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25]) -> Semigroup[Tuple25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple25(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25), Tuple25(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25)):
+        Tuple25(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20), combine_Semigroup(semigroup21, left21, right21), combine_Semigroup(semigroup22, left22, right22), combine_Semigroup(semigroup23, left23, right23), combine_Semigroup(semigroup24, left24, right24), combine_Semigroup(semigroup25, left25, right25))
+  ))
+
+def semigroup_Tuple26(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26]) -> Semigroup[Tuple26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple26(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26), Tuple26(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26)):
+        Tuple26(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20), combine_Semigroup(semigroup21, left21, right21), combine_Semigroup(semigroup22, left22, right22), combine_Semigroup(semigroup23, left23, right23), combine_Semigroup(semigroup24, left24, right24), combine_Semigroup(semigroup25, left25, right25), combine_Semigroup(semigroup26, left26, right26))
+  ))
+
+def semigroup_Tuple27(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26], semigroup27: Semigroup[a27]) -> Semigroup[Tuple27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple27(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27), Tuple27(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27)):
+        Tuple27(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20), combine_Semigroup(semigroup21, left21, right21), combine_Semigroup(semigroup22, left22, right22), combine_Semigroup(semigroup23, left23, right23), combine_Semigroup(semigroup24, left24, right24), combine_Semigroup(semigroup25, left25, right25), combine_Semigroup(semigroup26, left26, right26), combine_Semigroup(semigroup27, left27, right27))
+  ))
+
+def semigroup_Tuple28(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26], semigroup27: Semigroup[a27], semigroup28: Semigroup[a28]) -> Semigroup[Tuple28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple28(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28), Tuple28(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28)):
+        Tuple28(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20), combine_Semigroup(semigroup21, left21, right21), combine_Semigroup(semigroup22, left22, right22), combine_Semigroup(semigroup23, left23, right23), combine_Semigroup(semigroup24, left24, right24), combine_Semigroup(semigroup25, left25, right25), combine_Semigroup(semigroup26, left26, right26), combine_Semigroup(semigroup27, left27, right27), combine_Semigroup(semigroup28, left28, right28))
+  ))
+
+def semigroup_Tuple29(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26], semigroup27: Semigroup[a27], semigroup28: Semigroup[a28], semigroup29: Semigroup[a29]) -> Semigroup[Tuple29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple29(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28, left29), Tuple29(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28, right29)):
+        Tuple29(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20), combine_Semigroup(semigroup21, left21, right21), combine_Semigroup(semigroup22, left22, right22), combine_Semigroup(semigroup23, left23, right23), combine_Semigroup(semigroup24, left24, right24), combine_Semigroup(semigroup25, left25, right25), combine_Semigroup(semigroup26, left26, right26), combine_Semigroup(semigroup27, left27, right27), combine_Semigroup(semigroup28, left28, right28), combine_Semigroup(semigroup29, left29, right29))
+  ))
+
+def semigroup_Tuple30(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26], semigroup27: Semigroup[a27], semigroup28: Semigroup[a28], semigroup29: Semigroup[a29], semigroup30: Semigroup[a30]) -> Semigroup[Tuple30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple30(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28, left29, left30), Tuple30(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28, right29, right30)):
+        Tuple30(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20), combine_Semigroup(semigroup21, left21, right21), combine_Semigroup(semigroup22, left22, right22), combine_Semigroup(semigroup23, left23, right23), combine_Semigroup(semigroup24, left24, right24), combine_Semigroup(semigroup25, left25, right25), combine_Semigroup(semigroup26, left26, right26), combine_Semigroup(semigroup27, left27, right27), combine_Semigroup(semigroup28, left28, right28), combine_Semigroup(semigroup29, left29, right29), combine_Semigroup(semigroup30, left30, right30))
+  ))
+
+def semigroup_Tuple31(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26], semigroup27: Semigroup[a27], semigroup28: Semigroup[a28], semigroup29: Semigroup[a29], semigroup30: Semigroup[a30], semigroup31: Semigroup[a31]) -> Semigroup[Tuple31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple31(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28, left29, left30, left31), Tuple31(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28, right29, right30, right31)):
+        Tuple31(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20), combine_Semigroup(semigroup21, left21, right21), combine_Semigroup(semigroup22, left22, right22), combine_Semigroup(semigroup23, left23, right23), combine_Semigroup(semigroup24, left24, right24), combine_Semigroup(semigroup25, left25, right25), combine_Semigroup(semigroup26, left26, right26), combine_Semigroup(semigroup27, left27, right27), combine_Semigroup(semigroup28, left28, right28), combine_Semigroup(semigroup29, left29, right29), combine_Semigroup(semigroup30, left30, right30), combine_Semigroup(semigroup31, left31, right31))
+  ))
+
+def semigroup_Tuple32(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26], semigroup27: Semigroup[a27], semigroup28: Semigroup[a28], semigroup29: Semigroup[a29], semigroup30: Semigroup[a30], semigroup31: Semigroup[a31], semigroup32: Semigroup[a32]) -> Semigroup[Tuple32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]]:
+  semigroup_from_combine((left, right) -> (
+    match (left, right):
+      case (Tuple32(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28, left29, left30, left31, left32), Tuple32(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28, right29, right30, right31, right32)):
+        Tuple32(combine_Semigroup(semigroup1, left1, right1), combine_Semigroup(semigroup2, left2, right2), combine_Semigroup(semigroup3, left3, right3), combine_Semigroup(semigroup4, left4, right4), combine_Semigroup(semigroup5, left5, right5), combine_Semigroup(semigroup6, left6, right6), combine_Semigroup(semigroup7, left7, right7), combine_Semigroup(semigroup8, left8, right8), combine_Semigroup(semigroup9, left9, right9), combine_Semigroup(semigroup10, left10, right10), combine_Semigroup(semigroup11, left11, right11), combine_Semigroup(semigroup12, left12, right12), combine_Semigroup(semigroup13, left13, right13), combine_Semigroup(semigroup14, left14, right14), combine_Semigroup(semigroup15, left15, right15), combine_Semigroup(semigroup16, left16, right16), combine_Semigroup(semigroup17, left17, right17), combine_Semigroup(semigroup18, left18, right18), combine_Semigroup(semigroup19, left19, right19), combine_Semigroup(semigroup20, left20, right20), combine_Semigroup(semigroup21, left21, right21), combine_Semigroup(semigroup22, left22, right22), combine_Semigroup(semigroup23, left23, right23), combine_Semigroup(semigroup24, left24, right24), combine_Semigroup(semigroup25, left25, right25), combine_Semigroup(semigroup26, left26, right26), combine_Semigroup(semigroup27, left27, right27), combine_Semigroup(semigroup28, left28, right28), combine_Semigroup(semigroup29, left29, right29), combine_Semigroup(semigroup30, left30, right30), combine_Semigroup(semigroup31, left31, right31), combine_Semigroup(semigroup32, left32, right32))
+  ))
+
 def eq_Dict(eq_key: Eq[k], eq_value: Eq[v]) -> Eq[Dict[k, v]]:
   pair_eq = eq_Tuple2(eq_key, eq_value)
   eq_from_fn((left, right) -> eq_list(pair_eq, items(left), items(right)))
@@ -2044,7 +2351,50 @@ def hash_Dict(hash_key: Hash[k], hash_value: Hash[v]) -> Hash[Dict[k, v]]:
     eq_Dict(eq_key, eq_value),
   )
 
-tests = TestSuite("Predef Eq/Ord/Hash instances", [
+tests = TestSuite("Predef Eq/Ord/Hash/Semigroup instances", [
+  Assertion(
+    match combine_Semigroup(semigroup_Unit, (), ()):
+      case ():
+        True,
+    "semigroup_Unit",
+  ),
+  Assertion(eq_Eq(eq_Int, combine_Semigroup(semigroup_Int_add, 1, 2), 3), "semigroup_Int_add"),
+  Assertion(eq_Eq(eq_Int, combine_Semigroup(semigroup_Int_mul, 2, 4), 8), "semigroup_Int_mul"),
+  Assertion(cmp_Float64(combine_Semigroup(semigroup_Float64_add, 1.25, 2.5), 3.75) matches EQ, "semigroup_Float64_add"),
+  Assertion(cmp_Float64(combine_Semigroup(semigroup_Float64_mul, 1.5, 2.0), 3.0) matches EQ, "semigroup_Float64_mul"),
+  Assertion(combine_Semigroup(semigroup_Bool_and, True, False) matches False, "semigroup_Bool_and"),
+  Assertion(combine_Semigroup(semigroup_Bool_or, False, True), "semigroup_Bool_or"),
+  Assertion(
+    eq_Eq(eq_String, combine_Semigroup(semigroup_String, "ab", "cd"), "abcd"),
+    "semigroup_String",
+  ),
+  (
+    option_sg = semigroup_Option(semigroup_Int_add)
+    Assertion(combine_Semigroup(option_sg, Some(1), Some(2)) matches Some(3), "semigroup_Option combines Some")
+  ),
+  (
+    option_sg = semigroup_Option(semigroup_Int_add)
+    Assertion(combine_Semigroup(option_sg, None, Some(2)) matches Some(2), "semigroup_Option keeps present side")
+  ),
+  Assertion(
+    combine_Semigroup(semigroup_List, [1, 2], [3, 4]) matches [1, 2, 3, 4],
+    "semigroup_List",
+  ),
+  (
+    tuple2_sg = semigroup_Tuple2(semigroup_Int_add, semigroup_Bool_or)
+    Assertion(
+      combine_Semigroup(tuple2_sg, Tuple2(1, False), Tuple2(2, True)) matches Tuple2(3, True),
+      "semigroup_Tuple2",
+    )
+  ),
+  (
+    tuple32_sg = semigroup_Tuple32(semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add, semigroup_Int_add)
+    left32 = Tuple32(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+    right32 = Tuple32(2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
+    expected32 = Tuple32(3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
+    tuple32_eq = eq_Tuple32(eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int)
+    Assertion(eq_Eq(tuple32_eq, combine_Semigroup(tuple32_sg, left32, right32), expected32), "semigroup_Tuple32")
+  ),
   Assertion(eq_Eq(eq_Int, 1, 1), "eq_Int"),
   Assertion(cmp_Ord(ord_Int, 1, 2) matches LT, "ord_Int"),
   Assertion(eq_Eq(eq_Int, hash_Hash(hash_Int, -1), normalize_61(-1)), "hash_Int"),
