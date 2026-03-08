@@ -3,6 +3,7 @@ package Zafu/Abstract/Ord
 from Zafu/Abstract/Eq import (
   Eq,
   eq_specialized,
+  laws_Eq,
   eq as eq_Eq,
 )
 
@@ -19,6 +20,7 @@ export (
   min,
   max,
   reverse,
+  ord_by,
   ord_to_eq,
   laws_Ord,
 )
@@ -134,6 +136,9 @@ def reverse(inst: Ord[a]) -> Ord[a]:
     (left, right) -> min_fn(left, right),
   )
 
+def ord_by(inst: Ord[b], project: a -> b) -> Ord[a]:
+  ord_from_cmp((left, right) -> cmp(inst, project(left), project(right)))
+
 def ord_to_eq(inst: Ord[a]) -> Eq[a]:
   Ord { cmp_fn, ... } = inst
   eq_specialized(
@@ -142,15 +147,22 @@ def ord_to_eq(inst: Ord[a]) -> Eq[a]:
   )
 
 # Basic Ord law checker for three sample values.
-def laws_Ord(inst: Ord[a], x: a, y: a, z: a) -> Bool:
-  reflexive = eq(inst, x, x)
-  antisymmetric = eq_Comparison(cmp(inst, x, y), inverse_Comparison(cmp(inst, y, x)))
-  transitive = if and_Bool(lteq(inst, x, y), lteq(inst, y, z)):
-    lteq(inst, x, z)
-  else:
-    True
-  total = or_Bool(lteq(inst, x, y), lteq(inst, y, x))
-  and_Bool(and_Bool(reflexive, antisymmetric), and_Bool(transitive, total))
+def laws_Ord(inst: Ord[a], x: a, y: a, z: a) -> Test:
+  reflexive = Assertion(eq(inst, x, x), "reflexive")
+  antisymmetric = Assertion(
+    eq_Comparison(cmp(inst, x, y), inverse_Comparison(cmp(inst, y, x))),
+    "antisymmetric",
+  )
+  transitive = Assertion(
+    if and_Bool(lteq(inst, x, y), lteq(inst, y, z)):
+      lteq(inst, x, z)
+    else:
+      True,
+    "transitive",
+  )
+  total = Assertion(or_Bool(lteq(inst, x, y), lteq(inst, y, x)), "total")
+  eq_laws = laws_Eq(ord_to_eq(inst), x, y, z)
+  TestSuite("Ord laws", [eq_laws, reflexive, antisymmetric, transitive, total])
 
 tests = TestSuite("Ord tests", [
   (
@@ -172,6 +184,11 @@ tests = TestSuite("Ord tests", [
   ),
   (
     int_ord = ord_from_cmp(cmp_Int)
-    Assertion(laws_Ord(int_ord, 1, 2, 3), "laws_Ord sanity")
+    laws_Ord(int_ord, 1, 2, 3)
+  ),
+  (
+    int_ord = ord_from_cmp(cmp_Int)
+    first_ord = ord_by(int_ord, ((Tuple2(first, _)) -> first))
+    Assertion(cmp(first_ord, Tuple2(1, "x"), Tuple2(2, "y")) matches LT, "ord_by")
   ),
 ])
