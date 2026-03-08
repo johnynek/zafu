@@ -32,6 +32,11 @@ from Zafu/Abstract/Hash import (
   hash_by,
   hash as hash_Hash,
 )
+from Zafu/Abstract/Semigroup import (
+  Semigroup,
+  semigroup_specialized,
+  combine_all_option as combine_all_option_Semigroup,
+)
 from Zafu/Collection/HashSet import (
   empty as empty_HashSet,
   contains as contains_HashSet,
@@ -79,6 +84,7 @@ export (
   append,
   concat,
   concat_all,
+  combine_all,
   reverse,
   eq_NonEmptyList,
   ord_NonEmptyList,
@@ -211,6 +217,19 @@ def concat(left: NonEmptyList[a], right: NonEmptyList[a]) -> NonEmptyList[a]:
 def concat_all(items: NonEmptyList[NonEmptyList[a]]) -> NonEmptyList[a]:
   flat_map(items, item -> item)
 
+def combine_all(items: NonEmptyList[a], sg: Semigroup[a]) -> a:
+  NonEmptyList(head0, tail0) = items
+  match tail0:
+    case []:
+      head0
+    case _:
+      # Use Semigroup's specialized list combine path when available.
+      match combine_all_option_Semigroup(sg, [head0, *tail0]):
+        case Some(total):
+          total
+        case None:
+          head0
+
 def reverse(items: NonEmptyList[a]) -> NonEmptyList[a]:
   reversed = to_List(items).foldl_List([], (acc, item) -> [item, *acc])
   from_non_empty_List_or(reversed, () -> items)
@@ -295,6 +314,28 @@ tests = TestSuite("Zafu/Collection/NonEmptyList tests", [
     to_List(concat_all(NonEmptyList(NonEmptyList(1, [2]), [NonEmptyList(3, []), NonEmptyList(4, [5])]))) matches [1, 2, 3, 4, 5],
     "concat_all",
   ),
+  Assertion(combine_all(NonEmptyList(1, [2, 3]), semigroup_specialized(
+    (_, _) -> 999,
+    (value, _) -> value,
+    (items) -> (
+      match items:
+        case []:
+          None
+        case _:
+          Some(items.foldl_List(0, add))
+    ),
+  )).eq_Int(6), "combine_all uses specialized combine_all_option"),
+  Assertion(combine_all(singleton(7), semigroup_specialized(
+    (_, _) -> 999,
+    (value, _) -> value,
+    (items) -> (
+      match items:
+        case []:
+          None
+        case _:
+          Some(0)
+    ),
+  )).eq_Int(7), "combine_all singleton fast path"),
   Assertion(to_List(reverse(NonEmptyList(1, [2, 3]))) matches [3, 2, 1], "reverse"),
   (
     inst = eq_NonEmptyList(eq_Int_inst)
