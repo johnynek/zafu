@@ -47,12 +47,13 @@ export (
   min,
   insert,
   combine,
+  combine_assume_same_order,
   pop_min,
   from_List,
   to_List,
   foldl,
   eq,
-  cmp,
+  ord,
 )
 
 # Internal node carrying cached subtree size.
@@ -173,6 +174,19 @@ def insert_all(base: Heap[a], source: Heap[a]) -> Heap[a]:
             go(fuel.sub(1), insert(acc, item), next)
   go(size(source).add(1), base, source)
 
+# Fast O(1) meld for heaps that share the same effective ordering.
+# If orderings differ, results are still memory-safe but may be incorrect.
+def combine_assume_same_order(heap: Heap[a], other: Heap[a]) -> Heap[a]:
+  match heap:
+    case Empty(_):
+      other
+    case NonEmpty(ord, left_tree):
+      match other:
+        case Empty(_):
+          heap
+        case NonEmpty(_, right_tree):
+          NonEmpty(ord, link(ord, left_tree, right_tree))
+
 # Combines two heaps. For non-empty heaps this rebuilds the right side
 # under the left ordering to preserve correctness when orderings differ.
 def combine(heap: Heap[a], other: Heap[a]) -> Heap[a]:
@@ -290,7 +304,7 @@ def cmp_fn(inst: Ord[a], left: Heap[a], right: Heap[a]) -> Comparison:
 def eq(inst: Eq[a]) -> Eq[Heap[a]]:
   eq_from_fn((left, right) -> eq_fn(inst, left, right))
 
-def cmp(inst: Ord[a]) -> Ord[Heap[a]]:
+def ord(inst: Ord[a]) -> Ord[Heap[a]]:
   ord_from_cmp((left, right) -> cmp_fn(inst, left, right))
 
 ############################
@@ -424,7 +438,7 @@ cmp_prop: Prop = forall_Prop(
     left_heap = from_List(ord_Int, left)
     right_heap = from_List(ord_Int, right)
     expected = cmp_list(cmp_Int, sort_Int(left), sort_Int(right))
-    heap_ord = cmp(ord_Int)
+    heap_ord = ord(ord_Int)
     actual = cmp_Ord(heap_ord, left_heap, right_heap)
     Assertion(eq_Eq(eq_Comparison_inst, actual, expected), "cmp law")
   ))
