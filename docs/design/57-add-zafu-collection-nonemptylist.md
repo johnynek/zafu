@@ -1,29 +1,12 @@
 ---
 issue: 57
-priority: 3
-touch_paths:
-  - docs/design/57-add-zafu-collection-nonemptylist.md
-  - src/Zafu/Collection/NonEmptyList.bosatsu
-depends_on: []
-estimated_size: M
-generated_at: 2026-03-08T20:46:36Z
----
-
-# Design: Add Zafu/Collection/NonEmptyList (Issue #57)
-
-_Issue: #57 (https://github.com/johnynek/zafu/issues/57)_
-
-## Summary
-
-Design doc content for issue #57 proposing a new Zafu/Collection/NonEmptyList module with constructor export, complete function inventory, implementation phases, acceptance criteria, risks, and rollout guidance.
-
----
-issue: 57
 priority: 2
 touch_paths:
   - docs/design/57-add-zafu-collection-nonemptylist.md
   - src/Zafu/Collection/NonEmptyList.bosatsu
 depends_on:
+  - 34
+  - 40
   - 48
 estimated_size: M
 generated_at: 2026-03-08T20:41:40Z
@@ -58,8 +41,9 @@ The key design challenge is API parity with `Zafu/Collection/List` without losin
 3. Export the constructor and support direct pattern matching.
 4. Add `from_append(lst: List[a], last: a) -> NonEmptyList[a]`.
 5. Provide List-like API including `sort` and `map`.
-6. Preserve non-empty invariants in return types wherever feasible.
-7. Add tests covering constructor, conversions, parity functions, and invariant-preserving behavior.
+6. Add `distinct_by_hash(h: Hash[a], items: NonEmptyList[a]) -> NonEmptyList[a]` with stable first-seen order.
+7. Preserve non-empty invariants in return types wherever feasible.
+8. Add tests covering constructor, conversions, parity functions, and invariant-preserving behavior.
 
 ## Non-goals
 
@@ -106,9 +90,9 @@ Shape and query helpers:
 7. `any(items: NonEmptyList[Bool]) -> Bool`
 8. `exists(items: NonEmptyList[a], pred: a -> Bool) -> Bool`
 9. `for_all(items: NonEmptyList[a], pred: a -> Bool) -> Bool`
-10. `get_List(items: NonEmptyList[a], idx: Int) -> Option[a]`
+10. `get(items: NonEmptyList[a], idx: Int) -> Option[a]`
 11. `get_or(items: NonEmptyList[a], idx: Int, on_missing: () -> a) -> a`
-12. `set_List(items: NonEmptyList[a], idx: Int, value: a) -> Option[NonEmptyList[a]]`
+12. `set(items: NonEmptyList[a], idx: Int, value: a) -> Option[NonEmptyList[a]]`
 
 Transforms and folds:
 
@@ -121,6 +105,7 @@ Transforms and folds:
 7. `sort(order: Order[a], items: NonEmptyList[a]) -> NonEmptyList[a]`
 8. `zip(left: NonEmptyList[a], right: NonEmptyList[b]) -> NonEmptyList[(a, b)]`
 9. `filter(items: NonEmptyList[a], pred: a -> Bool) -> Option[NonEmptyList[a]]`
+10. `distinct_by_hash(h: Hash[a], items: NonEmptyList[a]) -> NonEmptyList[a]`
 
 Non-empty structural ops:
 
@@ -146,23 +131,26 @@ Implementation strategy:
 
 1. Define `to_List` as the canonical bridge to `Zafu/Collection/List` behavior.
 2. Implement fast-path direct functions without conversion where trivial (`head`, `tail`, `uncons`, `prepend`, `map`, `size`).
-3. For parity behavior (`sort`, `sum`, `sumf`, `exists`, `for_all`, `get_List`, `set_List`, `foldl`, `foldr`), delegate through `Zafu/Collection/List` on `to_List(items)`.
+3. For parity behavior (`sort`, `sum`, `sumf`, `exists`, `for_all`, `get`, `set`, `foldl`, `foldr`), delegate through `Zafu/Collection/List` on `to_List(items)`.
 4. Reconstruct `NonEmptyList` via a single private helper from known-non-empty list results (used by `sort`, `zip`, `concat`, `reverse`, etc.).
 5. Keep impossible-empty branches explicit and defensive in pattern matches.
+6. Implement `distinct_by_hash` by folding left through `NonEmptyList` while carrying `(HashSet[a], List[a])`: insert unseen items into `HashSet`, prepend accepted items to a reverse-order buffer, reverse once at the end, then reconstruct `NonEmptyList` from the guaranteed non-empty output.
 
 Preservation rules:
 
 1. Operations that are total on non-empty inputs return `NonEmptyList[...]`.
 2. Operations that may remove all elements return `Option[NonEmptyList[...]]` (`filter`).
-3. Index-based mutation keeps `Option` semantics from `List.set_List` but upgrades successful branch to `NonEmptyList`.
+3. Index-based mutation keeps the same out-of-range/negative-index `Option` semantics as `Zafu/Collection/List` while upgrading successful branches to `NonEmptyList`.
+4. `distinct_by_hash` never returns empty because at least the head item is always retained.
 
 Complexity targets:
 
 1. `head`, `tail`, `uncons`, `prepend`: O(1)
 2. `append`, `last`, `size`, `map`, `foldl`, `foldr`, `sum`, `sumf`, `reverse`, `filter`: O(n)
-3. `get_List`, `set_List`: O(n)
+3. `get`, `set`: O(n)
 4. `zip`: O(min(n, m))
 5. `sort`: O(n log n)
+6. `distinct_by_hash`: expected O(n) with hash-table membership/update costs.
 
 ## Implementation Plan
 
@@ -174,14 +162,14 @@ Phase 1: Type and construction
 
 Phase 2: List-parity API
 
-1. Implement parity queries and indexing: `is_empty`, `any`, `exists`, `for_all`, `get_List`, `get_or`, `set_List`.
+1. Implement parity queries and indexing: `is_empty`, `any`, `exists`, `for_all`, `get`, `get_or`, `set`.
 2. Implement folds/transforms: `foldl`, `foldr`, `sum`, `sumf`, `map`, `flat_map`, `sort`, `zip`, `filter`.
-3. Implement structural ops: `prepend`, `append`, `concat`, `concat_all`, `reverse`, `eq_NonEmptyList`.
+3. Implement structural ops: `prepend`, `append`, `concat`, `concat_all`, `reverse`, `distinct_by_hash`, `eq_NonEmptyList`.
 
 Phase 3: Tests and validation
 
 1. Add module tests in `src/Zafu/Collection/NonEmptyList.bosatsu` covering all exports.
-2. Add targeted edge tests for: `from_List([]) == None`, `filter` all-false behavior, `set_List` out-of-range and negative index behavior, singleton `zip`, and `sort`/`map` non-empty preservation.
+2. Add targeted edge tests for: `from_List([]) == None`, `filter` all-false behavior, `set` out-of-range and negative index behavior, singleton `zip`, `sort`/`map` non-empty preservation, and `distinct_by_hash` stable first-seen output.
 3. Run `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh`.
 
 ## Acceptance Criteria
@@ -193,9 +181,10 @@ Phase 3: Tests and validation
 5. `map` and `sort` are implemented and return `NonEmptyList`.
 6. All functions in the API inventory are implemented and exported.
 7. Functions that may empty a collection do not fabricate invalid values (`filter` uses `Option[NonEmptyList[a]]`).
-8. Index semantics (`get_List`, `set_List`, `get_or`) match `Zafu/Collection/List` behavior for out-of-range and negative indices.
-9. Unit tests cover constructor/conversion laws and branch behavior for each partial function.
-10. `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh` pass.
+8. `distinct_by_hash` preserves first-seen order and returns `NonEmptyList` for every input.
+9. Index semantics (`get`, `set`, `get_or`) match `Zafu/Collection/List` behavior for out-of-range and negative indices.
+10. Unit tests cover constructor/conversion laws and branch behavior for each partial function.
+11. `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh` pass.
 
 ## Risks and Mitigations
 
