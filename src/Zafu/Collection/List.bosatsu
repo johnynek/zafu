@@ -1,0 +1,173 @@
+package Zafu/Collection/List
+
+from Bosatsu/List import (
+  any as any_List,
+  exists as exists_List,
+  get_List as get_List_base,
+  head as head_List,
+  for_all as for_all_List,
+  set_List as set_List_base,
+  sum as sum_List,
+  sort as sort_List,
+  uncons as uncons_List,
+  zip as zip_List,
+)
+from Bosatsu/Num/Float64 import (
+  addf,
+)
+
+export (
+  any,
+  exists,
+  get_List,
+  head,
+  for_all,
+  set_List,
+  size,
+  sum,
+  sumf,
+  sort,
+  uncons,
+  zip,
+  eq_List,
+  is_empty,
+  get_or,
+  last,
+  foldl,
+  foldr,
+  map,
+  flat_map,
+  filter,
+  concat_all,
+)
+
+def any(items: List[Bool]) -> Bool:
+  any_List(items)
+
+def exists(items: List[a], pred: a -> Bool) -> Bool:
+  exists_List(items, pred)
+
+def for_all(items: List[a], pred: a -> Bool) -> Bool:
+  for_all_List(items, pred)
+
+def size(items: List[a]) -> Int:
+  # Bosatsu/List.size returns Nat; this module's API exposes Int.
+  items.foldl_List(0, (acc, _) -> acc.add(1))
+
+def head(items: List[a]) -> Option[a]:
+  head_List(items)
+
+def uncons(items: List[a]) -> Option[(a, List[a])]:
+  uncons_List(items)
+
+def get_List(items: List[a], idx: Int) -> Option[a]:
+  get_List_base(items, idx)
+
+def set_List(items: List[a], idx: Int, value: a) -> Option[List[a]]:
+  set_List_base(items, idx, value)
+
+def zip(left: List[a], right: List[b]) -> List[(a, b)]:
+  zip_List(left, right)
+
+def sort(order: Order[a], items: List[a]) -> List[a]:
+  sort_List(order, items)
+
+def sum(items: List[Int]) -> Int:
+  sum_List(items)
+
+def sumf(items: List[Float64]) -> Float64:
+  items.foldl_List(0.0, addf)
+
+def eq_List(eq_item: (a, b) -> Bool, left: List[a], right: List[b]) -> Bool:
+  recur (left, right):
+    case ([left_head, *left_tail], [right_head, *right_tail]) if eq_item(left_head, right_head):
+      eq_List(eq_item, left_tail, right_tail)
+    case ([], []):
+      True
+    case _:
+      False
+
+def is_empty(items: List[a]) -> Bool:
+  match items:
+    case []:
+      True
+    case _:
+      False
+
+def get_or(items: List[a], idx: Int, on_missing: () -> a) -> a:
+  match get_List(items, idx):
+    case Some(value):
+      value
+    case None:
+      on_missing()
+
+def last(items: List[a]) -> Option[a]:
+  items.foldl_List(None, (_, item) -> Some(item))
+
+def foldl(items: List[a], init: b, fn: (b, a) -> b) -> b:
+  items.foldl_List(init, fn)
+
+def foldr(items: List[a], init: b, fn: (a, b) -> b) -> b:
+  # Reverse + foldl gives right-fold semantics with stack-safe traversal.
+  items.reverse().foldl_List(init, (acc, item) -> fn(item, acc))
+
+def map(items: List[a], fn: a -> b) -> List[b]:
+  items.map_List(fn)
+
+def flat_map(items: List[a], fn: a -> List[b]) -> List[b]:
+  items.flat_map_List(fn)
+
+def filter(items: List[a], pred: a -> Bool) -> List[a]:
+  # Build from the right so element order matches the input list.
+  foldr(items, [], (item, acc) -> (
+    if pred(item):
+      [item, *acc]
+    else:
+      acc
+  ))
+
+def concat_all(items: List[List[a]]) -> List[a]:
+  foldr(items, [], (next, acc) -> next.concat(acc))
+
+tests = TestSuite("Zafu/Collection/List tests", [
+  Assertion(any([False, True, False]), "any has true"),
+  Assertion(any([False, False]) matches False, "any all false"),
+  Assertion(exists([1, 2, 3], i -> i.eq_Int(2)), "exists hit"),
+  Assertion(exists([1, 2, 3], i -> i.eq_Int(9)) matches False, "exists miss"),
+  Assertion(for_all([2, 4, 6], i -> mod_Int(i, 2).eq_Int(0)), "for_all all match"),
+  Assertion(for_all([2, 3, 6], i -> mod_Int(i, 2).eq_Int(0)) matches False, "for_all mismatch"),
+  Assertion(size([]).eq_Int(0), "size empty"),
+  Assertion(size([1, 2, 3]).eq_Int(3), "size non-empty"),
+  Assertion(head([]) matches None, "head empty"),
+  Assertion(head([1, 2, 3]) matches Some(1), "head non-empty"),
+  Assertion(uncons([]) matches None, "uncons empty"),
+  Assertion(uncons([1, 2, 3]) matches Some((1, [2, 3])), "uncons non-empty"),
+  Assertion(get_List([10, 11, 12], 0) matches Some(10), "get_List first"),
+  Assertion(get_List([10, 11, 12], 2) matches Some(12), "get_List last"),
+  Assertion(get_List([10, 11, 12], 3) matches None, "get_List out of range"),
+  Assertion(get_List([10, 11, 12], -1) matches None, "get_List negative"),
+  Assertion(set_List([10, 11, 12], 0, 99) matches Some([99, 11, 12]), "set_List first"),
+  Assertion(set_List([10, 11, 12], 2, 99) matches Some([10, 11, 99]), "set_List last"),
+  Assertion(set_List([10, 11, 12], 3, 99) matches None, "set_List out of range"),
+  Assertion(set_List([10, 11, 12], -1, 99) matches None, "set_List negative"),
+  Assertion(zip([1, 2], ["a"]) matches [(1, "a")], "zip truncates to shortest"),
+  Assertion(sort(Order(cmp_Int), [3, 1, 2, 1]) matches [1, 1, 2, 3], "sort ints"),
+  Assertion(sum([1, 2, 3, 4]).eq_Int(10), "sum ints"),
+  Assertion(sumf([]).cmp_Float64(0.0) matches EQ, "sumf empty"),
+  Assertion(sumf([1.25, 2.5, 0.25]).cmp_Float64(4.0) matches EQ, "sumf exact sample"),
+  Assertion(eq_List((i, s) -> cmp_String(int_to_String(i), s) matches EQ, [1, 2], ["1", "2"]), "eq_List custom predicate"),
+  Assertion(eq_List((i, s) -> cmp_String(int_to_String(i), s) matches EQ, [1, 2], ["1"]) matches False, "eq_List length mismatch"),
+  Assertion(is_empty([]), "is_empty empty"),
+  Assertion(is_empty([1]) matches False, "is_empty non-empty"),
+  Assertion(get_or([1, 2, 3], 1, () -> 99).eq_Int(2), "get_or hit"),
+  Assertion(get_or([1, 2, 3], 10, () -> 99).eq_Int(99), "get_or out-of-range fallback"),
+  Assertion(get_or([1, 2, 3], -1, () -> 99).eq_Int(99), "get_or negative fallback"),
+  Assertion(last([]) matches None, "last empty"),
+  Assertion(last([1, 2, 3]) matches Some(3), "last non-empty"),
+  Assertion(foldl([1, 2, 3], 0, add).eq_Int(6), "foldl sum"),
+  Assertion(foldr([1, 2, 3], 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr right-associative"),
+  Assertion(map([1, 2, 3], i -> i.add(10)) matches [11, 12, 13], "map"),
+  Assertion(flat_map([1, 2], i -> [i, i.add(1)]) matches [1, 2, 2, 3], "flat_map"),
+  Assertion(filter([1, 2, 3, 4, 5], i -> mod_Int(i, 2).eq_Int(0)) matches [2, 4], "filter preserves order"),
+  Assertion(concat_all([[1, 2], [], [3], [4, 5]]) matches [1, 2, 3, 4, 5], "concat_all"),
+])
