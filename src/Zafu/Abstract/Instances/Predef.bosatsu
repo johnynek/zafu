@@ -151,7 +151,7 @@ def eq_list(eq_item: Eq[a], left: List[a], right: List[a]) -> Bool:
 
 def cmp_list(ord_item: Ord[a], left: List[a], right: List[a]) -> Comparison:
   def go(left: List[a], right: List[a]) -> Comparison:
-    recur (left, right):
+    loop (left, right):
       case ([], []):
         EQ
       case ([], [_, *_]):
@@ -159,7 +159,11 @@ def cmp_list(ord_item: Ord[a], left: List[a], right: List[a]) -> Comparison:
       case ([_, *_], []):
         GT
       case ([left_h, *left_t], [right_h, *right_t]):
-        cmp_then(cmp_Ord(ord_item, left_h, right_h), () -> go(left_t, right_t))
+        head_cmp = cmp_Ord(ord_item, left_h, right_h)
+        if head_cmp matches EQ:
+          go(left_t, right_t)
+        else:
+          head_cmp
   go(left, right)
 
 ord_Unit: Ord[Unit] = ord_from_cmp((_, _) -> EQ)
