@@ -1,0 +1,971 @@
+package Zafu/Collection/HashSet
+
+from Bosatsu/Collection/Array import (
+  Array,
+  empty_Array,
+  from_List_Array,
+  size_Array,
+  get_Array,
+  foldl_Array,
+  set_or_self_Array,
+  concat_all_Array,
+  slice_Array
+)
+from Bosatsu/Rand import (
+  Rand,
+  int_range,
+  geometric_Int,
+  map_Rand,
+  flat_map_Rand,
+  prod_Rand,
+  sequence_Rand
+)
+from Bosatsu/Testing/Properties import (
+  Prop,
+  forall_Prop,
+  suite_Prop,
+  run_Prop
+)
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_from_fn,
+  eq as eq_Eq
+)
+from Zafu/Abstract/Hash import (
+  Hash,
+  hash_specialized,
+  hash as hash_Hash,
+  hash_to_Eq,
+  normalize_61,
+  mix_61,
+  finish_61
+)
+from Zafu/Abstract/Instances/Predef import (
+  eq_Int as eq_Int_inst,
+  hash_Int
+)
+
+export (
+  HashSet,
+  empty,
+  singleton,
+  from_List,
+  size,
+  is_empty,
+  set_hash_item,
+  contains,
+  updated,
+  alter,
+  remove,
+  filter,
+  partition,
+  union,
+  intersection,
+  difference,
+  difference_assume_same_hash,
+  union_assume_same_hash,
+  eq,
+  hash
+)
+
+def operator +(a, b): a.add(b)
+def operator -(a, b): a.sub(b)
+def operator &(a, b): a.and_Int(b)
+def operator |(a, b): a.or_Int(b)
+def operator <<(a, b): a.shift_left_Int(b)
+def operator >>(a, b): a.shift_right_Int(b)
+
+fragment_bits: Int = 5
+fragment_mask: Int = 31
+hash_seed_set: Int = 1709
+hash_tag_entry: Int = 1721
+hash_tag_set: Int = 1723
+
+struct Entry(
+  hash: Int,
+  key: k
+)
+
+def entry_hash(entry: Entry[k]) -> Int:
+  Entry(hash, _) = entry
+  hash
+
+def entry_key(entry: Entry[k]) -> k:
+  Entry(_, key) = entry
+  key
+
+enum Node:
+  Indexed(data_bitmap: Int, entries: Array[Entry[k]], node_bitmap: Int, children: Array[Node[k]])
+  Collision(hash: Int, entries: Array[Entry[k]])
+
+enum HashSet:
+  Empty(hash_item: Hash[k])
+  Root(hash_item: Hash[k], size: Int, root: Node[k])
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def not_Bool(value: Bool) -> Bool:
+  if value:
+    False
+  else:
+    True
+
+def eq_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    not_Bool(right)
+
+def list_size_loop(list: List[a], acc: Int) -> Int:
+  loop list:
+    case []:
+      acc
+    case [_, *tail]:
+      list_size_loop(tail, acc + 1)
+
+def list_size(list: List[a]) -> Int:
+  list_size_loop(list, 0)
+
+def popcount(value: Int) -> Int:
+  def go(rem: Int, bits: Int, acc: Int) -> Int:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _ if cmp_Int(bits, 0) matches LT | EQ:
+        acc
+      case _:
+        go(rem - 1, bits >> 1, acc + (bits & 1))
+  go(64, value, 0)
+
+def fragment(entry_hash: Int, shift: Int) -> Int:
+  (entry_hash >> shift) & fragment_mask
+
+def bitpos(fragment: Int) -> Int:
+  1 << fragment
+
+def has_bit(bitmap: Int, bit: Int) -> Bool:
+  cmp_Int(bitmap & bit, 0) matches GT
+
+def bitmap_index(bitmap: Int, bit: Int) -> Int:
+  popcount(bitmap & (bit - 1))
+
+def singleton_Array(item: a) -> Array[a]:
+  from_List_Array([item])
+
+def array_insert(items: Array[a], idx: Int, value: a) -> Array[a]:
+  cnt = size_Array(items)
+  left = slice_Array(items, 0, idx)
+  right = slice_Array(items, idx, cnt)
+  concat_all_Array([left, singleton_Array(value), right])
+
+def array_remove(items: Array[a], idx: Int) -> Array[a]:
+  cnt = size_Array(items)
+  left = slice_Array(items, 0, idx)
+  right = slice_Array(items, idx + 1, cnt)
+  concat_all_Array([left, right])
+
+def set_hash_item(set: HashSet[k]) -> Hash[k]:
+  match set:
+    case Empty(hash_item):
+      hash_item
+    case Root(hash_item, _, _):
+      hash_item
+
+def single_entry_node(entry: Entry[k], shift: Int) -> Node[k]:
+  bit = bitpos(fragment(entry_hash(entry), shift))
+  Indexed(bit, singleton_Array(entry), 0, empty_Array)
+
+def collapse_indexed(data_bitmap: Int, entries: Array[Entry[k]], node_bitmap: Int, children: Array[Node[k]]) -> Option[Node[k]]:
+  entry_cnt = size_Array(entries)
+  child_cnt = size_Array(children)
+  if and_Bool(entry_cnt.eq_Int(0), child_cnt.eq_Int(0)):
+    None
+  else:
+    Some(Indexed(data_bitmap, entries, node_bitmap, children))
+
+def find_entry_index(entries: Array[Entry[k]], key_hash: Int, key: k, eq_key: Eq[k]) -> Option[Int]:
+  cnt = size_Array(entries)
+  def go(rem: Int, idx: Int) -> Option[Int]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        None
+      case _:
+        match get_Array(entries, idx):
+          case Some(Entry(entry_hash, entry_key)):
+            if and_Bool(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
+              Some(idx)
+            else:
+              go(rem - 1, idx + 1)
+          case None:
+            go(rem - 1, idx + 1)
+  go(cnt, 0)
+
+def merge_two_entries_with_fuel(left: Entry[k], right: Entry[k], shift: Int, fuel: Int) -> Node[k]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      Collision(entry_hash(left), from_List_Array([left, right]))
+    case _:
+      if entry_hash(left).eq_Int(entry_hash(right)):
+        Collision(entry_hash(left), from_List_Array([left, right]))
+      else:
+        left_frag = fragment(entry_hash(left), shift)
+        right_frag = fragment(entry_hash(right), shift)
+        if left_frag.eq_Int(right_frag):
+          bit = bitpos(left_frag)
+          child = merge_two_entries_with_fuel(left, right, shift + fragment_bits, fuel.sub(1))
+          Indexed(0, empty_Array, bit, singleton_Array(child))
+        else:
+          left_bit = bitpos(left_frag)
+          right_bit = bitpos(right_frag)
+          bitmap = left_bit | right_bit
+          ordered_entries = if cmp_Int(left_frag, right_frag) matches LT:
+            from_List_Array([left, right])
+          else:
+            from_List_Array([right, left])
+          Indexed(bitmap, ordered_entries, 0, empty_Array)
+
+def merge_two_entries(left: Entry[k], right: Entry[k], shift: Int) -> Node[k]:
+  merge_two_entries_with_fuel(left, right, shift, 24)
+
+def insert_entry_node_fuel(node: Node[k], entry: Entry[k], eq_key: Eq[k], shift: Int, fuel: Int) -> (Node[k], Int):
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      (node, 0)
+    case _:
+      match node:
+        case Indexed(data_bitmap, entries, node_bitmap, children):
+          frag = fragment(entry_hash(entry), shift)
+          bit = bitpos(frag)
+          if has_bit(data_bitmap, bit):
+            data_idx = bitmap_index(data_bitmap, bit)
+            match get_Array(entries, data_idx):
+              case Some(current):
+                same_key = and_Bool(entry_hash(current).eq_Int(entry_hash(entry)), eq_Eq(eq_key, entry_key(current), entry_key(entry)))
+                if same_key:
+                  (Indexed(data_bitmap, set_or_self_Array(entries, data_idx, entry), node_bitmap, children), 0)
+                else:
+                  merged_child = merge_two_entries(current, entry, shift + fragment_bits)
+                  next_entries = array_remove(entries, data_idx)
+                  next_data_bitmap = data_bitmap.xor_Int(bit)
+                  child_idx = bitmap_index(node_bitmap, bit)
+                  next_children = array_insert(children, child_idx, merged_child)
+                  (Indexed(next_data_bitmap, next_entries, node_bitmap | bit, next_children), 1)
+              case None:
+                insert_idx = bitmap_index(data_bitmap, bit)
+                next_entries = array_insert(entries, insert_idx, entry)
+                (Indexed(data_bitmap | bit, next_entries, node_bitmap, children), 1)
+          else:
+            if has_bit(node_bitmap, bit):
+              child_idx = bitmap_index(node_bitmap, bit)
+              match get_Array(children, child_idx):
+                case Some(child):
+                  (next_child, delta) = insert_entry_node_fuel(child, entry, eq_key, shift + fragment_bits, fuel.sub(1))
+                  (Indexed(data_bitmap, entries, node_bitmap, set_or_self_Array(children, child_idx, next_child)), delta)
+                case None:
+                  fallback_child = single_entry_node(entry, shift + fragment_bits)
+                  (Indexed(data_bitmap, entries, node_bitmap | bit, array_insert(children, child_idx, fallback_child)), 1)
+            else:
+              insert_idx = bitmap_index(data_bitmap, bit)
+              next_entries = array_insert(entries, insert_idx, entry)
+              (Indexed(data_bitmap | bit, next_entries, node_bitmap, children), 1)
+        case Collision(collision_hash, entries):
+          if collision_hash.eq_Int(entry_hash(entry)):
+            match find_entry_index(entries, entry_hash(entry), entry_key(entry), eq_key):
+              case Some(idx):
+                (Collision(collision_hash, set_or_self_Array(entries, idx, entry)), 0)
+              case None:
+                (Collision(collision_hash, concat_all_Array([entries, singleton_Array(entry)])), 1)
+          else:
+            match get_Array(entries, 0):
+              case None:
+                (single_entry_node(entry, shift), 1)
+              case Some(first):
+                base = merge_two_entries(first, entry, shift)
+                cnt = size_Array(entries)
+                (_, final_node) = int_loop(cnt + 1, (1, base), (rem, state) -> (
+                  (idx, acc) = state
+                  if cmp_Int(idx, cnt) matches LT:
+                    match get_Array(entries, idx):
+                      case Some(item):
+                        (next_acc, _) = insert_entry_node_fuel(acc, item, eq_key, shift, fuel.sub(1))
+                        (rem.sub(1), (idx + 1, next_acc))
+                      case None:
+                        (rem.sub(1), (idx + 1, acc))
+                  else:
+                    (0, state)
+                ))
+                (final_node, 1)
+
+def insert_entry_node(node: Node[k], entry: Entry[k], eq_key: Eq[k], shift: Int) -> (Node[k], Int):
+  insert_entry_node_fuel(node, entry, eq_key, shift, 4096)
+
+def remove_entry_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shift: Int, fuel: Int) -> (Option[Node[k]], Int):
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      (Some(node), 0)
+    case _:
+      match node:
+        case Indexed(data_bitmap, entries, node_bitmap, children):
+          frag = fragment(key_hash, shift)
+          bit = bitpos(frag)
+          current_node = Indexed(data_bitmap, entries, node_bitmap, children)
+          if has_bit(data_bitmap, bit):
+            data_idx = bitmap_index(data_bitmap, bit)
+            match get_Array(entries, data_idx):
+              case Some(current):
+                same_key = and_Bool(entry_hash(current).eq_Int(key_hash), eq_Eq(eq_key, entry_key(current), key))
+                if same_key:
+                  next_entries = array_remove(entries, data_idx)
+                  next_data_bitmap = data_bitmap.xor_Int(bit)
+                  (collapse_indexed(next_data_bitmap, next_entries, node_bitmap, children), 1)
+                else:
+                  (Some(current_node), 0)
+              case None:
+                (Some(current_node), 0)
+          else:
+            if has_bit(node_bitmap, bit):
+              child_idx = bitmap_index(node_bitmap, bit)
+              match get_Array(children, child_idx):
+                case None:
+                  (Some(current_node), 0)
+                case Some(child):
+                  (next_child_opt, removed) = remove_entry_node_fuel(child, key_hash, key, eq_key, shift + fragment_bits, fuel.sub(1))
+                  if removed.eq_Int(0):
+                    (Some(current_node), 0)
+                  else:
+                    match next_child_opt:
+                      case None:
+                        next_children = array_remove(children, child_idx)
+                        next_node_bitmap = node_bitmap.xor_Int(bit)
+                        (collapse_indexed(data_bitmap, entries, next_node_bitmap, next_children), 1)
+                      case Some(next_child):
+                        next_children = set_or_self_Array(children, child_idx, next_child)
+                        (collapse_indexed(data_bitmap, entries, node_bitmap, next_children), 1)
+            else:
+              (Some(current_node), 0)
+        case Collision(collision_hash, entries):
+          current_node = Collision(collision_hash, entries)
+          if collision_hash.eq_Int(key_hash):
+            match find_entry_index(entries, key_hash, key, eq_key):
+              case None:
+                (Some(current_node), 0)
+              case Some(idx):
+                next_entries = array_remove(entries, idx)
+                next_cnt = size_Array(next_entries)
+                if next_cnt.eq_Int(0):
+                  (None, 1)
+                elif next_cnt.eq_Int(1):
+                  match get_Array(next_entries, 0):
+                    case Some(entry):
+                      (Some(single_entry_node(entry, shift)), 1)
+                    case None:
+                      (None, 1)
+                else:
+                  (Some(Collision(collision_hash, next_entries)), 1)
+          else:
+            (Some(current_node), 0)
+
+def remove_entry_node(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shift: Int) -> (Option[Node[k]], Int):
+  remove_entry_node_fuel(node, key_hash, key, eq_key, shift, 4096)
+
+def contains_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shift: Int, fuel: Int) -> Bool:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      False
+    case _:
+      match node:
+        case Indexed(data_bitmap, entries, node_bitmap, children):
+          frag = fragment(key_hash, shift)
+          bit = bitpos(frag)
+          if has_bit(data_bitmap, bit):
+            data_idx = bitmap_index(data_bitmap, bit)
+            match get_Array(entries, data_idx):
+              case Some(Entry(entry_hash, entry_key)):
+                and_Bool(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key))
+              case None:
+                False
+          else:
+            if has_bit(node_bitmap, bit):
+              child_idx = bitmap_index(node_bitmap, bit)
+              match get_Array(children, child_idx):
+                case Some(child):
+                  contains_node_fuel(child, key_hash, key, eq_key, shift + fragment_bits, fuel.sub(1))
+                case None:
+                  False
+            else:
+              False
+        case Collision(collision_hash, entries):
+          if collision_hash.eq_Int(key_hash):
+            find_entry_index(entries, key_hash, key, eq_key) matches Some(_)
+          else:
+            False
+
+def contains_node(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shift: Int) -> Bool:
+  contains_node_fuel(node, key_hash, key, eq_key, shift, 4096)
+
+def contains_with_hash(set: HashSet[k], key_hash: Int, key: k) -> Bool:
+  hash_item = set_hash_item(set)
+  eq_key = hash_to_Eq(hash_item)
+  match set:
+    case Empty(_):
+      False
+    case Root(_, _, root):
+      contains_node(root, key_hash, key, eq_key, 0)
+
+def updated_entry(set: HashSet[k], entry: Entry[k]) -> HashSet[k]:
+  match set:
+    case Empty(hash_item):
+      Root(hash_item, 1, single_entry_node(entry, 0))
+    case Root(hash_item, sz, root):
+      eq_key = hash_to_Eq(hash_item)
+      (next_root, delta) = insert_entry_node(root, entry, eq_key, 0)
+      Root(hash_item, sz + delta, next_root)
+
+def updated_with_hash(set: HashSet[k], key_hash: Int, key: k) -> HashSet[k]:
+  updated_entry(set, Entry(key_hash, key))
+
+def remove_with_hash(set: HashSet[k], key_hash: Int, key: k) -> HashSet[k]:
+  match set:
+    case Empty(_):
+      set
+    case Root(hash_item, sz, root):
+      eq_key = hash_to_Eq(hash_item)
+      (next_root_opt, removed) = remove_entry_node(root, key_hash, key, eq_key, 0)
+      if removed.eq_Int(0):
+        set
+      else:
+        match next_root_opt:
+          case Some(next_root):
+            Root(hash_item, sz - removed, next_root)
+          case None:
+            Empty(hash_item)
+
+# Empty set for a chosen item hash/equality dictionary.
+def empty(hash_item: Hash[k]) -> HashSet[k]:
+  Empty(hash_item)
+
+# Single-item set.
+def singleton(hash_item: Hash[k], item: k) -> HashSet[k]:
+  updated_with_hash(empty(hash_item), hash_Hash(hash_item, item), item)
+
+# Builds a set from items, dropping duplicates.
+def from_List(hash_item: Hash[k], items: List[k]) -> HashSet[k]:
+  items.foldl_List(empty(hash_item), (acc, item) -> updated_with_hash(acc, hash_Hash(hash_item, item), item))
+
+# O(1) cached size.
+def size(set: HashSet[k]) -> Int:
+  match set:
+    case Empty(_):
+      0
+    case Root(_, sz, _):
+      sz
+
+# True if set has no entries.
+def is_empty(set: HashSet[k]) -> Bool:
+  set matches Empty(_) | Root(_, 0, _)
+
+# True when item is present.
+def contains(set: HashSet[k], item: k) -> Bool:
+  hash_item = set_hash_item(set)
+  contains_with_hash(set, hash_Hash(hash_item, item), item)
+
+# Inserts one item.
+def updated(set: HashSet[k], item: k) -> HashSet[k]:
+  hash_item = set_hash_item(set)
+  updated_with_hash(set, hash_Hash(hash_item, item), item)
+
+# Unified insert/remove operation.
+def alter(set: HashSet[k], item: k, fn: Bool -> Bool) -> HashSet[k]:
+  hash_item = set_hash_item(set)
+  item_hash = hash_Hash(hash_item, item)
+  current = contains_with_hash(set, item_hash, item)
+  next = fn(current)
+  if current:
+    if next:
+      set
+    else:
+      remove_with_hash(set, item_hash, item)
+  else:
+    if next:
+      updated_with_hash(set, item_hash, item)
+    else:
+      set
+
+# Removes one item when present.
+def remove(set: HashSet[k], item: k) -> HashSet[k]:
+  hash_item = set_hash_item(set)
+  remove_with_hash(set, hash_Hash(hash_item, item), item)
+
+def fold_entries_node_fuel(node: Node[k], init: b, fn: (b, Entry[k]) -> b, fuel: Int) -> b:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      init
+    case _:
+      match node:
+        case Indexed(_, entries, _, children):
+          acc1 = foldl_Array(entries, init, fn)
+          cnt = size_Array(children)
+          (_, acc_final) = int_loop(cnt + 1, (0, acc1), (rem, state) -> (
+            (idx, acc) = state
+            if cmp_Int(idx, cnt) matches LT:
+              match get_Array(children, idx):
+                case Some(child):
+                  (rem.sub(1), (idx + 1, fold_entries_node_fuel(child, acc, fn, fuel.sub(1))))
+                case None:
+                  (rem.sub(1), (idx + 1, acc))
+            else:
+              (0, state)
+          ))
+          acc_final
+        case Collision(_, entries):
+          foldl_Array(entries, init, fn)
+
+def fold_entries_node(node: Node[k], init: b, fn: (b, Entry[k]) -> b) -> b:
+  fold_entries_node_fuel(node, init, fn, 4096)
+
+# Keep only entries satisfying pred.
+def filter(set: HashSet[k], pred: k -> Bool) -> HashSet[k]:
+  hash_item = set_hash_item(set)
+  match set:
+    case Empty(_):
+      set
+    case Root(_, _, root):
+      fold_entries_node(root, empty(hash_item), (acc, entry) -> (
+        if pred(entry_key(entry)):
+          updated_entry(acc, entry)
+        else:
+          acc
+      ))
+
+# Splits set by predicate.
+def partition(set: HashSet[k], pred: k -> Bool) -> (HashSet[k], HashSet[k]):
+  hash_item = set_hash_item(set)
+  match set:
+    case Empty(_):
+      (set, set)
+    case Root(_, _, root):
+      fold_entries_node(root, (empty(hash_item), empty(hash_item)), (state, entry) -> (
+        (left, right) = state
+        if pred(entry_key(entry)):
+          (updated_entry(left, entry), right)
+        else:
+          (left, updated_entry(right, entry))
+      ))
+
+# Fast path union when caller knows both sets share hash semantics.
+def union_assume_same_hash(left: HashSet[k], right: HashSet[k]) -> HashSet[k]:
+  match left:
+    case Empty(_):
+      right
+    case Root(_, _, _):
+      match right:
+        case Empty(_):
+          left
+        case Root(_, _, right_root):
+          fold_entries_node(right_root, left, (acc, entry) -> updated_entry(acc, entry))
+
+# Safe union that always uses left-set item semantics.
+def union(left: HashSet[k], right: HashSet[k]) -> HashSet[k]:
+  match right:
+    case Empty(_):
+      left
+    case Root(_, _, right_root):
+      fold_entries_node(right_root, left, (acc, entry) -> updated(acc, entry_key(entry)))
+
+# Keeps items present in both sets.
+def intersection(left: HashSet[k], right: HashSet[k]) -> HashSet[k]:
+  left_hash = set_hash_item(left)
+  out0 = empty(left_hash)
+  match left:
+    case Empty(_):
+      out0
+    case Root(_, _, left_root):
+      fold_entries_node(left_root, out0, (acc, entry) -> (
+        if contains(right, entry_key(entry)):
+          updated_entry(acc, entry)
+        else:
+          acc
+      ))
+
+# Fast path difference when caller knows both sets share hash semantics.
+def difference_assume_same_hash(left: HashSet[k], right: HashSet[k]) -> HashSet[k]:
+  match right:
+    case Empty(_):
+      left
+    case Root(_, _, right_root):
+      fold_entries_node(right_root, left, (acc, entry) -> remove_with_hash(acc, entry_hash(entry), entry_key(entry)))
+
+# Removes items from left that appear in right (always using left semantics).
+def difference(left: HashSet[k], right: HashSet[k]) -> HashSet[k]:
+  match right:
+    case Empty(_):
+      left
+    case Root(_, _, right_root):
+      fold_entries_node(right_root, left, (acc, entry) -> remove(acc, entry_key(entry)))
+
+def eq_fn(left: HashSet[k], right: HashSet[k]) -> Bool:
+  if size(left).eq_Int(size(right)):
+    match left:
+      case Empty(_):
+        True
+      case Root(_, _, left_root):
+        fold_entries_node(left_root, True, (ok, entry) -> (
+          if ok:
+            contains(right, entry_key(entry))
+          else:
+            False
+        ))
+  else:
+    False
+
+# Equality adapter for sets.
+def eq() -> Eq[HashSet[k]]:
+  eq_from_fn(eq_fn)
+
+def hash_entry(entry: Entry[k]) -> Int:
+  finish_61(entry_hash(entry), 1, hash_tag_entry)
+
+def hash_fn(set: HashSet[k]) -> Int:
+  match set:
+    case Empty(_):
+      finish_61(hash_seed_set, 0, hash_tag_set)
+    case Root(_, sz, root):
+      (sum_acc, xor_acc) = fold_entries_node(root, (hash_seed_set, 0), (state, entry) -> (
+        (sum_acc, xor_acc) = state
+        item_hash = hash_entry(entry)
+        (normalize_61(sum_acc + item_hash), xor_acc.xor_Int(item_hash))
+      ))
+      finish_61(mix_61(sum_acc, normalize_61(xor_acc)), sz, hash_tag_set)
+
+# Hash adapter for sets.
+def hash() -> Hash[HashSet[k]]:
+  hash_specialized(hash_fn, eq())
+
+############################
+# Invariants and model (tests)
+############################
+
+def count_entries_node(node: Node[k]) -> Int:
+  fold_entries_node(node, 0, (acc, _) -> acc + 1)
+
+def invariants_ok(set: HashSet[k]) -> Bool:
+  match set:
+    case Empty(_):
+      True
+    case Root(_, sz, root):
+      sz.eq_Int(count_entries_node(root))
+
+def model_contains(model: List[Int], key: Int) -> Bool:
+  loop model:
+    case []:
+      False
+    case [model_key, *tail]:
+      if model_key.eq_Int(key):
+        True
+      else:
+        model_contains(tail, key)
+
+def model_remove(model: List[Int], key: Int) -> List[Int]:
+  def go(rem: List[Int], rev_acc: List[Int]) -> List[Int]:
+    loop rem:
+      case []:
+        rev_acc.reverse()
+      case [model_key, *tail]:
+        if model_key.eq_Int(key):
+          go(tail, rev_acc)
+        else:
+          go(tail, [model_key, *rev_acc])
+  go(model, [])
+
+def model_updated(model: List[Int], key: Int) -> List[Int]:
+  [*model_remove(model, key), key]
+
+def model_alter(model: List[Int], key: Int, present: Bool) -> List[Int]:
+  if present:
+    model_updated(model, key)
+  else:
+    model_remove(model, key)
+
+def model_eq(left: List[Int], right: List[Int]) -> Bool:
+  if list_size(left).eq_Int(list_size(right)):
+    left.foldl_List(True, (ok, key) -> (
+      if ok:
+        model_contains(right, key)
+      else:
+        False
+    ))
+  else:
+    False
+
+def set_matches_model(set: HashSet[Int], model: List[Int]) -> Bool:
+  if size(set).eq_Int(list_size(model)):
+    model.foldl_List(True, (ok, key) -> (
+      if ok:
+        contains(set, key)
+      else:
+        False
+    ))
+  else:
+    False
+
+enum Op:
+  Add(key: Int)
+  Delete(key: Int)
+  Query(key: Int)
+  AlterPresence(key: Int, present: Bool)
+
+def apply_add(set: HashSet[Int], model: List[Int], key: Int) -> (HashSet[Int], List[Int], Bool):
+  next_set = updated(set, key)
+  next_model = model_updated(model, key)
+  (
+    next_set,
+    next_model,
+    and_Bool(
+      and_Bool(set_matches_model(next_set, next_model), invariants_ok(next_set)),
+      contains(next_set, key)
+    )
+  )
+
+def apply_delete(set: HashSet[Int], model: List[Int], key: Int) -> (HashSet[Int], List[Int], Bool):
+  next_set = remove(set, key)
+  next_model = model_remove(model, key)
+  (
+    next_set,
+    next_model,
+    and_Bool(
+      and_Bool(set_matches_model(next_set, next_model), invariants_ok(next_set)),
+      eq_Bool(contains(next_set, key), model_contains(next_model, key))
+    )
+  )
+
+def apply_query(set: HashSet[Int], model: List[Int], key: Int) -> (HashSet[Int], List[Int], Bool):
+  expected = model_contains(model, key)
+  actual = contains(set, key)
+  (set, model, and_Bool(eq_Bool(actual, expected), set_matches_model(set, model)))
+
+def apply_alter(set: HashSet[Int], model: List[Int], key: Int, present: Bool) -> (HashSet[Int], List[Int], Bool):
+  next_set = alter(set, key, _ -> present)
+  next_model = model_alter(model, key, present)
+  (
+    next_set,
+    next_model,
+    and_Bool(
+      and_Bool(set_matches_model(next_set, next_model), invariants_ok(next_set)),
+      eq_Bool(contains(next_set, key), model_contains(next_model, key))
+    )
+  )
+
+def apply_op(set: HashSet[Int], model: List[Int], op: Op) -> (HashSet[Int], List[Int], Bool):
+  match op:
+    case Add(key):
+      apply_add(set, model, key)
+    case Delete(key):
+      apply_delete(set, model, key)
+    case Query(key):
+      apply_query(set, model, key)
+    case AlterPresence(key, present):
+      apply_alter(set, model, key, present)
+
+def run_ops(hash_item: Hash[Int], ops: List[Op]) -> Bool:
+  def go(rem: List[Op], set: HashSet[Int], model: List[Int], ok: Bool) -> Bool:
+    loop rem:
+      case []:
+        and_Bool(and_Bool(ok, set_matches_model(set, model)), invariants_ok(set))
+      case [op, *tail]:
+        if ok:
+          (next_set, next_model, step_ok) = apply_op(set, model, op)
+          go(tail, next_set, next_model, and_Bool(ok, step_ok))
+        else:
+          False
+  go(ops, empty(hash_item), [], True)
+
+def model_from_items(items: List[Int]) -> List[Int]:
+  items.foldl_List([], (acc, item) -> model_updated(acc, item))
+
+rand_key: Rand[Int] = map_Rand(int_range(96), i -> i.sub(48))
+rand_bool: Rand[Bool] = map_Rand(int_range(2), i -> i.eq_Int(0))
+
+rand_op: Rand[Op] = map_Rand(
+  prod_Rand(prod_Rand(int_range(4), rand_key), rand_bool),
+  (((tag, key), present)) -> (
+    match mod_Int(tag, 4):
+      case 0:
+        Add(key)
+      case 1:
+        Delete(key)
+      case 2:
+        Query(key)
+      case _:
+        AlterPresence(key, present)
+  ))
+
+rand_ops: Rand[List[Op]] = flat_map_Rand(
+  geometric_Int,
+  len -> sequence_Rand(replicate_List(rand_op, len))
+)
+
+rand_item_list: Rand[List[Int]] = flat_map_Rand(
+  geometric_Int,
+  len -> sequence_Rand(replicate_List(rand_key, len))
+)
+
+hash_int_collision: Hash[Int] = hash_specialized(_ -> 0, eq_Int_inst)
+hash_int_shifted: Hash[Int] = hash_specialized(i -> normalize_61(i + 17), eq_Int_inst)
+
+sequence_prop: Prop = forall_Prop(
+  rand_ops,
+  "random operation sequence matches model",
+  ops -> Assertion(run_ops(hash_Int, ops), "sequence model")
+)
+
+collision_sequence_prop: Prop = forall_Prop(
+  rand_ops,
+  "collision-heavy operation sequence matches model",
+  ops -> Assertion(run_ops(hash_int_collision, ops), "collision sequence")
+)
+
+union_cross_hash_prop: Prop = forall_Prop(
+  prod_Rand(rand_item_list, rand_item_list),
+  "union is correct across differing hash dictionaries",
+  ((left_items, right_items)) -> (
+    left = from_List(hash_Int, left_items)
+    right = from_List(hash_int_shifted, right_items)
+    merged = union(left, right)
+
+    left_model = model_from_items(left_items)
+    right_model = model_from_items(right_items)
+
+    merged_model = right_model.foldl_List(left_model, (acc, key) -> model_updated(acc, key))
+
+    Assertion(and_Bool(set_matches_model(merged, merged_model), invariants_ok(merged)), "union cross-hash")
+  ))
+
+intersection_difference_prop: Prop = forall_Prop(
+  prod_Rand(rand_item_list, rand_item_list),
+  "intersection and difference agree with model",
+  ((left_items, right_items)) -> (
+    left = from_List(hash_Int, left_items)
+    right = from_List(hash_Int, right_items)
+    inter = intersection(left, right)
+    diff = difference(left, right)
+
+    left_model = model_from_items(left_items)
+    right_model = model_from_items(right_items)
+
+    inter_model = left_model.foldl_List([], (acc, key) -> (
+      if model_contains(right_model, key):
+        model_updated(acc, key)
+      else:
+        acc
+    ))
+
+    diff_model = right_model.foldl_List(left_model, (acc, key) -> model_remove(acc, key))
+
+    Assertion(
+      and_Bool(
+        and_Bool(set_matches_model(inter, inter_model), set_matches_model(diff, diff_model)),
+        and_Bool(invariants_ok(inter), invariants_ok(diff))
+      ),
+      "intersection/difference model"
+    )
+  ))
+
+adapter_prop: Prop = forall_Prop(
+  prod_Rand(rand_item_list, rand_item_list),
+  "eq/hash adapters are coherent on set equality",
+  ((left_items, right_items)) -> (
+    left = from_List(hash_Int, left_items)
+    right = from_List(hash_Int, right_items)
+    left_model = model_from_items(left_items)
+    right_model = model_from_items(right_items)
+    set_eq = eq()
+    set_hash = hash()
+    equal = eq_Eq(set_eq, left, right)
+    coherent = if equal:
+      hash_Hash(set_hash, left).eq_Int(hash_Hash(set_hash, right))
+    else:
+      True
+    Assertion(and_Bool(coherent, eq_Bool(equal, model_eq(left_model, right_model))), "adapter coherence")
+  ))
+
+hashset_props: Prop = suite_Prop(
+  "HashSet properties",
+  [
+    sequence_prop,
+    collision_sequence_prop,
+    union_cross_hash_prop,
+    intersection_difference_prop,
+    adapter_prop,
+  ])
+
+tests = TestSuite("HashSet tests", [
+  (
+    s = empty(hash_Int)
+    Assertion(and_Bool(is_empty(s), and_Bool(size(s).eq_Int(0), invariants_ok(s))), "empty sanity")
+  ),
+  (
+    s = singleton(hash_Int, 3)
+    Assertion(
+      and_Bool(
+        and_Bool(size(s).eq_Int(1), contains(s, 3)),
+        invariants_ok(s)
+      ),
+      "singleton sanity"
+    )
+  ),
+  (
+    s = from_List(hash_Int, [1, 2, 1])
+    Assertion(
+      and_Bool(
+        and_Bool(and_Bool(size(s).eq_Int(2), contains(s, 1)), contains(s, 2)),
+        invariants_ok(s)
+      ),
+      "from_List deduplicates"
+    )
+  ),
+  (
+    s0 = empty(hash_int_collision)
+    s1 = updated(s0, 1)
+    s2 = updated(s1, 2)
+    s3 = updated(s2, 3)
+    s4 = remove(s3, 2)
+    Assertion(
+      and_Bool(
+        and_Bool(
+          and_Bool(contains(s4, 1), contains(s4, 2) matches False),
+          contains(s4, 3)
+        ),
+        invariants_ok(s4)
+      ),
+      "collision insert/remove"
+    )
+  ),
+  (
+    s0 = empty(hash_Int)
+    s1 = alter(s0, 5, _ -> True)
+    s2 = alter(s1, 5, _ -> False)
+    Assertion(and_Bool(and_Bool(size(s2).eq_Int(0), contains(s2, 5) matches False), invariants_ok(s2)), "alter insert/delete")
+  ),
+  (
+    left = from_List(hash_Int, [1, 2])
+    right = from_List(hash_Int, [2, 3])
+    merged = union_assume_same_hash(left, right)
+    inter = intersection(left, right)
+    diff = difference(left, right)
+    Assertion(
+      and_Bool(
+        and_Bool(
+          and_Bool(and_Bool(contains(merged, 1), contains(merged, 3)), contains(inter, 2)),
+          contains(diff, 2) matches False
+        ),
+        and_Bool(invariants_ok(merged), and_Bool(invariants_ok(inter), invariants_ok(diff)))
+      ),
+      "bulk ops sanity"
+    )
+  ),
+  run_Prop(hashset_props, 200, 20260308),
+])
