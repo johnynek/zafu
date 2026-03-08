@@ -15,6 +15,11 @@ from Bosatsu/List import (
 from Bosatsu/Num/Float64 import (
   addf,
 )
+from Zafu/Abstract/Eq import (
+  eq_from_fn,
+  eq as eq_Eq,
+)
+from Zafu/Abstract/Instances/Predef import eq_List as eq_List_Eq
 
 export (
   any,
@@ -78,21 +83,11 @@ def sum(items: List[Int]) -> Int:
 def sumf(items: List[Float64]) -> Float64:
   items.foldl_List(0.0, addf)
 
-def eq_List(eq_item: (a, b) -> Bool, left: List[a], right: List[b]) -> Bool:
-  recur (left, right):
-    case ([left_head, *left_tail], [right_head, *right_tail]) if eq_item(left_head, right_head):
-      eq_List(eq_item, left_tail, right_tail)
-    case ([], []):
-      True
-    case _:
-      False
+def eq_List(eq_item: (a, a) -> Bool, left: List[a], right: List[a]) -> Bool:
+  eq_Eq(eq_List_Eq(eq_from_fn(eq_item)), left, right)
 
 def is_empty(items: List[a]) -> Bool:
-  match items:
-    case []:
-      True
-    case _:
-      False
+  items matches []
 
 def get_or(items: List[a], idx: Int, on_missing: () -> a) -> a:
   match get_List(items, idx):
@@ -127,7 +122,7 @@ def filter(items: List[a], pred: a -> Bool) -> List[a]:
   ))
 
 def concat_all(items: List[List[a]]) -> List[a]:
-  foldr(items, [], (next, acc) -> next.concat(acc))
+  foldr(items, [], (next, acc) -> [*next, *acc])
 
 tests = TestSuite("Zafu/Collection/List tests", [
   Assertion(any([False, True, False]), "any has true"),
@@ -155,8 +150,8 @@ tests = TestSuite("Zafu/Collection/List tests", [
   Assertion(sum([1, 2, 3, 4]).eq_Int(10), "sum ints"),
   Assertion(sumf([]).cmp_Float64(0.0) matches EQ, "sumf empty"),
   Assertion(sumf([1.25, 2.5, 0.25]).cmp_Float64(4.0) matches EQ, "sumf exact sample"),
-  Assertion(eq_List((i, s) -> cmp_String(int_to_String(i), s) matches EQ, [1, 2], ["1", "2"]), "eq_List custom predicate"),
-  Assertion(eq_List((i, s) -> cmp_String(int_to_String(i), s) matches EQ, [1, 2], ["1"]) matches False, "eq_List length mismatch"),
+  Assertion(eq_List(eq_Int, [1, 2], [1, 2]), "eq_List custom predicate"),
+  Assertion(eq_List(eq_Int, [1, 2], [1]) matches False, "eq_List length mismatch"),
   Assertion(is_empty([]), "is_empty empty"),
   Assertion(is_empty([1]) matches False, "is_empty non-empty"),
   Assertion(get_or([1, 2, 3], 1, () -> 99).eq_Int(2), "get_or hit"),
