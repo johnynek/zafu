@@ -4,7 +4,6 @@ priority: 3
 touch_paths:
   - docs/design/42-design-zafu-control-result.md
   - src/Zafu/Control/Result.bosatsu
-  - src/Zafu/Abstract/Instances/Predef.bosatsu
 depends_on: []
 estimated_size: M
 generated_at: 2026-03-08T17:17:09Z
@@ -24,7 +23,6 @@ priority: 2
 touch_paths:
   - docs/design/42-design-zafu-control-result.md
   - src/Zafu/Control/Result.bosatsu
-  - src/Zafu/Abstract/Instances/Predef.bosatsu
 depends_on:
   - 28
   - 34
@@ -77,7 +75,7 @@ A first-party `Result` provides a consistent primitive for recoverable error han
 3. `fold` is the canonical eliminator; extraction helpers are convenience wrappers.
 4. `Ord` follows Rust-style constructor ordering: `Err(_) < Ok(_)`.
 5. `Hash` is constructor-tagged to keep `Err(x)` and `Ok(x)` distinct.
-6. Keep initial scope focused on the core API, with optional convenience re-exports in `Predef`.
+6. Keep initial scope focused on the core API in `Zafu/Control/Result`.
 
 ## Proposed API (`Zafu/Control/Result`)
 
@@ -114,12 +112,6 @@ Typeclass adapters:
 1. `eq(eq_err: Eq[e], eq_ok: Eq[a]) -> Eq[Result[e, a]]`
 2. `ord(ord_err: Ord[e], ord_ok: Ord[a]) -> Ord[Result[e, a]]`
 3. `hash(hash_err: Hash[e], hash_ok: Hash[a]) -> Hash[Result[e, a]]`
-
-Optional convenience in `Zafu/Abstract/Instances/Predef`:
-
-1. `eq_Result`
-2. `ord_Result`
-3. `hash_Result`
 
 ## Semantics and invariants
 
@@ -177,8 +169,7 @@ Phase 2: combinators and conversions
 Phase 3: abstraction adapters
 
 1. Implement `eq`, `ord`, `hash` in `Zafu/Control/Result`.
-2. Optionally add `eq_Result`, `ord_Result`, `hash_Result` wrappers in `Predef`.
-3. Add adapter coherence tests.
+2. Add adapter coherence tests.
 
 Phase 4: validation
 
@@ -219,5 +210,5 @@ Mitigation: keep this issue constrained to core `Result` data type and combinato
 
 1. Land as additive change on `main`; no breaking changes.
 2. Keep migration incremental; existing `Option` code remains valid.
-3. If `Predef` wrappers are added, treat them as convenience exports only.
+3. Keep canonical typeclass adapters in `Zafu/Control/Result`.
 4. Follow-up issues can add integrations in collections/control-flow modules once core `Result` usage patterns are established.
