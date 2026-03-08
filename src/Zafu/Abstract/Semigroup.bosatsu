@@ -114,13 +114,49 @@ def reverse(inst: Semigroup[a]) -> Semigroup[a]:
   )
 
 def intercalate(inst: Semigroup[a], middle: a) -> Semigroup[a]:
-  semigroup_from_combine((left, right) -> combine(inst, combine(inst, left, middle), right))
+  Semigroup { combine_fn, combine_n_positive_fn, combine_all_option_fn, ... } = inst
+  semigroup_specialized(
+    (left, right) -> combine_fn(combine_fn(left, middle), right),
+    (value, n) -> (
+      if n.eq_Int(1):
+        value
+      else:
+        tail_value = combine_fn(middle, value)
+        combine_fn(value, combine_n_positive_fn(tail_value, n.sub(1)))
+    ),
+    (items) -> (
+      match items:
+        case []:
+          None
+        case [head, *tail]:
+          interleaved_rev = tail.foldl_List([head], (acc, item) -> [item, middle, *acc])
+          combine_all_option_fn(reverse_list(interleaved_rev))
+    ),
+  )
 
-def first() -> Semigroup[a]:
-  semigroup_from_combine((left, _) -> left)
+first: Semigroup[a] = semigroup_specialized(
+  (left, _) -> left,
+  (value, _) -> value,
+  (items) -> (
+    match items:
+      case []:
+        None
+      case [head, *_]:
+        Some(head)
+  ),
+)
 
-def last() -> Semigroup[a]:
-  semigroup_from_combine((_, right) -> right)
+last: Semigroup[a] = semigroup_specialized(
+  (_, right) -> right,
+  (value, _) -> value,
+  (items) -> (
+    match items:
+      case []:
+        None
+      case [head, *tail]:
+        Some(tail.foldl_List(head, (_, item) -> item))
+  ),
+)
 
 def laws_Semigroup(inst: Semigroup[a], eq_inst: Eq[a], x: a, y: a, z: a) -> Test:
   associative = Assertion(
@@ -174,11 +210,11 @@ tests = TestSuite("Semigroup tests", [
     Assertion(combine(inter, 1, 2).eq_Int(13), "intercalate")
   ),
   (
-    first_int = first()
+    first_int = first
     Assertion(combine(first_int, 1, 2).eq_Int(1), "first")
   ),
   (
-    last_int = last()
+    last_int = last
     Assertion(combine(last_int, 1, 2).eq_Int(2), "last")
   ),
   (
