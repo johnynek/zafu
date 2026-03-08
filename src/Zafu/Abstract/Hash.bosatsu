@@ -1,0 +1,109 @@
+package Zafu/Abstract/Hash
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  laws_Eq,
+  eq as eq_Eq,
+  eq_from_fn,
+)
+
+export (
+  Hash,
+  hash_from_fn,
+  hash_specialized,
+  hash,
+  hash_eq,
+  normalize_61,
+  mix_61,
+  finish_61,
+  laws_Hash,
+)
+
+struct Hash[a](
+  hash_fn: a -> Int,
+  eq_inst: Eq[a],
+)
+
+hash_modulus: Int = 2305843009213693951
+mix_prime: Int = 1099511628211
+mix_add: Int = 1469598103934665603
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def in_range_61(value: Int) -> Bool:
+  non_negative = cmp_Int(value, 0) matches EQ | GT
+  below_modulus = cmp_Int(value, hash_modulus) matches LT
+  and_Bool(non_negative, below_modulus)
+
+def normalize_61(raw: Int) -> Int:
+  modded = mod_Int(raw, hash_modulus)
+  if cmp_Int(modded, 0) matches LT:
+    modded.add(hash_modulus)
+  else:
+    modded
+
+def reduce_61(value: Int) -> Int:
+  normalize_61(value)
+
+def mix_61(acc: Int, next: Int) -> Int:
+  reduce_61(acc.mul(mix_prime).add(next).add(mix_add))
+
+def finish_61(acc: Int, size_or_arity: Int, tag: Int) -> Int:
+  mix_61(mix_61(acc, size_or_arity), tag)
+
+# Constructor for hash functions that already return 61-bit values.
+def hash_specialized(hash_fn: a -> Int, eq_inst: Eq[a]) -> Hash[a]:
+  Hash(hash_fn, eq_inst)
+
+# Constructor from a potentially out-of-range hash function.
+def hash_from_fn(eq_inst: Eq[a], hash_fn: a -> Int) -> Hash[a]:
+  hash_specialized((value) -> normalize_61(hash_fn(value)), eq_inst)
+
+def hash(inst: Hash[a], value: a) -> Int:
+  Hash(hash_fn, _) = inst
+  hash_fn(value)
+
+def hash_eq(inst: Hash[a]) -> Eq[a]:
+  Hash(_, eq_inst) = inst
+  eq_inst
+
+# Law checker: Eq laws, Eq/Hash coherence, and 61-bit range invariant.
+def laws_Hash(inst: Hash[a], x: a, y: a, z: a) -> Bool:
+  eq_inst = hash_eq(inst)
+  eq_laws = laws_Eq(eq_inst, x, y, z)
+  hx = hash(inst, x)
+  hy = hash(inst, y)
+  hz = hash(inst, z)
+  in_range = and_Bool(and_Bool(in_range_61(hx), in_range_61(hy)), in_range_61(hz))
+  coherent_xy = if eq_Eq(eq_inst, x, y):
+    eq_Int(hx, hy)
+  else:
+    True
+  coherent_yz = if eq_Eq(eq_inst, y, z):
+    eq_Int(hy, hz)
+  else:
+    True
+  coherent_xz = if eq_Eq(eq_inst, x, z):
+    eq_Int(hx, hz)
+  else:
+    True
+  and_Bool(eq_laws, and_Bool(in_range, and_Bool(coherent_xy, and_Bool(coherent_yz, coherent_xz))))
+
+tests = TestSuite("Hash tests", [
+  (
+    int_hash = hash_from_fn(eq_from_fn(eq_Int), x -> x)
+    Assertion(hash(int_hash, -1).eq_Int(hash_modulus.sub(1)), "hash_from_fn normalizes negatives")
+  ),
+  (
+    mixed = mix_61(hash_modulus.sub(1), hash_modulus.sub(1))
+    Assertion(in_range_61(mixed), "mix_61 stays in range")
+  ),
+  (
+    int_hash = hash_from_fn(eq_from_fn(eq_Int), x -> x)
+    Assertion(laws_Hash(int_hash, 1, 1, 2), "laws_Hash sanity")
+  ),
+])
