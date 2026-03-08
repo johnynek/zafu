@@ -54,6 +54,7 @@ export (
   from_List,
   size,
   is_empty,
+  map_hash_key,
   contains_key,
   get,
   get_or,
@@ -67,6 +68,7 @@ export (
   union_with,
   intersection_with,
   difference,
+  difference_assume_same_hash,
   union_with_assume_same_hash,
   eq,
   hash
@@ -198,26 +200,20 @@ def collapse_indexed(data_bitmap: Int, entries: Array[Entry[k, v]], node_bitmap:
 
 def find_entry_index(entries: Array[Entry[k, v]], key_hash: Int, key: k, eq_key: Eq[k]) -> Option[Int]:
   cnt = size_Array(entries)
-  (_, found) = int_loop(cnt + 1, (0, None), (rem, state) -> (
-    (idx, found) = state
-    match found:
-      case Some(_):
-        (0, state)
-      case None:
-        if cmp_Int(idx, cnt) matches LT:
-          match get_Array(entries, idx):
-            case Some(Entry(entry_hash, entry_key, _)):
-              next_found = if and_Bool(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
-                Some(idx)
-              else:
-                None
-              (rem.sub(1), (idx + 1, next_found))
-            case None:
-              (rem.sub(1), (idx + 1, None))
-        else:
-          (0, state)
-  ))
-  found
+  def go(rem: Int, idx: Int) -> Option[Int]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        None
+      case _:
+        match get_Array(entries, idx):
+          case Some(Entry(entry_hash, entry_key, _)):
+            if and_Bool(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
+              Some(idx)
+            else:
+              go(rem - 1, idx + 1)
+          case None:
+            go(rem - 1, idx + 1)
+  go(cnt, 0)
 
 def merge_two_entries_with_fuel(left: Entry[k, v], right: Entry[k, v], shift: Int, fuel: Int) -> Node[k, v]:
   recur fuel:
@@ -442,8 +438,7 @@ def get_with_hash(map: HashMap[k, v], key_hash: Int, key: k) -> Option[v]:
     case Root(_, _, root):
       get_node(root, key_hash, key, eq_key, 0)
 
-def updated_with_hash(map: HashMap[k, v], key_hash: Int, key: k, value: v) -> HashMap[k, v]:
-  entry = Entry(key_hash, key, value)
+def updated_entry(map: HashMap[k, v], entry: Entry[k, v]) -> HashMap[k, v]:
   match map:
     case Empty(hash_key):
       Root(hash_key, 1, single_entry_node(entry, 0))
@@ -451,6 +446,9 @@ def updated_with_hash(map: HashMap[k, v], key_hash: Int, key: k, value: v) -> Ha
       eq_key = hash_to_Eq(hash_key)
       (next_root, delta) = insert_entry_node(root, entry, eq_key, 0)
       Root(hash_key, sz + delta, next_root)
+
+def updated_with_hash(map: HashMap[k, v], key_hash: Int, key: k, value: v) -> HashMap[k, v]:
+  updated_entry(map, Entry(key_hash, key, value))
 
 def remove_with_hash(map: HashMap[k, v], key_hash: Int, key: k) -> HashMap[k, v]:
   match map:
@@ -493,7 +491,7 @@ def size(map: HashMap[k, v]) -> Int:
 
 # True if map has no entries.
 def is_empty(map: HashMap[k, v]) -> Bool:
-  size(map).eq_Int(0)
+  map matches Empty(_) | Root(_, 0, _)
 
 # Returns value for key when present.
 def get(map: HashMap[k, v], key: k) -> Option[v]:
@@ -510,7 +508,7 @@ def get_or(map: HashMap[k, v], key: k, on_missing: () -> v) -> v:
     case Some(value):
       value
     case None:
-      on_missing(Unit)
+      on_missing()
 
 # Inserts/replaces one key/value.
 def updated(map: HashMap[k, v], key: k, value: v) -> HashMap[k, v]:
@@ -622,7 +620,7 @@ def filter(map: HashMap[k, v], pred: (k, v) -> Bool) -> HashMap[k, v]:
     case Root(_, _, root):
       fold_entries_node(root, empty(hash_key), (acc, entry) -> (
         if pred(entry_key(entry), entry_value(entry)):
-          updated_with_hash(acc, entry_hash(entry), entry_key(entry), entry_value(entry))
+          updated_entry(acc, entry)
         else:
           acc
       ))
@@ -637,9 +635,9 @@ def partition(map: HashMap[k, v], pred: (k, v) -> Bool) -> (HashMap[k, v], HashM
       fold_entries_node(root, (empty(hash_key), empty(hash_key)), (state, entry) -> (
         (left, right) = state
         if pred(entry_key(entry), entry_value(entry)):
-          (updated_with_hash(left, entry_hash(entry), entry_key(entry), entry_value(entry)), right)
+          (updated_entry(left, entry), right)
         else:
-          (left, updated_with_hash(right, entry_hash(entry), entry_key(entry), entry_value(entry)))
+          (left, updated_entry(right, entry))
       ))
 
 # Fast path union when caller knows both maps share key hash semantics.
@@ -653,12 +651,12 @@ def union_with_assume_same_hash(left: HashMap[k, v], right: HashMap[k, v], resol
           left
         case Root(_, _, right_root):
           fold_entries_node(right_root, left, (acc, entry) -> (
-            next_value = match get_with_hash(acc, entry_hash(entry), entry_key(entry)):
+            next_entry = match get_with_hash(acc, entry_hash(entry), entry_key(entry)):
               case Some(left_value):
-                resolve(entry_key(entry), left_value, entry_value(entry))
+                Entry(entry_hash(entry), entry_key(entry), resolve(entry_key(entry), left_value, entry_value(entry)))
               case None:
-                entry_value(entry)
-            updated_with_hash(acc, entry_hash(entry), entry_key(entry), next_value)
+                entry
+            updated_entry(acc, next_entry)
           ))
 
 # Safe union that always uses left-map key semantics.
@@ -688,12 +686,23 @@ def intersection_with(left: HashMap[k, v], right: HashMap[k, w], combine: (k, v,
       fold_entries_node(left_root, out0, (acc, entry) -> (
         match get(right, entry_key(entry)):
           case Some(right_value):
-            updated_with_hash(acc, entry_hash(entry), entry_key(entry), combine(entry_key(entry), entry_value(entry), right_value))
+            updated_entry(
+              acc,
+              Entry(entry_hash(entry), entry_key(entry), combine(entry_key(entry), entry_value(entry), right_value))
+            )
           case None:
             acc
       ))
 
-# Removes keys from left that appear in right (using left semantics).
+# Fast path difference when caller knows both maps share key hash semantics.
+def difference_assume_same_hash(left: HashMap[k, v], right: HashMap[k, w]) -> HashMap[k, v]:
+  match right:
+    case Empty(_):
+      left
+    case Root(_, _, right_root):
+      fold_entries_node(right_root, left, (acc, entry) -> remove_with_hash(acc, entry_hash(entry), entry_key(entry)))
+
+# Removes keys from left that appear in right (always using left semantics).
 def difference(left: HashMap[k, v], right: HashMap[k, w]) -> HashMap[k, v]:
   match right:
     case Empty(_):
@@ -736,6 +745,7 @@ def hash_fn(hash_value: Hash[v], map: HashMap[k, v]) -> Int:
       (sum_acc, xor_acc) = fold_entries_node(root, (hash_seed_map, 0), (state, entry) -> (
         (sum_acc, xor_acc) = state
         item_hash = hash_entry(hash_value, entry)
+        # XOR is commutative, so this preserves entropy while making map hashing independent of entry traversal order.
         (normalize_61(sum_acc + item_hash), xor_acc.xor_Int(item_hash))
       ))
       finish_61(mix_61(sum_acc, normalize_61(xor_acc)), sz, hash_tag_map)
