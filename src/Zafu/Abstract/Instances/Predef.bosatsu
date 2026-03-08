@@ -4,7 +4,7 @@ from Bosatsu/Char import cmp_Char
 
 from Zafu/Abstract/Eq import (
   Eq,
-  eq_from_eq,
+  eq_from_fn,
   eq as eq_Eq,
 )
 
@@ -36,74 +36,6 @@ export (
   ord_List,
   eq_Dict,
   ord_Dict,
-  eq_Test,
-  ord_Test,
-  eq_Order,
-  ord_Order,
-  eq_Fn1,
-  eq_Fn2,
-  eq_Fn3,
-  eq_Fn4,
-  eq_Fn5,
-  eq_Fn6,
-  eq_Fn7,
-  eq_Fn8,
-  eq_Fn9,
-  eq_Fn10,
-  eq_Fn11,
-  eq_Fn12,
-  eq_Fn13,
-  eq_Fn14,
-  eq_Fn15,
-  eq_Fn16,
-  eq_Fn17,
-  eq_Fn18,
-  eq_Fn19,
-  eq_Fn20,
-  eq_Fn21,
-  eq_Fn22,
-  eq_Fn23,
-  eq_Fn24,
-  eq_Fn25,
-  eq_Fn26,
-  eq_Fn27,
-  eq_Fn28,
-  eq_Fn29,
-  eq_Fn30,
-  eq_Fn31,
-  eq_Fn32,
-  ord_Fn1,
-  ord_Fn2,
-  ord_Fn3,
-  ord_Fn4,
-  ord_Fn5,
-  ord_Fn6,
-  ord_Fn7,
-  ord_Fn8,
-  ord_Fn9,
-  ord_Fn10,
-  ord_Fn11,
-  ord_Fn12,
-  ord_Fn13,
-  ord_Fn14,
-  ord_Fn15,
-  ord_Fn16,
-  ord_Fn17,
-  ord_Fn18,
-  ord_Fn19,
-  ord_Fn20,
-  ord_Fn21,
-  ord_Fn22,
-  ord_Fn23,
-  ord_Fn24,
-  ord_Fn25,
-  ord_Fn26,
-  ord_Fn27,
-  ord_Fn28,
-  ord_Fn29,
-  ord_Fn30,
-  ord_Fn31,
-  ord_Fn32,
   eq_Tuple1,
   eq_Tuple2,
   eq_Tuple3,
@@ -253,7 +185,7 @@ ord_String: Ord[String] = ord_from_cmp(cmp_String)
 eq_String: Eq[String] = ord_to_eq(ord_String)
 
 def eq_Option(eq_item: Eq[a]) -> Eq[Option[a]]:
-  eq_from_eq((left, right) -> (
+  eq_from_fn((left, right) -> (
     match (left, right):
       case (Some(left_v), Some(right_v)):
         eq_Eq(eq_item, left_v, right_v)
@@ -277,13 +209,13 @@ def ord_Option(ord_item: Ord[a]) -> Ord[Option[a]]:
   ))
 
 def eq_List(eq_item: Eq[a]) -> Eq[List[a]]:
-  eq_from_eq((left, right) -> eq_list(eq_item, left, right))
+  eq_from_fn((left, right) -> eq_list(eq_item, left, right))
 
 def ord_List(ord_item: Ord[a]) -> Ord[List[a]]:
   ord_from_cmp((left, right) -> cmp_list(ord_item, left, right))
 
 def eq_Tuple1(eq1: Eq[a1]) -> Eq[Tuple1[a1]]:
-  eq_from_eq((left, right) -> (
+  eq_from_fn((left, right) -> (
     match (left, right):
       case (Tuple1(left1), Tuple1(right1)):
         eq_Eq(eq1, left1, right1)
@@ -297,7 +229,7 @@ def ord_Tuple1(ord1: Ord[a1]) -> Ord[Tuple1[a1]]:
   ))
 
 def eq_Tuple2(eq1: Eq[a1], eq2: Eq[a2]) -> Eq[Tuple2[a1, a2]]:
-  eq_from_eq((left, right) -> (
+  eq_from_fn((left, right) -> (
     match (left, right):
       case (Tuple2(left1, left2), Tuple2(right1, right2)):
         and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2))
@@ -310,201 +242,429 @@ def ord_Tuple2(ord1: Ord[a1], ord2: Ord[a2]) -> Ord[Tuple2[a1, a2]]:
         cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2))
   ))
 
-ord_Test: Ord[Test] = ord_from_cmp((_, _) -> EQ)
-eq_Test: Eq[Test] = ord_to_eq(ord_Test)
+def eq_Tuple3(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3]) -> Eq[Tuple3[a1, a2, a3]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple3(left1, left2, left3), Tuple3(right1, right2, right3)):
+        and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3))
+  ))
 
-ord_Order: forall a. Ord[Order[a]] = ord_from_cmp((_, _) -> EQ)
-eq_Order: forall a. Eq[Order[a]] = ord_to_eq(ord_Order)
+def ord_Tuple3(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3]) -> Ord[Tuple3[a1, a2, a3]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple3(left1, left2, left3), Tuple3(right1, right2, right3)):
+        cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3))
+  ))
 
-eq_Fn1: forall a1, a2. Eq[Fn1[a1, a2]] = eq_from_eq((_, _) -> True)
-ord_Fn1: forall a1, a2. Ord[Fn1[a1, a2]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple4(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4]) -> Eq[Tuple4[a1, a2, a3, a4]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple4(left1, left2, left3, left4), Tuple4(right1, right2, right3, right4)):
+        and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4))
+  ))
 
-eq_Fn2: forall a1, a2, a3. Eq[Fn2[a1, a2, a3]] = eq_from_eq((_, _) -> True)
-ord_Fn2: forall a1, a2, a3. Ord[Fn2[a1, a2, a3]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple4(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4]) -> Ord[Tuple4[a1, a2, a3, a4]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple4(left1, left2, left3, left4), Tuple4(right1, right2, right3, right4)):
+        cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4))
+  ))
 
-eq_Fn3: forall a1, a2, a3, a4. Eq[Fn3[a1, a2, a3, a4]] = eq_from_eq((_, _) -> True)
-ord_Fn3: forall a1, a2, a3, a4. Ord[Fn3[a1, a2, a3, a4]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple5(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5]) -> Eq[Tuple5[a1, a2, a3, a4, a5]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple5(left1, left2, left3, left4, left5), Tuple5(right1, right2, right3, right4, right5)):
+        and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5))
+  ))
 
-eq_Fn4: forall a1, a2, a3, a4, a5. Eq[Fn4[a1, a2, a3, a4, a5]] = eq_from_eq((_, _) -> True)
-ord_Fn4: forall a1, a2, a3, a4, a5. Ord[Fn4[a1, a2, a3, a4, a5]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple5(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5]) -> Ord[Tuple5[a1, a2, a3, a4, a5]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple5(left1, left2, left3, left4, left5), Tuple5(right1, right2, right3, right4, right5)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5))
+  ))
 
-eq_Fn5: forall a1, a2, a3, a4, a5, a6. Eq[Fn5[a1, a2, a3, a4, a5, a6]] = eq_from_eq((_, _) -> True)
-ord_Fn5: forall a1, a2, a3, a4, a5, a6. Ord[Fn5[a1, a2, a3, a4, a5, a6]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple6(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6]) -> Eq[Tuple6[a1, a2, a3, a4, a5, a6]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple6(left1, left2, left3, left4, left5, left6), Tuple6(right1, right2, right3, right4, right5, right6)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6))
+  ))
 
-eq_Fn6: forall a1, a2, a3, a4, a5, a6, a7. Eq[Fn6[a1, a2, a3, a4, a5, a6, a7]] = eq_from_eq((_, _) -> True)
-ord_Fn6: forall a1, a2, a3, a4, a5, a6, a7. Ord[Fn6[a1, a2, a3, a4, a5, a6, a7]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple6(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6]) -> Ord[Tuple6[a1, a2, a3, a4, a5, a6]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple6(left1, left2, left3, left4, left5, left6), Tuple6(right1, right2, right3, right4, right5, right6)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6))
+  ))
 
-eq_Fn7: forall a1, a2, a3, a4, a5, a6, a7, a8. Eq[Fn7[a1, a2, a3, a4, a5, a6, a7, a8]] = eq_from_eq((_, _) -> True)
-ord_Fn7: forall a1, a2, a3, a4, a5, a6, a7, a8. Ord[Fn7[a1, a2, a3, a4, a5, a6, a7, a8]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple7(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7]) -> Eq[Tuple7[a1, a2, a3, a4, a5, a6, a7]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple7(left1, left2, left3, left4, left5, left6, left7), Tuple7(right1, right2, right3, right4, right5, right6, right7)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7))
+  ))
 
-eq_Fn8: forall a1, a2, a3, a4, a5, a6, a7, a8, a9. Eq[Fn8[a1, a2, a3, a4, a5, a6, a7, a8, a9]] = eq_from_eq((_, _) -> True)
-ord_Fn8: forall a1, a2, a3, a4, a5, a6, a7, a8, a9. Ord[Fn8[a1, a2, a3, a4, a5, a6, a7, a8, a9]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple7(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7]) -> Ord[Tuple7[a1, a2, a3, a4, a5, a6, a7]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple7(left1, left2, left3, left4, left5, left6, left7), Tuple7(right1, right2, right3, right4, right5, right6, right7)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7))
+  ))
 
-eq_Fn9: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10. Eq[Fn9[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]] = eq_from_eq((_, _) -> True)
-ord_Fn9: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10. Ord[Fn9[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple8(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8]) -> Eq[Tuple8[a1, a2, a3, a4, a5, a6, a7, a8]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple8(left1, left2, left3, left4, left5, left6, left7, left8), Tuple8(right1, right2, right3, right4, right5, right6, right7, right8)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8))
+  ))
 
-eq_Fn10: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11. Eq[Fn10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]] = eq_from_eq((_, _) -> True)
-ord_Fn10: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11. Ord[Fn10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple8(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8]) -> Ord[Tuple8[a1, a2, a3, a4, a5, a6, a7, a8]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple8(left1, left2, left3, left4, left5, left6, left7, left8), Tuple8(right1, right2, right3, right4, right5, right6, right7, right8)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8))
+  ))
 
-eq_Fn11: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12. Eq[Fn11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]] = eq_from_eq((_, _) -> True)
-ord_Fn11: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12. Ord[Fn11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple9(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9]) -> Eq[Tuple9[a1, a2, a3, a4, a5, a6, a7, a8, a9]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple9(left1, left2, left3, left4, left5, left6, left7, left8, left9), Tuple9(right1, right2, right3, right4, right5, right6, right7, right8, right9)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9))
+  ))
 
-eq_Fn12: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13. Eq[Fn12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]] = eq_from_eq((_, _) -> True)
-ord_Fn12: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13. Ord[Fn12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple9(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9]) -> Ord[Tuple9[a1, a2, a3, a4, a5, a6, a7, a8, a9]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple9(left1, left2, left3, left4, left5, left6, left7, left8, left9), Tuple9(right1, right2, right3, right4, right5, right6, right7, right8, right9)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9))
+  ))
 
-eq_Fn13: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14. Eq[Fn13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]] = eq_from_eq((_, _) -> True)
-ord_Fn13: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14. Ord[Fn13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple10(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10]) -> Eq[Tuple10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple10(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10), Tuple10(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10))
+  ))
 
-eq_Fn14: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15. Eq[Fn14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]] = eq_from_eq((_, _) -> True)
-ord_Fn14: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15. Ord[Fn14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple10(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10]) -> Ord[Tuple10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple10(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10), Tuple10(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10))
+  ))
 
-eq_Fn15: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16. Eq[Fn15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]] = eq_from_eq((_, _) -> True)
-ord_Fn15: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16. Ord[Fn15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple11(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11]) -> Eq[Tuple11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple11(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11), Tuple11(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11))
+  ))
 
-eq_Fn16: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17. Eq[Fn16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]] = eq_from_eq((_, _) -> True)
-ord_Fn16: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17. Ord[Fn16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple11(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11]) -> Ord[Tuple11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple11(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11), Tuple11(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11))
+  ))
 
-eq_Fn17: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18. Eq[Fn17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]] = eq_from_eq((_, _) -> True)
-ord_Fn17: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18. Ord[Fn17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple12(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12]) -> Eq[Tuple12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple12(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12), Tuple12(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12))
+  ))
 
-eq_Fn18: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19. Eq[Fn18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]] = eq_from_eq((_, _) -> True)
-ord_Fn18: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19. Ord[Fn18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple12(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12]) -> Ord[Tuple12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple12(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12), Tuple12(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12))
+  ))
 
-eq_Fn19: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20. Eq[Fn19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]] = eq_from_eq((_, _) -> True)
-ord_Fn19: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20. Ord[Fn19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple13(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13]) -> Eq[Tuple13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple13(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13), Tuple13(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13))
+  ))
 
-eq_Fn20: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21. Eq[Fn20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]] = eq_from_eq((_, _) -> True)
-ord_Fn20: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21. Ord[Fn20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple13(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13]) -> Ord[Tuple13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple13(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13), Tuple13(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13))
+  ))
 
-eq_Fn21: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22. Eq[Fn21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]] = eq_from_eq((_, _) -> True)
-ord_Fn21: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22. Ord[Fn21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple14(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14]) -> Eq[Tuple14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple14(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14), Tuple14(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14))
+  ))
 
-eq_Fn22: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23. Eq[Fn22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]] = eq_from_eq((_, _) -> True)
-ord_Fn22: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23. Ord[Fn22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple14(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14]) -> Ord[Tuple14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple14(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14), Tuple14(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14))
+  ))
 
-eq_Fn23: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24. Eq[Fn23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]] = eq_from_eq((_, _) -> True)
-ord_Fn23: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24. Ord[Fn23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple15(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15]) -> Eq[Tuple15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple15(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15), Tuple15(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15))
+  ))
 
-eq_Fn24: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25. Eq[Fn24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]] = eq_from_eq((_, _) -> True)
-ord_Fn24: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25. Ord[Fn24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple15(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15]) -> Ord[Tuple15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple15(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15), Tuple15(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15))
+  ))
 
-eq_Fn25: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26. Eq[Fn25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]] = eq_from_eq((_, _) -> True)
-ord_Fn25: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26. Ord[Fn25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple16(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16]) -> Eq[Tuple16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple16(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16), Tuple16(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16))
+  ))
 
-eq_Fn26: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27. Eq[Fn26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]] = eq_from_eq((_, _) -> True)
-ord_Fn26: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27. Ord[Fn26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple16(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16]) -> Ord[Tuple16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple16(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16), Tuple16(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16))
+  ))
 
-eq_Fn27: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28. Eq[Fn27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]] = eq_from_eq((_, _) -> True)
-ord_Fn27: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28. Ord[Fn27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple17(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17]) -> Eq[Tuple17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple17(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17), Tuple17(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17))
+  ))
 
-eq_Fn28: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29. Eq[Fn28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]] = eq_from_eq((_, _) -> True)
-ord_Fn28: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29. Ord[Fn28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple17(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17]) -> Ord[Tuple17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple17(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17), Tuple17(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17))
+  ))
 
-eq_Fn29: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30. Eq[Fn29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]] = eq_from_eq((_, _) -> True)
-ord_Fn29: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30. Ord[Fn29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple18(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18]) -> Eq[Tuple18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple18(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18), Tuple18(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18))
+  ))
 
-eq_Fn30: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31. Eq[Fn30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]] = eq_from_eq((_, _) -> True)
-ord_Fn30: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31. Ord[Fn30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple18(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18]) -> Ord[Tuple18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple18(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18), Tuple18(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18))
+  ))
 
-eq_Fn31: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32. Eq[Fn31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]] = eq_from_eq((_, _) -> True)
-ord_Fn31: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32. Ord[Fn31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple19(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19]) -> Eq[Tuple19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple19(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19), Tuple19(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19))
+  ))
 
-eq_Fn32: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32, a33. Eq[Fn32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32, a33]] = eq_from_eq((_, _) -> True)
-ord_Fn32: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32, a33. Ord[Fn32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32, a33]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple19(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19]) -> Ord[Tuple19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple19(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19), Tuple19(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19))
+  ))
 
-eq_Tuple3: forall a1, a2, a3. Eq[Tuple3[a1, a2, a3]] = eq_from_eq((_, _) -> True)
-ord_Tuple3: forall a1, a2, a3. Ord[Tuple3[a1, a2, a3]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple20(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20]) -> Eq[Tuple20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple20(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20), Tuple20(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20))
+  ))
 
-eq_Tuple4: forall a1, a2, a3, a4. Eq[Tuple4[a1, a2, a3, a4]] = eq_from_eq((_, _) -> True)
-ord_Tuple4: forall a1, a2, a3, a4. Ord[Tuple4[a1, a2, a3, a4]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple20(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20]) -> Ord[Tuple20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple20(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20), Tuple20(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20))
+  ))
 
-eq_Tuple5: forall a1, a2, a3, a4, a5. Eq[Tuple5[a1, a2, a3, a4, a5]] = eq_from_eq((_, _) -> True)
-ord_Tuple5: forall a1, a2, a3, a4, a5. Ord[Tuple5[a1, a2, a3, a4, a5]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple21(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20], eq21: Eq[a21]) -> Eq[Tuple21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple21(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21), Tuple21(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20)), eq_Eq(eq21, left21, right21))
+  ))
 
-eq_Tuple6: forall a1, a2, a3, a4, a5, a6. Eq[Tuple6[a1, a2, a3, a4, a5, a6]] = eq_from_eq((_, _) -> True)
-ord_Tuple6: forall a1, a2, a3, a4, a5, a6. Ord[Tuple6[a1, a2, a3, a4, a5, a6]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple21(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20], ord21: Ord[a21]) -> Ord[Tuple21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple21(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21), Tuple21(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20)), _ -> cmp_Ord(ord21, left21, right21))
+  ))
 
-eq_Tuple7: forall a1, a2, a3, a4, a5, a6, a7. Eq[Tuple7[a1, a2, a3, a4, a5, a6, a7]] = eq_from_eq((_, _) -> True)
-ord_Tuple7: forall a1, a2, a3, a4, a5, a6, a7. Ord[Tuple7[a1, a2, a3, a4, a5, a6, a7]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple22(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20], eq21: Eq[a21], eq22: Eq[a22]) -> Eq[Tuple22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple22(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22), Tuple22(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20)), eq_Eq(eq21, left21, right21)), eq_Eq(eq22, left22, right22))
+  ))
 
-eq_Tuple8: forall a1, a2, a3, a4, a5, a6, a7, a8. Eq[Tuple8[a1, a2, a3, a4, a5, a6, a7, a8]] = eq_from_eq((_, _) -> True)
-ord_Tuple8: forall a1, a2, a3, a4, a5, a6, a7, a8. Ord[Tuple8[a1, a2, a3, a4, a5, a6, a7, a8]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple22(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20], ord21: Ord[a21], ord22: Ord[a22]) -> Ord[Tuple22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple22(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22), Tuple22(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20)), _ -> cmp_Ord(ord21, left21, right21)), _ -> cmp_Ord(ord22, left22, right22))
+  ))
 
-eq_Tuple9: forall a1, a2, a3, a4, a5, a6, a7, a8, a9. Eq[Tuple9[a1, a2, a3, a4, a5, a6, a7, a8, a9]] = eq_from_eq((_, _) -> True)
-ord_Tuple9: forall a1, a2, a3, a4, a5, a6, a7, a8, a9. Ord[Tuple9[a1, a2, a3, a4, a5, a6, a7, a8, a9]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple23(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20], eq21: Eq[a21], eq22: Eq[a22], eq23: Eq[a23]) -> Eq[Tuple23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple23(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23), Tuple23(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20)), eq_Eq(eq21, left21, right21)), eq_Eq(eq22, left22, right22)), eq_Eq(eq23, left23, right23))
+  ))
 
-eq_Tuple10: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10. Eq[Tuple10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]] = eq_from_eq((_, _) -> True)
-ord_Tuple10: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10. Ord[Tuple10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple23(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20], ord21: Ord[a21], ord22: Ord[a22], ord23: Ord[a23]) -> Ord[Tuple23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple23(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23), Tuple23(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20)), _ -> cmp_Ord(ord21, left21, right21)), _ -> cmp_Ord(ord22, left22, right22)), _ -> cmp_Ord(ord23, left23, right23))
+  ))
 
-eq_Tuple11: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11. Eq[Tuple11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]] = eq_from_eq((_, _) -> True)
-ord_Tuple11: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11. Ord[Tuple11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple24(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20], eq21: Eq[a21], eq22: Eq[a22], eq23: Eq[a23], eq24: Eq[a24]) -> Eq[Tuple24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple24(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24), Tuple24(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20)), eq_Eq(eq21, left21, right21)), eq_Eq(eq22, left22, right22)), eq_Eq(eq23, left23, right23)), eq_Eq(eq24, left24, right24))
+  ))
 
-eq_Tuple12: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12. Eq[Tuple12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]] = eq_from_eq((_, _) -> True)
-ord_Tuple12: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12. Ord[Tuple12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple24(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20], ord21: Ord[a21], ord22: Ord[a22], ord23: Ord[a23], ord24: Ord[a24]) -> Ord[Tuple24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple24(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24), Tuple24(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20)), _ -> cmp_Ord(ord21, left21, right21)), _ -> cmp_Ord(ord22, left22, right22)), _ -> cmp_Ord(ord23, left23, right23)), _ -> cmp_Ord(ord24, left24, right24))
+  ))
 
-eq_Tuple13: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13. Eq[Tuple13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]] = eq_from_eq((_, _) -> True)
-ord_Tuple13: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13. Ord[Tuple13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple25(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20], eq21: Eq[a21], eq22: Eq[a22], eq23: Eq[a23], eq24: Eq[a24], eq25: Eq[a25]) -> Eq[Tuple25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple25(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25), Tuple25(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20)), eq_Eq(eq21, left21, right21)), eq_Eq(eq22, left22, right22)), eq_Eq(eq23, left23, right23)), eq_Eq(eq24, left24, right24)), eq_Eq(eq25, left25, right25))
+  ))
 
-eq_Tuple14: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14. Eq[Tuple14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]] = eq_from_eq((_, _) -> True)
-ord_Tuple14: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14. Ord[Tuple14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple25(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20], ord21: Ord[a21], ord22: Ord[a22], ord23: Ord[a23], ord24: Ord[a24], ord25: Ord[a25]) -> Ord[Tuple25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple25(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25), Tuple25(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20)), _ -> cmp_Ord(ord21, left21, right21)), _ -> cmp_Ord(ord22, left22, right22)), _ -> cmp_Ord(ord23, left23, right23)), _ -> cmp_Ord(ord24, left24, right24)), _ -> cmp_Ord(ord25, left25, right25))
+  ))
 
-eq_Tuple15: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15. Eq[Tuple15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]] = eq_from_eq((_, _) -> True)
-ord_Tuple15: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15. Ord[Tuple15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple26(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20], eq21: Eq[a21], eq22: Eq[a22], eq23: Eq[a23], eq24: Eq[a24], eq25: Eq[a25], eq26: Eq[a26]) -> Eq[Tuple26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple26(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26), Tuple26(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20)), eq_Eq(eq21, left21, right21)), eq_Eq(eq22, left22, right22)), eq_Eq(eq23, left23, right23)), eq_Eq(eq24, left24, right24)), eq_Eq(eq25, left25, right25)), eq_Eq(eq26, left26, right26))
+  ))
 
-eq_Tuple16: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16. Eq[Tuple16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]] = eq_from_eq((_, _) -> True)
-ord_Tuple16: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16. Ord[Tuple16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple26(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20], ord21: Ord[a21], ord22: Ord[a22], ord23: Ord[a23], ord24: Ord[a24], ord25: Ord[a25], ord26: Ord[a26]) -> Ord[Tuple26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple26(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26), Tuple26(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20)), _ -> cmp_Ord(ord21, left21, right21)), _ -> cmp_Ord(ord22, left22, right22)), _ -> cmp_Ord(ord23, left23, right23)), _ -> cmp_Ord(ord24, left24, right24)), _ -> cmp_Ord(ord25, left25, right25)), _ -> cmp_Ord(ord26, left26, right26))
+  ))
 
-eq_Tuple17: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17. Eq[Tuple17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]] = eq_from_eq((_, _) -> True)
-ord_Tuple17: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17. Ord[Tuple17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple27(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20], eq21: Eq[a21], eq22: Eq[a22], eq23: Eq[a23], eq24: Eq[a24], eq25: Eq[a25], eq26: Eq[a26], eq27: Eq[a27]) -> Eq[Tuple27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple27(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27), Tuple27(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20)), eq_Eq(eq21, left21, right21)), eq_Eq(eq22, left22, right22)), eq_Eq(eq23, left23, right23)), eq_Eq(eq24, left24, right24)), eq_Eq(eq25, left25, right25)), eq_Eq(eq26, left26, right26)), eq_Eq(eq27, left27, right27))
+  ))
 
-eq_Tuple18: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18. Eq[Tuple18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]] = eq_from_eq((_, _) -> True)
-ord_Tuple18: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18. Ord[Tuple18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple27(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20], ord21: Ord[a21], ord22: Ord[a22], ord23: Ord[a23], ord24: Ord[a24], ord25: Ord[a25], ord26: Ord[a26], ord27: Ord[a27]) -> Ord[Tuple27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple27(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27), Tuple27(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20)), _ -> cmp_Ord(ord21, left21, right21)), _ -> cmp_Ord(ord22, left22, right22)), _ -> cmp_Ord(ord23, left23, right23)), _ -> cmp_Ord(ord24, left24, right24)), _ -> cmp_Ord(ord25, left25, right25)), _ -> cmp_Ord(ord26, left26, right26)), _ -> cmp_Ord(ord27, left27, right27))
+  ))
 
-eq_Tuple19: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19. Eq[Tuple19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]] = eq_from_eq((_, _) -> True)
-ord_Tuple19: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19. Ord[Tuple19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple28(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20], eq21: Eq[a21], eq22: Eq[a22], eq23: Eq[a23], eq24: Eq[a24], eq25: Eq[a25], eq26: Eq[a26], eq27: Eq[a27], eq28: Eq[a28]) -> Eq[Tuple28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple28(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28), Tuple28(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20)), eq_Eq(eq21, left21, right21)), eq_Eq(eq22, left22, right22)), eq_Eq(eq23, left23, right23)), eq_Eq(eq24, left24, right24)), eq_Eq(eq25, left25, right25)), eq_Eq(eq26, left26, right26)), eq_Eq(eq27, left27, right27)), eq_Eq(eq28, left28, right28))
+  ))
 
-eq_Tuple20: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20. Eq[Tuple20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]] = eq_from_eq((_, _) -> True)
-ord_Tuple20: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20. Ord[Tuple20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple28(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20], ord21: Ord[a21], ord22: Ord[a22], ord23: Ord[a23], ord24: Ord[a24], ord25: Ord[a25], ord26: Ord[a26], ord27: Ord[a27], ord28: Ord[a28]) -> Ord[Tuple28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple28(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28), Tuple28(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20)), _ -> cmp_Ord(ord21, left21, right21)), _ -> cmp_Ord(ord22, left22, right22)), _ -> cmp_Ord(ord23, left23, right23)), _ -> cmp_Ord(ord24, left24, right24)), _ -> cmp_Ord(ord25, left25, right25)), _ -> cmp_Ord(ord26, left26, right26)), _ -> cmp_Ord(ord27, left27, right27)), _ -> cmp_Ord(ord28, left28, right28))
+  ))
 
-eq_Tuple21: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21. Eq[Tuple21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]] = eq_from_eq((_, _) -> True)
-ord_Tuple21: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21. Ord[Tuple21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple29(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20], eq21: Eq[a21], eq22: Eq[a22], eq23: Eq[a23], eq24: Eq[a24], eq25: Eq[a25], eq26: Eq[a26], eq27: Eq[a27], eq28: Eq[a28], eq29: Eq[a29]) -> Eq[Tuple29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple29(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28, left29), Tuple29(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28, right29)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20)), eq_Eq(eq21, left21, right21)), eq_Eq(eq22, left22, right22)), eq_Eq(eq23, left23, right23)), eq_Eq(eq24, left24, right24)), eq_Eq(eq25, left25, right25)), eq_Eq(eq26, left26, right26)), eq_Eq(eq27, left27, right27)), eq_Eq(eq28, left28, right28)), eq_Eq(eq29, left29, right29))
+  ))
 
-eq_Tuple22: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22. Eq[Tuple22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]] = eq_from_eq((_, _) -> True)
-ord_Tuple22: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22. Ord[Tuple22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple29(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20], ord21: Ord[a21], ord22: Ord[a22], ord23: Ord[a23], ord24: Ord[a24], ord25: Ord[a25], ord26: Ord[a26], ord27: Ord[a27], ord28: Ord[a28], ord29: Ord[a29]) -> Ord[Tuple29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple29(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28, left29), Tuple29(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28, right29)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20)), _ -> cmp_Ord(ord21, left21, right21)), _ -> cmp_Ord(ord22, left22, right22)), _ -> cmp_Ord(ord23, left23, right23)), _ -> cmp_Ord(ord24, left24, right24)), _ -> cmp_Ord(ord25, left25, right25)), _ -> cmp_Ord(ord26, left26, right26)), _ -> cmp_Ord(ord27, left27, right27)), _ -> cmp_Ord(ord28, left28, right28)), _ -> cmp_Ord(ord29, left29, right29))
+  ))
 
-eq_Tuple23: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23. Eq[Tuple23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]] = eq_from_eq((_, _) -> True)
-ord_Tuple23: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23. Ord[Tuple23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple30(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20], eq21: Eq[a21], eq22: Eq[a22], eq23: Eq[a23], eq24: Eq[a24], eq25: Eq[a25], eq26: Eq[a26], eq27: Eq[a27], eq28: Eq[a28], eq29: Eq[a29], eq30: Eq[a30]) -> Eq[Tuple30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple30(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28, left29, left30), Tuple30(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28, right29, right30)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20)), eq_Eq(eq21, left21, right21)), eq_Eq(eq22, left22, right22)), eq_Eq(eq23, left23, right23)), eq_Eq(eq24, left24, right24)), eq_Eq(eq25, left25, right25)), eq_Eq(eq26, left26, right26)), eq_Eq(eq27, left27, right27)), eq_Eq(eq28, left28, right28)), eq_Eq(eq29, left29, right29)), eq_Eq(eq30, left30, right30))
+  ))
 
-eq_Tuple24: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24. Eq[Tuple24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]] = eq_from_eq((_, _) -> True)
-ord_Tuple24: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24. Ord[Tuple24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple30(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20], ord21: Ord[a21], ord22: Ord[a22], ord23: Ord[a23], ord24: Ord[a24], ord25: Ord[a25], ord26: Ord[a26], ord27: Ord[a27], ord28: Ord[a28], ord29: Ord[a29], ord30: Ord[a30]) -> Ord[Tuple30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple30(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28, left29, left30), Tuple30(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28, right29, right30)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20)), _ -> cmp_Ord(ord21, left21, right21)), _ -> cmp_Ord(ord22, left22, right22)), _ -> cmp_Ord(ord23, left23, right23)), _ -> cmp_Ord(ord24, left24, right24)), _ -> cmp_Ord(ord25, left25, right25)), _ -> cmp_Ord(ord26, left26, right26)), _ -> cmp_Ord(ord27, left27, right27)), _ -> cmp_Ord(ord28, left28, right28)), _ -> cmp_Ord(ord29, left29, right29)), _ -> cmp_Ord(ord30, left30, right30))
+  ))
 
-eq_Tuple25: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25. Eq[Tuple25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]] = eq_from_eq((_, _) -> True)
-ord_Tuple25: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25. Ord[Tuple25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple31(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20], eq21: Eq[a21], eq22: Eq[a22], eq23: Eq[a23], eq24: Eq[a24], eq25: Eq[a25], eq26: Eq[a26], eq27: Eq[a27], eq28: Eq[a28], eq29: Eq[a29], eq30: Eq[a30], eq31: Eq[a31]) -> Eq[Tuple31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple31(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28, left29, left30, left31), Tuple31(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28, right29, right30, right31)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20)), eq_Eq(eq21, left21, right21)), eq_Eq(eq22, left22, right22)), eq_Eq(eq23, left23, right23)), eq_Eq(eq24, left24, right24)), eq_Eq(eq25, left25, right25)), eq_Eq(eq26, left26, right26)), eq_Eq(eq27, left27, right27)), eq_Eq(eq28, left28, right28)), eq_Eq(eq29, left29, right29)), eq_Eq(eq30, left30, right30)), eq_Eq(eq31, left31, right31))
+  ))
 
-eq_Tuple26: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26. Eq[Tuple26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]] = eq_from_eq((_, _) -> True)
-ord_Tuple26: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26. Ord[Tuple26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple31(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20], ord21: Ord[a21], ord22: Ord[a22], ord23: Ord[a23], ord24: Ord[a24], ord25: Ord[a25], ord26: Ord[a26], ord27: Ord[a27], ord28: Ord[a28], ord29: Ord[a29], ord30: Ord[a30], ord31: Ord[a31]) -> Ord[Tuple31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple31(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28, left29, left30, left31), Tuple31(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28, right29, right30, right31)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20)), _ -> cmp_Ord(ord21, left21, right21)), _ -> cmp_Ord(ord22, left22, right22)), _ -> cmp_Ord(ord23, left23, right23)), _ -> cmp_Ord(ord24, left24, right24)), _ -> cmp_Ord(ord25, left25, right25)), _ -> cmp_Ord(ord26, left26, right26)), _ -> cmp_Ord(ord27, left27, right27)), _ -> cmp_Ord(ord28, left28, right28)), _ -> cmp_Ord(ord29, left29, right29)), _ -> cmp_Ord(ord30, left30, right30)), _ -> cmp_Ord(ord31, left31, right31))
+  ))
 
-eq_Tuple27: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27. Eq[Tuple27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]] = eq_from_eq((_, _) -> True)
-ord_Tuple27: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27. Ord[Tuple27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]] = ord_from_cmp((_, _) -> EQ)
+def eq_Tuple32(eq1: Eq[a1], eq2: Eq[a2], eq3: Eq[a3], eq4: Eq[a4], eq5: Eq[a5], eq6: Eq[a6], eq7: Eq[a7], eq8: Eq[a8], eq9: Eq[a9], eq10: Eq[a10], eq11: Eq[a11], eq12: Eq[a12], eq13: Eq[a13], eq14: Eq[a14], eq15: Eq[a15], eq16: Eq[a16], eq17: Eq[a17], eq18: Eq[a18], eq19: Eq[a19], eq20: Eq[a20], eq21: Eq[a21], eq22: Eq[a22], eq23: Eq[a23], eq24: Eq[a24], eq25: Eq[a25], eq26: Eq[a26], eq27: Eq[a27], eq28: Eq[a28], eq29: Eq[a29], eq30: Eq[a30], eq31: Eq[a31], eq32: Eq[a32]) -> Eq[Tuple32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (Tuple32(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28, left29, left30, left31, left32), Tuple32(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28, right29, right30, right31, right32)):
+        and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(and_Bool(eq_Eq(eq1, left1, right1), eq_Eq(eq2, left2, right2)), eq_Eq(eq3, left3, right3)), eq_Eq(eq4, left4, right4)), eq_Eq(eq5, left5, right5)), eq_Eq(eq6, left6, right6)), eq_Eq(eq7, left7, right7)), eq_Eq(eq8, left8, right8)), eq_Eq(eq9, left9, right9)), eq_Eq(eq10, left10, right10)), eq_Eq(eq11, left11, right11)), eq_Eq(eq12, left12, right12)), eq_Eq(eq13, left13, right13)), eq_Eq(eq14, left14, right14)), eq_Eq(eq15, left15, right15)), eq_Eq(eq16, left16, right16)), eq_Eq(eq17, left17, right17)), eq_Eq(eq18, left18, right18)), eq_Eq(eq19, left19, right19)), eq_Eq(eq20, left20, right20)), eq_Eq(eq21, left21, right21)), eq_Eq(eq22, left22, right22)), eq_Eq(eq23, left23, right23)), eq_Eq(eq24, left24, right24)), eq_Eq(eq25, left25, right25)), eq_Eq(eq26, left26, right26)), eq_Eq(eq27, left27, right27)), eq_Eq(eq28, left28, right28)), eq_Eq(eq29, left29, right29)), eq_Eq(eq30, left30, right30)), eq_Eq(eq31, left31, right31)), eq_Eq(eq32, left32, right32))
+  ))
 
-eq_Tuple28: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28. Eq[Tuple28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]] = eq_from_eq((_, _) -> True)
-ord_Tuple28: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28. Ord[Tuple28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]] = ord_from_cmp((_, _) -> EQ)
-
-eq_Tuple29: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29. Eq[Tuple29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]] = eq_from_eq((_, _) -> True)
-ord_Tuple29: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29. Ord[Tuple29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]] = ord_from_cmp((_, _) -> EQ)
-
-eq_Tuple30: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30. Eq[Tuple30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]] = eq_from_eq((_, _) -> True)
-ord_Tuple30: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30. Ord[Tuple30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]] = ord_from_cmp((_, _) -> EQ)
-
-eq_Tuple31: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31. Eq[Tuple31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]] = eq_from_eq((_, _) -> True)
-ord_Tuple31: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31. Ord[Tuple31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]] = ord_from_cmp((_, _) -> EQ)
-
-eq_Tuple32: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32. Eq[Tuple32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]] = eq_from_eq((_, _) -> True)
-ord_Tuple32: forall a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32. Ord[Tuple32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]] = ord_from_cmp((_, _) -> EQ)
+def ord_Tuple32(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5: Ord[a5], ord6: Ord[a6], ord7: Ord[a7], ord8: Ord[a8], ord9: Ord[a9], ord10: Ord[a10], ord11: Ord[a11], ord12: Ord[a12], ord13: Ord[a13], ord14: Ord[a14], ord15: Ord[a15], ord16: Ord[a16], ord17: Ord[a17], ord18: Ord[a18], ord19: Ord[a19], ord20: Ord[a20], ord21: Ord[a21], ord22: Ord[a22], ord23: Ord[a23], ord24: Ord[a24], ord25: Ord[a25], ord26: Ord[a26], ord27: Ord[a27], ord28: Ord[a28], ord29: Ord[a29], ord30: Ord[a30], ord31: Ord[a31], ord32: Ord[a32]) -> Ord[Tuple32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (Tuple32(left1, left2, left3, left4, left5, left6, left7, left8, left9, left10, left11, left12, left13, left14, left15, left16, left17, left18, left19, left20, left21, left22, left23, left24, left25, left26, left27, left28, left29, left30, left31, left32), Tuple32(right1, right2, right3, right4, right5, right6, right7, right8, right9, right10, right11, right12, right13, right14, right15, right16, right17, right18, right19, right20, right21, right22, right23, right24, right25, right26, right27, right28, right29, right30, right31, right32)):
+        cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_then(cmp_Ord(ord1, left1, right1), _ -> cmp_Ord(ord2, left2, right2)), _ -> cmp_Ord(ord3, left3, right3)), _ -> cmp_Ord(ord4, left4, right4)), _ -> cmp_Ord(ord5, left5, right5)), _ -> cmp_Ord(ord6, left6, right6)), _ -> cmp_Ord(ord7, left7, right7)), _ -> cmp_Ord(ord8, left8, right8)), _ -> cmp_Ord(ord9, left9, right9)), _ -> cmp_Ord(ord10, left10, right10)), _ -> cmp_Ord(ord11, left11, right11)), _ -> cmp_Ord(ord12, left12, right12)), _ -> cmp_Ord(ord13, left13, right13)), _ -> cmp_Ord(ord14, left14, right14)), _ -> cmp_Ord(ord15, left15, right15)), _ -> cmp_Ord(ord16, left16, right16)), _ -> cmp_Ord(ord17, left17, right17)), _ -> cmp_Ord(ord18, left18, right18)), _ -> cmp_Ord(ord19, left19, right19)), _ -> cmp_Ord(ord20, left20, right20)), _ -> cmp_Ord(ord21, left21, right21)), _ -> cmp_Ord(ord22, left22, right22)), _ -> cmp_Ord(ord23, left23, right23)), _ -> cmp_Ord(ord24, left24, right24)), _ -> cmp_Ord(ord25, left25, right25)), _ -> cmp_Ord(ord26, left26, right26)), _ -> cmp_Ord(ord27, left27, right27)), _ -> cmp_Ord(ord28, left28, right28)), _ -> cmp_Ord(ord29, left29, right29)), _ -> cmp_Ord(ord30, left30, right30)), _ -> cmp_Ord(ord31, left31, right31)), _ -> cmp_Ord(ord32, left32, right32))
+  ))
 
 def eq_Dict(eq_key: Eq[k], eq_value: Eq[v]) -> Eq[Dict[k, v]]:
   pair_eq = eq_Tuple2(eq_key, eq_value)
-  eq_from_eq((left, right) -> eq_list(pair_eq, items(left), items(right)))
+  eq_from_fn((left, right) -> eq_list(pair_eq, items(left), items(right)))
 
 def ord_Dict(ord_key: Ord[k], ord_value: Ord[v]) -> Ord[Dict[k, v]]:
   pair_ord = ord_Tuple2(ord_key, ord_value)
@@ -526,7 +686,20 @@ tests = TestSuite("Predef Eq/Ord instances", [
     Assertion(cmp_Ord(list_ord, [1, 2], [1, 3]) matches LT, "ord_List")
   ),
   (
-    tuple3_eq = eq_Tuple3
-    Assertion(eq_Eq(tuple3_eq, Tuple3(1, 2, 3), Tuple3(4, 5, 6)), "eq_Tuple3 fallback")
+    tuple3_eq = eq_Tuple3(eq_Int, eq_Int, eq_Int)
+    Assertion(
+      if eq_Eq(tuple3_eq, Tuple3(1, 2, 3), Tuple3(1, 2, 4)):
+        False
+      else:
+        True,
+      "eq_Tuple3 compares fields",
+    )
+  ),
+  (
+    tuple3_ord = ord_Tuple3(ord_Int, ord_Int, ord_Int)
+    Assertion(
+      cmp_Ord(tuple3_ord, Tuple3(1, 2, 3), Tuple3(1, 2, 4)) matches LT,
+      "ord_Tuple3 lexicographic",
+    )
   ),
 ])

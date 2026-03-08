@@ -2,7 +2,7 @@ package Zafu/Abstract/Eq
 
 export (
   Eq,
-  eq_from_eq,
+  eq_from_fn,
   eq_specialized,
   eq,
   neq,
@@ -37,7 +37,7 @@ def eq_specialized(eq_fn: (a, a) -> Bool, neq_fn: (a, a) -> Bool) -> Eq[a]:
   Eq(eq_fn, neq_fn)
 
 # Constructor from equality; inequality is derived.
-def eq_from_eq(eq_fn: (a, a) -> Bool) -> Eq[a]:
+def eq_from_fn(eq_fn: (a, a) -> Bool) -> Eq[a]:
   Eq(eq_fn, (left, right) -> not_Bool(eq_fn(left, right)))
 
 def eq(inst: Eq[a], left: a, right: a) -> Bool:
@@ -61,15 +61,15 @@ def laws_Eq(inst: Eq[a], x: a, y: a, z: a) -> Bool:
 
 tests = TestSuite("Eq tests", [
   (
-    int_eq = eq_from_eq(eq_Int)
-    Assertion(eq(int_eq, 1, 1), "eq_from_eq true")
+    int_eq = eq_from_fn(eq_Int)
+    Assertion(eq(int_eq, 1, 1), "eq_from_fn true")
   ),
   (
-    int_eq = eq_from_eq(eq_Int)
+    int_eq = eq_from_fn(eq_Int)
     Assertion(neq(int_eq, 1, 2), "neq derived")
   ),
   (
-    int_eq = eq_from_eq(eq_Int)
+    int_eq = eq_from_fn(eq_Int)
     Assertion(laws_Eq(int_eq, 1, 1, 2), "laws_Eq sanity")
   ),
 ])

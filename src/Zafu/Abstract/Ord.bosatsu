@@ -2,7 +2,7 @@ package Zafu/Abstract/Ord
 
 from Zafu/Abstract/Eq import (
   Eq,
-  eq_from_eq,
+  eq_specialized,
   eq as eq_Eq,
 )
 
@@ -92,41 +92,61 @@ def ord_from_cmp(cmp_fn: (a, a) -> Comparison) -> Ord[a]:
   ord_specialized(cmp_fn, lt_fn, lteq_fn, gt_fn, gteq_fn, min_fn, max_fn)
 
 def cmp(inst: Ord[a], left: a, right: a) -> Comparison:
-  Ord(cmp_fn, _, _, _, _, _, _) = inst
+  Ord { cmp_fn, ... } = inst
   cmp_fn(left, right)
 
 def eq(inst: Ord[a], left: a, right: a) -> Bool:
   cmp(inst, left, right) matches EQ
 
 def lt(inst: Ord[a], left: a, right: a) -> Bool:
-  Ord(_, lt_fn, _, _, _, _, _) = inst
+  Ord { lt_fn, ... } = inst
   lt_fn(left, right)
 
 def lteq(inst: Ord[a], left: a, right: a) -> Bool:
-  Ord(_, _, lteq_fn, _, _, _, _) = inst
+  Ord { lteq_fn, ... } = inst
   lteq_fn(left, right)
 
 def gt(inst: Ord[a], left: a, right: a) -> Bool:
-  Ord(_, _, _, gt_fn, _, _, _) = inst
+  Ord { gt_fn, ... } = inst
   gt_fn(left, right)
 
 def gteq(inst: Ord[a], left: a, right: a) -> Bool:
-  Ord(_, _, _, _, gteq_fn, _, _) = inst
+  Ord { gteq_fn, ... } = inst
   gteq_fn(left, right)
 
 def min(inst: Ord[a], left: a, right: a) -> a:
-  Ord(_, _, _, _, _, min_fn, _) = inst
+  Ord { min_fn, ... } = inst
   min_fn(left, right)
 
 def max(inst: Ord[a], left: a, right: a) -> a:
-  Ord(_, _, _, _, _, _, max_fn) = inst
+  Ord { max_fn, ... } = inst
   max_fn(left, right)
 
 def reverse(inst: Ord[a]) -> Ord[a]:
-  ord_from_cmp((left, right) -> cmp(inst, right, left))
+  Ord { cmp_fn, ... } = inst
+  Ord { lt_fn, ... } = inst
+  Ord { lteq_fn, ... } = inst
+  Ord { gt_fn, ... } = inst
+  Ord { gteq_fn, ... } = inst
+  Ord { min_fn, ... } = inst
+  Ord { max_fn, ... } = inst
+  ord_specialized(
+    (left, right) -> cmp_fn(right, left),
+    (left, right) -> gt_fn(left, right),
+    (left, right) -> gteq_fn(left, right),
+    (left, right) -> lt_fn(left, right),
+    (left, right) -> lteq_fn(left, right),
+    (left, right) -> max_fn(left, right),
+    (left, right) -> min_fn(left, right),
+  )
 
 def ord_to_eq(inst: Ord[a]) -> Eq[a]:
-  eq_from_eq((left, right) -> eq(inst, left, right))
+  Ord { lteq_fn, ... } = inst
+  Ord { gt_fn, ... } = inst
+  eq_specialized(
+    (left, right) -> and_Bool(lteq_fn(left, right), lteq_fn(right, left)),
+    (left, right) -> or_Bool(gt_fn(left, right), gt_fn(right, left)),
+  )
 
 # Basic Ord law checker for three sample values.
 def laws_Ord(inst: Ord[a], x: a, y: a, z: a) -> Bool:
