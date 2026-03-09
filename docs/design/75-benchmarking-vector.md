@@ -182,3 +182,4 @@ Phase 3: UX and validation
 4. Follow-up issue option: add optional CLI tuning flags such as `--quick` and `--target-ms`.
 5. Follow-up issue option: add additional vector scenarios such as `slice`, `map`, `flat_map`, and `filter`.
 6. Follow-up issue option: add comparison baselines against `List` and `Array`.
+7. Keep `scripts/test.sh` as the required pre-push validation command for benchmark-related changes.
