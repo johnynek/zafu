@@ -11,19 +11,23 @@ from Zafu/Collection/Chain import (
   size as size_Chain,
   index as index_Chain,
   get_or as get_or_Chain,
+  any as any_Chain,
+  exists as exists_Chain,
+  for_all as for_all_Chain,
   uncons_left as uncons_left_Chain,
   uncons_right as uncons_right_Chain,
   foldl as foldl_Chain,
   foldr as foldr_Chain,
+  combine_all as combine_all_Chain,
   map as map_Chain,
   prepend as prepend_Chain,
   append as append_Chain,
   concat as concat_Chain,
+  eq_Chain,
+  ord_Chain,
+  hash_Chain,
 )
 from Zafu/Collection/List import (
-  any as any_List,
-  exists as exists_List,
-  for_all as for_all_List,
   set_List as set_List_base,
   sort as sort_List,
   zip as zip_List,
@@ -61,9 +65,6 @@ from Zafu/Collection/HashSet import (
 from Zafu/Abstract/Instances/Predef import (
   eq_Int as eq_Int_inst,
   ord_Int as ord_Int_inst,
-  eq_List as eq_List_inst,
-  ord_List as ord_List_inst,
-  hash_List as hash_List_inst,
   hash_Int,
 )
 
@@ -203,22 +204,89 @@ def last(items: NonEmptyChain[a]) -> a:
   last0
 
 def size(items: NonEmptyChain[a]) -> Int:
-  size_Chain(to_Chain(items))
+  match items:
+    case Prepend(_, tail0):
+      size_Chain(tail0).add(1)
+    case Append(init0, _):
+      size_Chain(init0).add(1)
 
 def get(items: NonEmptyChain[a], idx: Int) -> Option[a]:
-  index_Chain(to_Chain(items), idx)
+  if cmp_Int(idx, 0) matches LT:
+    None
+  else:
+    match items:
+      case Prepend(head0, tail0):
+        if idx.eq_Int(0):
+          Some(head0)
+        else:
+          index_Chain(tail0, idx.sub(1))
+      case Append(init0, last0):
+        init_size = size_Chain(init0)
+        # init occupies [0, init_size); last sits exactly at init_size.
+        if cmp_Int(idx, init_size) matches LT:
+          index_Chain(init0, idx)
+        elif idx.eq_Int(init_size):
+          Some(last0)
+        else:
+          None
 
 def get_or(items: NonEmptyChain[a], idx: Int, on_missing: () -> a) -> a:
-  get_or_Chain(to_Chain(items), idx, on_missing)
+  if cmp_Int(idx, 0) matches LT:
+    on_missing()
+  else:
+    match items:
+      case Prepend(head0, tail0):
+        if idx.eq_Int(0):
+          head0
+        else:
+          get_or_Chain(tail0, idx.sub(1), on_missing)
+      case Append(init0, last0):
+        init_size = size_Chain(init0)
+        if cmp_Int(idx, init_size) matches LT:
+          get_or_Chain(init0, idx, on_missing)
+        elif idx.eq_Int(init_size):
+          last0
+        else:
+          on_missing()
 
 def any(items: NonEmptyChain[Bool]) -> Bool:
-  any_List(to_List(items))
+  match items:
+    case Prepend(head0, tail0):
+      if head0:
+        True
+      else:
+        any_Chain(tail0)
+    case Append(init0, last0):
+      if any_Chain(init0):
+        True
+      else:
+        last0
 
 def exists(items: NonEmptyChain[a], pred: a -> Bool) -> Bool:
-  exists_List(to_List(items), pred)
+  match items:
+    case Prepend(head0, tail0):
+      if pred(head0):
+        True
+      else:
+        exists_Chain(tail0, pred)
+    case Append(init0, last0):
+      if exists_Chain(init0, pred):
+        True
+      else:
+        pred(last0)
 
 def for_all(items: NonEmptyChain[a], pred: a -> Bool) -> Bool:
-  for_all_List(to_List(items), pred)
+  match items:
+    case Prepend(head0, tail0):
+      if pred(head0):
+        for_all_Chain(tail0, pred)
+      else:
+        False
+    case Append(init0, last0):
+      if for_all_Chain(init0, pred):
+        pred(last0)
+      else:
+        False
 
 def set(items: NonEmptyChain[a], idx: Int, value: a) -> Option[NonEmptyChain[a]]:
   match set_List_base(to_List(items), idx, value):
@@ -228,10 +296,18 @@ def set(items: NonEmptyChain[a], idx: Int, value: a) -> Option[NonEmptyChain[a]]
       None
 
 def foldl(items: NonEmptyChain[a], init: b, fn: (b, a) -> b) -> b:
-  foldl_Chain(to_Chain(items), init, fn)
+  match items:
+    case Prepend(head0, tail0):
+      foldl_Chain(tail0, fn(init, head0), fn)
+    case Append(init0, last0):
+      fn(foldl_Chain(init0, init, fn), last0)
 
 def foldr(items: NonEmptyChain[a], init: b, fn: (a, b) -> b) -> b:
-  foldr_Chain(to_Chain(items), init, fn)
+  match items:
+    case Prepend(head0, tail0):
+      fn(head0, foldr_Chain(tail0, init, fn))
+    case Append(init0, last0):
+      foldr_Chain(init0, fn(last0, init), fn)
 
 def sum(items: NonEmptyChain[Int]) -> Int:
   foldl(items, 0, add)
@@ -240,8 +316,19 @@ def sumf(items: NonEmptyChain[Float64]) -> Float64:
   foldl(items, 0.0, addf)
 
 def combine_all(items: NonEmptyChain[a], semi: Semigroup[a]) -> a:
-  (head0, tail0) = uncons(items)
-  foldl_Chain(tail0, head0, (acc, item) -> combine_Semigroup(semi, acc, item))
+  match items:
+    case Prepend(head0, tail0):
+      match combine_all_Chain(tail0, semi):
+        case Some(rest):
+          combine_Semigroup(semi, head0, rest)
+        case None:
+          head0
+    case Append(init0, last0):
+      match combine_all_Chain(init0, semi):
+        case Some(rest):
+          combine_Semigroup(semi, rest, last0)
+        case None:
+          last0
 
 def map(items: NonEmptyChain[a], fn: a -> b) -> NonEmptyChain[b]:
   match items:
@@ -305,13 +392,13 @@ def reverse(items: NonEmptyChain[a]) -> NonEmptyChain[a]:
   from_non_empty_Chain_or(reversed, () -> items)
 
 def eq_NonEmptyChain(eq_item: Eq[a]) -> Eq[NonEmptyChain[a]]:
-  eq_by(eq_List_inst(eq_item), to_List)
+  eq_by(eq_Chain(eq_item), to_Chain)
 
 def ord_NonEmptyChain(ord_item: Ord[a]) -> Ord[NonEmptyChain[a]]:
-  ord_by(ord_List_inst(ord_item), to_List)
+  ord_by(ord_Chain(ord_item), to_Chain)
 
 def hash_NonEmptyChain(hash_item: Hash[a]) -> Hash[NonEmptyChain[a]]:
-  hash_by(hash_List_inst(hash_item), to_List)
+  hash_by(hash_Chain(hash_item), to_Chain)
 
 def to_List_option(items: Option[NonEmptyChain[a]]) -> Option[List[a]]:
   match items:
@@ -400,6 +487,7 @@ decomposition_tests = TestSuite("decomposition", [
     "uncons_right Append",
   ),
   Assertion(size(from_prepend(1, from_List_Chain([2, 3]))).eq_Int(3), "size"),
+  Assertion(size(from_append(from_List_Chain([1, 2]), 3)).eq_Int(3), "size Append"),
 ])
 
 query_and_fold_tests = TestSuite("queries and folds", [
@@ -413,15 +501,21 @@ query_and_fold_tests = TestSuite("queries and folds", [
   Assertion(get(from_prepend(10, from_List_Chain([11, 12])), 2) matches Some(12), "get last"),
   Assertion(get(from_prepend(10, from_List_Chain([11, 12])), 3) matches None, "get out-of-range"),
   Assertion(get(from_prepend(10, from_List_Chain([11, 12])), -1) matches None, "get negative"),
+  Assertion(get(from_append(from_List_Chain([10, 11]), 12), 0) matches Some(10), "get Append first"),
+  Assertion(get(from_append(from_List_Chain([10, 11]), 2), 2) matches Some(2), "get Append last"),
+  Assertion(get(from_append(from_List_Chain([10, 11]), 12), 3) matches None, "get Append out-of-range"),
   Assertion(get_or(from_prepend(10, from_List_Chain([11, 12])), 1, () -> 99).eq_Int(11), "get_or hit"),
   Assertion(get_or(from_prepend(10, from_List_Chain([11, 12])), 9, () -> 99).eq_Int(99), "get_or out-of-range"),
   Assertion(get_or(from_prepend(10, from_List_Chain([11, 12])), -1, () -> 99).eq_Int(99), "get_or negative"),
+  Assertion(get_or(from_append(from_List_Chain([10, 11]), 12), 2, () -> 99).eq_Int(12), "get_or Append last"),
   Assertion(to_List_option(set(from_prepend(10, from_List_Chain([11, 12])), 0, 99)) matches Some([99, 11, 12]), "set first"),
   Assertion(to_List_option(set(from_prepend(10, from_List_Chain([11, 12])), 2, 99)) matches Some([10, 11, 99]), "set last"),
   Assertion(set(from_prepend(10, from_List_Chain([11, 12])), 3, 99) matches None, "set out-of-range"),
   Assertion(set(from_prepend(10, from_List_Chain([11, 12])), -1, 99) matches None, "set negative"),
   Assertion(foldl(from_prepend(1, from_List_Chain([2, 3])), 0, add).eq_Int(6), "foldl"),
+  Assertion(foldl(from_append(from_List_Chain([1, 2]), 3), 0, add).eq_Int(6), "foldl Append"),
   Assertion(foldr(from_prepend(1, from_List_Chain([2, 3])), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr"),
+  Assertion(foldr(from_append(from_List_Chain([1, 2]), 3), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr Append"),
   Assertion(sum(from_prepend(1, from_List_Chain([2, 3, 4]))).eq_Int(10), "sum"),
   Assertion(sumf(from_prepend(1.25, from_List_Chain([2.5, 0.25]))).cmp_Float64(4.0) matches EQ, "sumf"),
 ])
