@@ -29,6 +29,26 @@ This runs:
 2. `./bosatsu lib test`
 3. Dry-run style publish via `scripts/publish_bosatsu_libs.sh --dry-run` with `URI_BASE=https://example.invalid/`
 
+## Benchmarking vector
+
+Run the vector microbenchmarks with:
+
+```bash
+scripts/benchmark_vector.sh
+```
+
+Or directly:
+
+```bash
+./bosatsu lib eval --main Zafu/Benchmark/Vector::main --run
+```
+
+The benchmark prints CSV with header:
+
+`case,size,iterations,ops,elapsed_us,ops_per_us,sink`
+
+`ops_per_us` is most useful for comparing runs of the same `case` across different sizes.
+
 ## CI, docs, and release
 
 - CI (`.github/workflows/ci.yml`) runs check/test/dry-run publish and validates docs generation plus markdown-to-HTML conversion with Pandoc on pull requests.
