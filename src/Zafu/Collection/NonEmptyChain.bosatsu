@@ -1,0 +1,569 @@
+package Zafu/Collection/NonEmptyChain
+
+from Bosatsu/Num/Float64 import (
+  addf,
+)
+from Zafu/Collection/Chain import (
+  Chain,
+  empty as empty_Chain,
+  from_List as from_List_Chain,
+  to_List as to_List_Chain,
+  size as size_Chain,
+  get as get_Chain,
+  get_or as get_or_Chain,
+  any as any_Chain,
+  exists as exists_Chain,
+  for_all as for_all_Chain,
+  uncons_left as uncons_left_Chain,
+  uncons_right as uncons_right_Chain,
+  foldl as foldl_Chain,
+  foldr as foldr_Chain,
+  combine_all as combine_all_Chain,
+  map as map_Chain,
+  prepend as prepend_Chain,
+  append as append_Chain,
+  concat as concat_Chain,
+  eq_Chain,
+  ord_Chain,
+  hash_Chain,
+)
+from Zafu/Collection/List import (
+  set_List as set_List_base,
+  sort as sort_List,
+  zip as zip_List,
+  filter as filter_List,
+)
+from Zafu/Collection/NonEmptyList import (
+  from_prepend as from_prepend_NonEmptyList,
+  to_List as to_List_NonEmptyList,
+)
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_by,
+  eq as eq_Eq,
+)
+from Zafu/Abstract/Ord import (
+  Ord,
+  ord_by,
+  cmp as cmp_Ord,
+)
+from Zafu/Abstract/Hash import (
+  Hash,
+  hash_by,
+  hash as hash_Hash,
+)
+from Zafu/Abstract/Semigroup import (
+  Semigroup,
+  semigroup_from_combine,
+  combine as combine_Semigroup,
+)
+from Zafu/Collection/HashSet import (
+  empty as empty_HashSet,
+  contains as contains_HashSet,
+  updated as updated_HashSet,
+)
+from Zafu/Abstract/Instances/Predef import (
+  eq_Int as eq_Int_inst,
+  ord_Int as ord_Int_inst,
+  hash_Int,
+)
+
+export (
+  NonEmptyChain(),
+  singleton,
+  from_prepend,
+  from_append,
+  from_Chain,
+  from_List,
+  to_Chain,
+  to_List,
+  to_NonEmptyList,
+  head,
+  tail,
+  uncons,
+  last,
+  init,
+  uncons_right,
+  size,
+  get,
+  get_or,
+  any,
+  exists,
+  for_all,
+  set,
+  foldl,
+  foldr,
+  sum,
+  sumf,
+  combine_all,
+  map,
+  flat_map,
+  sort,
+  zip,
+  filter,
+  distinct_by_hash,
+  prepend,
+  append,
+  concat,
+  concat_all,
+  reverse,
+  eq_NonEmptyChain,
+  ord_NonEmptyChain,
+  hash_NonEmptyChain,
+)
+
+enum NonEmptyChain[a: +*]:
+  Prepend(head: a, tail: Chain[a])
+  Append(init: Chain[a], last: a)
+
+# Shared reconstruction helper for operations that should stay non-empty.
+def from_non_empty_Chain_or(items: Chain[a], on_empty: () -> NonEmptyChain[a]) -> NonEmptyChain[a]:
+  match uncons_left_Chain(items):
+    case Some((head0, tail0)):
+      Prepend(head0, tail0)
+    case None:
+      on_empty()
+
+def singleton(item: a) -> NonEmptyChain[a]:
+  Prepend(item, empty_Chain)
+
+def from_prepend(head0: a, tail0: Chain[a]) -> NonEmptyChain[a]:
+  Prepend(head0, tail0)
+
+def from_append(init0: Chain[a], last0: a) -> NonEmptyChain[a]:
+  Append(init0, last0)
+
+def from_Chain(items: Chain[a]) -> Option[NonEmptyChain[a]]:
+  match uncons_left_Chain(items):
+    case Some((head0, tail0)):
+      Some(Prepend(head0, tail0))
+    case None:
+      None
+
+def from_List(items: List[a]) -> Option[NonEmptyChain[a]]:
+  from_Chain(from_List_Chain(items))
+
+def to_Chain(items: NonEmptyChain[a]) -> Chain[a]:
+  match items:
+    case Prepend(head0, tail0):
+      prepend_Chain(head0, tail0)
+    case Append(init0, last0):
+      append_Chain(init0, last0)
+
+def to_List(items: NonEmptyChain[a]) -> List[a]:
+  to_List_Chain(to_Chain(items))
+
+def to_NonEmptyList(items: NonEmptyChain[a]):
+  match to_List(items):
+    case [head0, *tail0]:
+      from_prepend_NonEmptyList(head0, tail0)
+    case []:
+      # Defensive fallback for an impossible path from a non-empty source.
+      match items:
+        case Prepend(head0, _):
+          from_prepend_NonEmptyList(head0, [])
+        case Append(_, last0):
+          from_prepend_NonEmptyList(last0, [])
+
+def uncons(items: NonEmptyChain[a]) -> (a, Chain[a]):
+  match items:
+    case Prepend(head0, tail0):
+      (head0, tail0)
+    case Append(init0, last0):
+      match uncons_left_Chain(init0):
+        case Some((head0, tail0)):
+          (head0, append_Chain(tail0, last0))
+        case None:
+          (last0, empty_Chain)
+
+def head(items: NonEmptyChain[a]) -> a:
+  (head0, _) = uncons(items)
+  head0
+
+def tail(items: NonEmptyChain[a]) -> Chain[a]:
+  (_, tail0) = uncons(items)
+  tail0
+
+def uncons_right(items: NonEmptyChain[a]) -> (Chain[a], a):
+  match items:
+    case Append(init0, last0):
+      (init0, last0)
+    case Prepend(head0, tail0):
+      match uncons_right_Chain(tail0):
+        case Some((init0, last0)):
+          (prepend_Chain(head0, init0), last0)
+        case None:
+          (empty_Chain, head0)
+
+def init(items: NonEmptyChain[a]) -> Chain[a]:
+  (init0, _) = uncons_right(items)
+  init0
+
+def last(items: NonEmptyChain[a]) -> a:
+  (_, last0) = uncons_right(items)
+  last0
+
+def size(items: NonEmptyChain[a]) -> Int:
+  match items:
+    case Prepend(_, tail0):
+      size_Chain(tail0).add(1)
+    case Append(init0, _):
+      size_Chain(init0).add(1)
+
+def get(items: NonEmptyChain[a], idx: Int) -> Option[a]:
+  get_Chain(to_Chain(items), idx)
+
+def get_or(items: NonEmptyChain[a], idx: Int, on_missing: () -> a) -> a:
+  get_or_Chain(to_Chain(items), idx, on_missing)
+
+def any(items: NonEmptyChain[Bool]) -> Bool:
+  match items:
+    case Prepend(head0, tail0):
+      if head0:
+        True
+      else:
+        any_Chain(tail0)
+    case Append(init0, last0):
+      if last0:
+        True
+      else:
+        any_Chain(init0)
+
+def exists(items: NonEmptyChain[a], pred: a -> Bool) -> Bool:
+  match items:
+    case Prepend(head0, tail0):
+      if pred(head0):
+        True
+      else:
+        exists_Chain(tail0, pred)
+    case Append(init0, last0):
+      if pred(last0):
+        True
+      else:
+        exists_Chain(init0, pred)
+
+def for_all(items: NonEmptyChain[a], pred: a -> Bool) -> Bool:
+  match items:
+    case Prepend(head0, tail0):
+      if pred(head0):
+        for_all_Chain(tail0, pred)
+      else:
+        False
+    case Append(init0, last0):
+      if for_all_Chain(init0, pred):
+        pred(last0)
+      else:
+        False
+
+def set(items: NonEmptyChain[a], idx: Int, value: a) -> Option[NonEmptyChain[a]]:
+  match set_List_base(to_List(items), idx, value):
+    case Some(next):
+      Some(from_non_empty_Chain_or(from_List_Chain(next), () -> items))
+    case None:
+      None
+
+def foldl(items: NonEmptyChain[a], init: b, fn: (b, a) -> b) -> b:
+  match items:
+    case Prepend(head0, tail0):
+      foldl_Chain(tail0, fn(init, head0), fn)
+    case Append(init0, last0):
+      fn(foldl_Chain(init0, init, fn), last0)
+
+def foldr(items: NonEmptyChain[a], init: b, fn: (a, b) -> b) -> b:
+  match items:
+    case Prepend(head0, tail0):
+      fn(head0, foldr_Chain(tail0, init, fn))
+    case Append(init0, last0):
+      foldr_Chain(init0, fn(last0, init), fn)
+
+def sum(items: NonEmptyChain[Int]) -> Int:
+  foldl(items, 0, add)
+
+def sumf(items: NonEmptyChain[Float64]) -> Float64:
+  foldl(items, 0.0, addf)
+
+def combine_all(items: NonEmptyChain[a], semi: Semigroup[a]) -> a:
+  match items:
+    case Prepend(head0, tail0):
+      match combine_all_Chain(tail0, semi):
+        case Some(rest):
+          combine_Semigroup(semi, head0, rest)
+        case None:
+          head0
+    case Append(init0, last0):
+      match combine_all_Chain(init0, semi):
+        case Some(rest):
+          combine_Semigroup(semi, rest, last0)
+        case None:
+          last0
+
+def map(items: NonEmptyChain[a], fn: a -> b) -> NonEmptyChain[b]:
+  match items:
+    case Prepend(head0, tail0):
+      Prepend(fn(head0), map_Chain(tail0, fn))
+    case Append(init0, last0):
+      Append(map_Chain(init0, fn), fn(last0))
+
+def flat_map(items: NonEmptyChain[a], fn: a -> NonEmptyChain[b]) -> NonEmptyChain[b]:
+  flattened = foldr_Chain(to_Chain(items), empty_Chain, (item, acc) -> concat_Chain(to_Chain(fn(item)), acc))
+  from_non_empty_Chain_or(flattened, () -> fn(head(items)))
+
+def sort(items: NonEmptyChain[a], order: Order[a]) -> NonEmptyChain[a]:
+  sorted = sort_List(order, to_List(items))
+  from_non_empty_Chain_or(from_List_Chain(sorted), () -> items)
+
+def zip(left: NonEmptyChain[a], right: NonEmptyChain[b]) -> NonEmptyChain[(a, b)]:
+  from_non_empty_Chain_or(
+    from_List_Chain(zip_List(to_List(left), to_List(right))),
+    () -> singleton((head(left), head(right))),
+  )
+
+def filter(items: NonEmptyChain[a], pred: a -> Bool) -> Option[NonEmptyChain[a]]:
+  from_List(filter_List(to_List(items), pred))
+
+def distinct_by_hash(h: Hash[a], items: NonEmptyChain[a]) -> NonEmptyChain[a]:
+  # Track accepted items in reverse order, then reverse once to restore input order.
+  (_, accepted_rev) = to_List(items).foldl_List((empty_HashSet(h), []), (state, item) -> (
+    (seen, accepted_rev) = state
+    if contains_HashSet(seen, item):
+      (seen, accepted_rev)
+    else:
+      (updated_HashSet(seen, item), [item, *accepted_rev])
+  ))
+  accepted = accepted_rev.foldl_List([], (acc, item) -> [item, *acc])
+  from_non_empty_Chain_or(from_List_Chain(accepted), () -> singleton(head(items)))
+
+def prepend(item: a, items: NonEmptyChain[a]) -> NonEmptyChain[a]:
+  Prepend(item, to_Chain(items))
+
+def append(items: NonEmptyChain[a], item: a) -> NonEmptyChain[a]:
+  Append(to_Chain(items), item)
+
+def concat(left: NonEmptyChain[a], right: NonEmptyChain[a]) -> NonEmptyChain[a]:
+  match (left, right):
+    case (Prepend(left_head, left_tail), _):
+      Prepend(left_head, concat_Chain(left_tail, to_Chain(right)))
+    case (_, Append(right_init, right_last)):
+      Append(concat_Chain(to_Chain(left), right_init), right_last)
+    case _:
+      # Append + Prepend cannot expose a boundary element in O(1), so rebuild once.
+      from_non_empty_Chain_or(concat_Chain(to_Chain(left), to_Chain(right)), () -> left)
+
+def concat_all(items: NonEmptyChain[NonEmptyChain[a]]) -> NonEmptyChain[a]:
+  (head0, tail0) = uncons(items)
+  rest = foldl_Chain(tail0, to_Chain(head0), (acc, next) -> concat_Chain(acc, to_Chain(next)))
+  from_non_empty_Chain_or(rest, () -> head0)
+
+def reverse(items: NonEmptyChain[a]) -> NonEmptyChain[a]:
+  reversed = foldl_Chain(to_Chain(items), empty_Chain, (acc, item) -> prepend_Chain(item, acc))
+  from_non_empty_Chain_or(reversed, () -> items)
+
+def eq_NonEmptyChain(eq_item: Eq[a]) -> Eq[NonEmptyChain[a]]:
+  eq_by(eq_Chain(eq_item), to_Chain)
+
+def ord_NonEmptyChain(ord_item: Ord[a]) -> Ord[NonEmptyChain[a]]:
+  ord_by(ord_Chain(ord_item), to_Chain)
+
+def hash_NonEmptyChain(hash_item: Hash[a]) -> Hash[NonEmptyChain[a]]:
+  hash_by(hash_Chain(hash_item), to_Chain)
+
+def to_List_option(items: Option[NonEmptyChain[a]]) -> Option[List[a]]:
+  match items:
+    case Some(value):
+      Some(to_List(value))
+    case None:
+      None
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+constructor_and_conversion_tests = TestSuite("constructors and conversions", [
+  Assertion(
+    match Prepend(1, from_List_Chain([2, 3])):
+      case Prepend(1, _):
+        True
+      case _:
+        False,
+    "constructor export/pattern match",
+  ),
+  Assertion(
+    match Append(from_List_Chain([1, 2]), 3):
+      case Append(_, 3):
+        True
+      case _:
+        False,
+    "append constructor/pattern match",
+  ),
+  Assertion(to_List(singleton(7)) matches [7], "singleton"),
+  Assertion(to_List(from_prepend(1, from_List_Chain([2, 3]))) matches [1, 2, 3], "from_prepend"),
+  Assertion(to_List(from_append(empty_Chain, 3)) matches [3], "from_append empty"),
+  Assertion(to_List(from_append(from_List_Chain([1, 2]), 3)) matches [1, 2, 3], "from_append non-empty"),
+  Assertion(from_Chain(empty_Chain) matches None, "from_Chain empty"),
+  Assertion(to_List_option(from_Chain(from_List_Chain([1, 2]))) matches Some([1, 2]), "from_Chain non-empty"),
+  Assertion(from_List([]) matches None, "from_List empty"),
+  Assertion(to_List_option(from_List([1, 2])) matches Some([1, 2]), "from_List non-empty"),
+  Assertion(
+    to_List_option(from_Chain(to_Chain(from_append(from_List_Chain([1, 2]), 3)))) matches Some([1, 2, 3]),
+    "to/from Chain roundtrip",
+  ),
+  Assertion(
+    to_List_option(from_List(to_List(from_prepend(1, from_List_Chain([2, 3]))))) matches Some([1, 2, 3]),
+    "to/from List roundtrip",
+  ),
+  Assertion(to_List_NonEmptyList(to_NonEmptyList(from_prepend(1, from_List_Chain([2, 3])))) matches [1, 2, 3], "to_NonEmptyList"),
+])
+
+decomposition_tests = TestSuite("decomposition", [
+  Assertion(head(from_prepend(1, from_List_Chain([2, 3]))).eq_Int(1), "head Prepend"),
+  Assertion(head(from_append(from_List_Chain([1, 2]), 3)).eq_Int(1), "head Append"),
+  Assertion(head(from_append(empty_Chain, 3)).eq_Int(3), "head Append empty init"),
+  Assertion(tail(from_prepend(1, from_List_Chain([2, 3]))).to_List_Chain() matches [2, 3], "tail Prepend"),
+  Assertion(tail(from_append(from_List_Chain([1, 2]), 3)).to_List_Chain() matches [2, 3], "tail Append"),
+  Assertion(tail(from_append(empty_Chain, 3)).to_List_Chain() matches [], "tail Append empty init"),
+  Assertion(
+    match uncons(from_prepend(1, from_List_Chain([2, 3]))):
+      case (head0, tail0):
+        and_Bool(head0.eq_Int(1), tail0.to_List_Chain() matches [2, 3]),
+    "uncons Prepend",
+  ),
+  Assertion(
+    match uncons(from_append(from_List_Chain([1, 2]), 3)):
+      case (head0, tail0):
+        and_Bool(head0.eq_Int(1), tail0.to_List_Chain() matches [2, 3]),
+    "uncons Append",
+  ),
+  Assertion(last(from_prepend(1, from_List_Chain([2, 3]))).eq_Int(3), "last Prepend"),
+  Assertion(last(from_append(from_List_Chain([1, 2]), 3)).eq_Int(3), "last Append"),
+  Assertion(last(from_prepend(1, empty_Chain)).eq_Int(1), "last Prepend singleton"),
+  Assertion(init(from_prepend(1, from_List_Chain([2, 3]))).to_List_Chain() matches [1, 2], "init Prepend"),
+  Assertion(init(from_append(from_List_Chain([1, 2]), 3)).to_List_Chain() matches [1, 2], "init Append"),
+  Assertion(init(from_prepend(1, empty_Chain)).to_List_Chain() matches [], "init Prepend singleton"),
+  Assertion(
+    match uncons_right(from_prepend(1, from_List_Chain([2, 3]))):
+      case (init0, last0):
+        and_Bool(init0.to_List_Chain() matches [1, 2], last0.eq_Int(3)),
+    "uncons_right Prepend",
+  ),
+  Assertion(
+    match uncons_right(from_append(from_List_Chain([1, 2]), 3)):
+      case (init0, last0):
+        and_Bool(init0.to_List_Chain() matches [1, 2], last0.eq_Int(3)),
+    "uncons_right Append",
+  ),
+  Assertion(size(from_prepend(1, from_List_Chain([2, 3]))).eq_Int(3), "size"),
+  Assertion(size(from_append(from_List_Chain([1, 2]), 3)).eq_Int(3), "size Append"),
+])
+
+query_and_fold_tests = TestSuite("queries and folds", [
+  Assertion(any(from_prepend(False, from_List_Chain([True, False]))), "any hit"),
+  Assertion(any(from_prepend(False, from_List_Chain([False]))) matches False, "any miss"),
+  Assertion(exists(from_prepend(1, from_List_Chain([2, 3])), i -> i.eq_Int(2)), "exists hit"),
+  Assertion(exists(from_prepend(1, from_List_Chain([2, 3])), i -> i.eq_Int(9)) matches False, "exists miss"),
+  Assertion(for_all(from_prepend(2, from_List_Chain([4, 6])), i -> mod_Int(i, 2).eq_Int(0)), "for_all hit"),
+  Assertion(for_all(from_prepend(2, from_List_Chain([3, 6])), i -> mod_Int(i, 2).eq_Int(0)) matches False, "for_all miss"),
+  Assertion(get(from_prepend(10, from_List_Chain([11, 12])), 0) matches Some(10), "get first"),
+  Assertion(get(from_prepend(10, from_List_Chain([11, 12])), 2) matches Some(12), "get last"),
+  Assertion(get(from_prepend(10, from_List_Chain([11, 12])), 3) matches None, "get out-of-range"),
+  Assertion(get(from_prepend(10, from_List_Chain([11, 12])), -1) matches None, "get negative"),
+  Assertion(get(from_append(from_List_Chain([10, 11]), 12), 0) matches Some(10), "get Append first"),
+  Assertion(get(from_append(from_List_Chain([10, 11]), 2), 2) matches Some(2), "get Append last"),
+  Assertion(get(from_append(from_List_Chain([10, 11]), 12), 3) matches None, "get Append out-of-range"),
+  Assertion(get_or(from_prepend(10, from_List_Chain([11, 12])), 1, () -> 99).eq_Int(11), "get_or hit"),
+  Assertion(get_or(from_prepend(10, from_List_Chain([11, 12])), 9, () -> 99).eq_Int(99), "get_or out-of-range"),
+  Assertion(get_or(from_prepend(10, from_List_Chain([11, 12])), -1, () -> 99).eq_Int(99), "get_or negative"),
+  Assertion(get_or(from_append(from_List_Chain([10, 11]), 12), 2, () -> 99).eq_Int(12), "get_or Append last"),
+  Assertion(to_List_option(set(from_prepend(10, from_List_Chain([11, 12])), 0, 99)) matches Some([99, 11, 12]), "set first"),
+  Assertion(to_List_option(set(from_prepend(10, from_List_Chain([11, 12])), 2, 99)) matches Some([10, 11, 99]), "set last"),
+  Assertion(set(from_prepend(10, from_List_Chain([11, 12])), 3, 99) matches None, "set out-of-range"),
+  Assertion(set(from_prepend(10, from_List_Chain([11, 12])), -1, 99) matches None, "set negative"),
+  Assertion(foldl(from_prepend(1, from_List_Chain([2, 3])), 0, add).eq_Int(6), "foldl"),
+  Assertion(foldl(from_append(from_List_Chain([1, 2]), 3), 0, add).eq_Int(6), "foldl Append"),
+  Assertion(foldr(from_prepend(1, from_List_Chain([2, 3])), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr"),
+  Assertion(foldr(from_append(from_List_Chain([1, 2]), 3), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr Append"),
+  Assertion(sum(from_prepend(1, from_List_Chain([2, 3, 4]))).eq_Int(10), "sum"),
+  Assertion(sumf(from_prepend(1.25, from_List_Chain([2.5, 0.25]))).cmp_Float64(4.0) matches EQ, "sumf"),
+])
+
+transform_and_composition_tests = TestSuite("transforms and composition", [
+  Assertion(to_List(map(from_prepend(1, from_List_Chain([2, 3])), i -> i.add(10))) matches [11, 12, 13], "map"),
+  Assertion(to_List(map(singleton(4), i -> i.add(1))) matches [5], "map preserves non-empty"),
+  Assertion(
+    to_List(flat_map(from_prepend(1, from_List_Chain([2])), i -> from_prepend(i, from_List_Chain([i.add(1)])))) matches [1, 2, 2, 3],
+    "flat_map",
+  ),
+  Assertion(to_List(sort(from_prepend(3, from_List_Chain([1, 2, 1])), Order(cmp_Int))) matches [1, 1, 2, 3], "sort"),
+  Assertion(to_List(sort(singleton(4), Order(cmp_Int))) matches [4], "sort preserves non-empty"),
+  Assertion(
+    to_List(zip(from_prepend(1, from_List_Chain([2])), from_prepend("a", from_List_Chain(["b", "c"])))) matches [(1, "a"), (2, "b")],
+    "zip",
+  ),
+  Assertion(to_List(zip(singleton(1), singleton("x"))) matches [(1, "x")], "zip singleton"),
+  Assertion(to_List_option(filter(from_prepend(1, from_List_Chain([2, 3, 4])), i -> mod_Int(i, 2).eq_Int(0))) matches Some([2, 4]), "filter some"),
+  Assertion(filter(from_prepend(1, from_List_Chain([2, 3, 4])), _ -> False) matches None, "filter none"),
+  Assertion(to_List(distinct_by_hash(hash_Int, from_prepend(1, from_List_Chain([2, 1, 3, 2])))) matches [1, 2, 3], "distinct_by_hash stable"),
+  Assertion(to_List(prepend(0, from_prepend(1, from_List_Chain([2, 3])))) matches [0, 1, 2, 3], "prepend"),
+  Assertion(to_List(append(from_prepend(1, from_List_Chain([2, 3])), 4)) matches [1, 2, 3, 4], "append"),
+  Assertion(to_List(concat(from_prepend(1, from_List_Chain([2])), from_prepend(3, from_List_Chain([4])))) matches [1, 2, 3, 4], "concat"),
+  Assertion(
+    to_List(concat(from_append(from_List_Chain([1, 2]), 3), from_prepend(4, from_List_Chain([5])))) matches [1, 2, 3, 4, 5],
+    "concat Append+Prepend",
+  ),
+  Assertion(
+    to_List(concat_all(from_prepend(
+      from_prepend(1, from_List_Chain([2])),
+      from_List_Chain([singleton(3), from_append(from_List_Chain([4]), 5)]),
+    ))) matches [1, 2, 3, 4, 5],
+    "concat_all",
+  ),
+  Assertion(combine_all(from_prepend(1, from_List_Chain([2, 3])), semigroup_from_combine(add)).eq_Int(6), "combine_all"),
+  Assertion(combine_all(singleton(7), semigroup_from_combine(add)).eq_Int(7), "combine_all singleton"),
+  Assertion(to_List(reverse(from_prepend(1, from_List_Chain([2, 3])))) matches [3, 2, 1], "reverse"),
+])
+
+typeclass_adapter_tests = TestSuite("typeclass adapters", [
+  (
+    inst = eq_NonEmptyChain(eq_Int_inst)
+    Assertion(eq_Eq(inst, from_prepend(1, from_List_Chain([2])), from_append(from_List_Chain([1]), 2)), "eq_NonEmptyChain equal")
+  ),
+  (
+    inst = eq_NonEmptyChain(eq_Int_inst)
+    Assertion(eq_Eq(inst, from_prepend(1, from_List_Chain([2])), from_append(from_List_Chain([1]), 3)) matches False, "eq_NonEmptyChain mismatch")
+  ),
+  (
+    inst = ord_NonEmptyChain(ord_Int_inst)
+    Assertion(cmp_Ord(inst, from_prepend(1, from_List_Chain([2])), from_prepend(1, from_List_Chain([3]))) matches LT, "ord_NonEmptyChain payload")
+  ),
+  (
+    inst = ord_NonEmptyChain(ord_Int_inst)
+    Assertion(cmp_Ord(inst, from_prepend(1, from_List_Chain([2])), from_append(from_List_Chain([1]), 2)) matches EQ, "ord_NonEmptyChain equal")
+  ),
+  (
+    hash_inst = hash_NonEmptyChain(hash_Int)
+    hx = hash_Hash(hash_inst, from_prepend(1, from_List_Chain([2, 3])))
+    hy = hash_Hash(hash_inst, from_append(from_List_Chain([1, 2]), 3))
+    Assertion(eq_Int(hx, hy), "hash_NonEmptyChain equal values")
+  ),
+  (
+    hash_inst = hash_NonEmptyChain(hash_Int)
+    hx = hash_Hash(hash_inst, from_prepend(1, from_List_Chain([2, 3])))
+    hy = hash_Hash(hash_inst, from_prepend(1, from_List_Chain([2, 4])))
+    Assertion(
+      if eq_Int(hx, hy):
+        False
+      else:
+        True,
+      "hash_NonEmptyChain differs for sample unequal values",
+    )
+  ),
+])
+
+tests = TestSuite("Zafu/Collection/NonEmptyChain tests", [
+  constructor_and_conversion_tests,
+  decomposition_tests,
+  query_and_fold_tests,
+  transform_and_composition_tests,
+  typeclass_adapter_tests,
+])

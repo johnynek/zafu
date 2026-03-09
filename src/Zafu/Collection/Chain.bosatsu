@@ -25,6 +25,29 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop,
 )
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_by,
+)
+from Zafu/Abstract/Ord import (
+  Ord,
+  ord_by,
+)
+from Zafu/Abstract/Hash import (
+  Hash,
+  hash_by,
+)
+from Zafu/Abstract/Semigroup import (
+  Semigroup,
+  semigroup_specialized,
+  combine as combine_Semigroup,
+  combine_all_option as combine_all_option_Semigroup,
+)
+from Zafu/Abstract/Instances/Predef import (
+  eq_List as eq_List_inst,
+  ord_List as ord_List_inst,
+  hash_List as hash_List_inst,
+)
 from Zafu/Collection/List import (
   size as size_List,
   get_List,
@@ -37,15 +60,22 @@ export (
   from_List,
   to_List,
   size,
-  index,
+  get,
   get_or,
+  any,
+  exists,
+  for_all,
   uncons_left,
   uncons_right,
   foldl,
   foldr,
+  combine_all,
   map,
   flat_map,
   filter,
+  eq_Chain,
+  ord_Chain,
+  hash_Chain,
   prepend,
   append,
   concat,
@@ -207,6 +237,46 @@ def foldr(chain: Chain[a], init: b, fn: (a, b) -> b) -> b:
             loop_fold(rem.sub(1), [right, left, *tail], acc)
   loop_fold(traversal_fuel(chain), [chain], init)
 
+def combine_all(chain: Chain[a], semi: Semigroup[a]) -> Option[a]:
+  def combine_left(state: Option[a], next: Option[a]) -> Option[a]:
+    match next:
+      case None:
+        state
+      case Some(value):
+        match state:
+          case None:
+            Some(value)
+          case Some(total):
+            Some(combine_Semigroup(semi, total, value))
+  def loop_combine(rem: Int, stack: List[Chain[a]], acc: Option[a]) -> Option[a]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_combine(rem.sub(1), tail, acc)
+          case [Singleton(item), *tail]:
+            loop_combine(rem.sub(1), tail, combine_left(acc, Some(item)))
+          case [WrapArray(items), *tail]:
+            array_total = foldl_Array(items, None, (state, item) -> (
+              match state:
+                case None:
+                  Some(item)
+                case Some(total):
+                  Some(combine_Semigroup(semi, total, item))
+            ))
+            loop_combine(rem.sub(1), tail, combine_left(acc, array_total))
+          case [WrapList(items), *tail]:
+            # Preserve Semigroup's list-specialized fast path when available.
+            list_total = combine_all_option_Semigroup(semi, items)
+            loop_combine(rem.sub(1), tail, combine_left(acc, list_total))
+          case [Concat(_, left, right), *tail]:
+            loop_combine(rem.sub(1), [left, right, *tail], acc)
+  loop_combine(traversal_fuel(chain), [chain], None)
+
 # Convert to a list in iteration order.
 def to_List(chain: Chain[a]) -> List[a]:
   foldr(chain, [], (item, acc) -> [item, *acc])
@@ -254,13 +324,35 @@ def find_with(chain: Chain[a], idx: Int, on_missing: () -> b, on_found: a -> b) 
               loop_find(rem.sub(1), [left, right, *tail], rem_idx)
     loop_find(traversal_fuel(chain), [chain], idx)
 
-# Option-returning index lookup.
-def index(chain: Chain[a], idx: Int) -> Option[a]:
+# Option-returning lookup.
+def get(chain: Chain[a], idx: Int) -> Option[a]:
   find_with(chain, idx, () -> None, item -> Some(item))
 
 # Index lookup with fallback thunk.
 def get_or(chain: Chain[a], idx: Int, fn: () -> a) -> a:
   find_with(chain, idx, fn, item -> item)
+
+def exists(chain: Chain[a], pred: a -> Bool) -> Bool:
+  foldl(chain, False, (state, item) -> (
+    if state:
+      True
+    else:
+      pred(item)
+  ))
+
+def any(chain: Chain[Bool]) -> Bool:
+  exists(chain, item -> item)
+
+def for_all(chain: Chain[a], pred: a -> Bool) -> Bool:
+  if exists(chain, item -> (
+    if pred(item):
+      False
+    else:
+      True
+  )):
+    False
+  else:
+    True
 
 def split_last_List(items: List[a]) -> Option[(List[a], a)]:
   def loop_split(rem: List[a], rev_init: List[a]) -> Option[(List[a], a)]:
@@ -333,6 +425,15 @@ def filter(chain: Chain[a], pred: a -> Bool) -> Chain[a]:
 # Map each element to a chain and concatenate.
 def flat_map(chain: Chain[a], fn: a -> Chain[b]) -> Chain[b]:
   foldr(chain, empty, (item, acc) -> concat(fn(item), acc))
+
+def eq_Chain(eq_item: Eq[a]) -> Eq[Chain[a]]:
+  eq_by(eq_List_inst(eq_item), to_List)
+
+def ord_Chain(ord_item: Ord[a]) -> Ord[Chain[a]]:
+  ord_by(ord_List_inst(ord_item), to_List)
+
+def hash_Chain(hash_item: Hash[a]) -> Hash[Chain[a]]:
+  hash_by(hash_List_inst(hash_item), to_List)
 
 ############################
 # Property tests
@@ -468,14 +569,14 @@ singleton_prop: Prop = forall_Prop(
     Assertion(eq_List(eq_Int)(as_list, [item]), "singleton law")
   ))
 
-index_prop: Prop = forall_Prop(
+get_prop: Prop = forall_Prop(
   rand_list_with_index,
-  "index matches list indexing",
+  "get matches list indexing",
   ((list, idx)) -> (
     chain = from_List(list)
     expected = get_List(list, idx)
-    actual = index(chain, idx)
-    Assertion(eq_Option(eq_Int)(actual, expected), "index law")
+    actual = get(chain, idx)
+    Assertion(eq_Option(eq_Int)(actual, expected), "get law")
   ))
 
 get_or_prop: Prop = forall_Prop(
@@ -608,7 +709,7 @@ chain_props: Prop = suite_Prop(
     roundtrip_prop,
     size_prop,
     singleton_prop,
-    index_prop,
+    get_prop,
     get_or_prop,
     uncons_left_prop,
     uncons_right_prop,
@@ -627,8 +728,14 @@ tests = TestSuite("Chain tests", [
   Assertion(size(empty).eq_Int(0), "empty size"),
   Assertion(from_Array(from_List_Array([1])).to_List() matches [1], "array singleton to singleton"),
   Assertion(to_List(empty) matches [], "empty to list"),
-  Assertion(index(empty, 0) matches None, "empty index"),
+  Assertion(get(empty, 0) matches None, "empty get"),
   Assertion(get_or(empty, 0, () -> 11).eq_Int(11), "empty get_or fallback"),
+  Assertion(any(from_List([False, True, False])), "any sanity"),
+  Assertion(any(from_List([False])) matches False, "any all false"),
+  Assertion(exists(from_List([1, 2, 3]), i -> i.eq_Int(2)), "exists sanity"),
+  Assertion(exists(from_List([1, 2, 3]), i -> i.eq_Int(9)) matches False, "exists miss"),
+  Assertion(for_all(from_List([2, 4, 6]), i -> mod_Int(i, 2).eq_Int(0)), "for_all sanity"),
+  Assertion(for_all(from_List([2, 3, 6]), i -> mod_Int(i, 2).eq_Int(0)) matches False, "for_all miss"),
   Assertion(uncons_left(empty) matches None, "uncons_left empty"),
   Assertion(uncons_right(empty) matches None, "uncons_right empty"),
   Assertion(
@@ -667,6 +774,18 @@ tests = TestSuite("Chain tests", [
   Assertion(concat_all([from_List([1]), from_List([2, 3])]).to_List() matches [1, 2, 3], "concat_all sanity"),
   Assertion(foldl(from_List([1, 2, 3]), 0, add).eq_Int(6), "foldl sanity"),
   Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
+  Assertion(combine_all(empty, semigroup_specialized((_, _) -> 999, (value, _) -> value, _ -> None)) matches None, "combine_all empty"),
+  Assertion(combine_all(from_List([1, 2, 3]), semigroup_specialized(
+    (_, _) -> 999,
+    (value, _) -> value,
+    (items) -> (
+      match items:
+        case []:
+          None
+        case _:
+          Some(items.foldl_List(0, add))
+    ),
+  )) matches Some(6), "combine_all uses list combine_all_option"),
   Assertion(map(from_List([1, 2]), i -> i.add(10)).to_List() matches [11, 12], "map sanity"),
   Assertion(filter(from_List([1, 2, 3, 4]), i -> mod_Int(i, 2).eq_Int(0)).to_List() matches [2, 4], "filter sanity"),
   Assertion(flat_map(from_List([1, 2]), i -> from_List([i, i.add(1)])).to_List() matches [1, 2, 2, 3], "flat_map sanity"),
