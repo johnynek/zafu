@@ -254,7 +254,7 @@ def find_with_Vector_loop(current: Vector[a], current_idx: Int, fuel: Int, on_mi
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       on_missing(Unit)
-    case _ if cmp_Int(fuel, 0) matches GT:
+    case _:
       match current:
         case Leaf(_, items):
           match get_Array(items, current_idx):
@@ -279,8 +279,6 @@ def find_with_Vector_loop(current: Vector[a], current_idx: Int, fuel: Int, on_mi
                     find_with_Vector_loop(child, local_idx, fuel.sub(1), on_missing, on_found)
                   case None:
                     on_missing(Unit)
-    case _:
-      on_missing()
 
 # Lookup helper used by both index_Vector and get_or_Vector.
 def find_with_Vector(vec: Vector[a], idx: Int, on_missing: () -> b, on_found: a -> b) -> b:
@@ -502,7 +500,7 @@ def append_nodes_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Array[Vector[a
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       from_List_Array([concat_fallback(vec, singleton_leaf(item))])
-    case _ if cmp_Int(fuel, 0) matches GT:
+    case _:
       match vec:
         case Leaf(sz, items):
           if cmp_Int(sz, chunk_width) matches LT:
@@ -533,14 +531,12 @@ def append_nodes_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Array[Vector[a
                 left_children = slice_Array(expanded_children, 0, chunk_width)
                 right_children = slice_Array(expanded_children, chunk_width, expanded_cnt)
                 from_List_Array([make_branch(height, left_children), make_branch(height, right_children)])
-    case _:
-      from_List_Array([concat_fallback(vec, singleton_leaf(item))])
 
 def prepend_nodes_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Array[Vector[a]]:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       from_List_Array([concat_fallback(singleton_leaf(item), vec)])
-    case _ if cmp_Int(fuel, 0) matches GT:
+    case _:
       match vec:
         case Leaf(sz, items):
           if cmp_Int(sz, chunk_width) matches LT:
@@ -570,14 +566,12 @@ def prepend_nodes_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Array[Vector[
                 left_children = slice_Array(expanded_children, 0, chunk_width)
                 right_children = slice_Array(expanded_children, chunk_width, expanded_cnt)
                 from_List_Array([make_branch(height, left_children), make_branch(height, right_children)])
-    case _:
-      from_List_Array([concat_fallback(singleton_leaf(item), vec)])
 
 def updated_with_fuel_Vector(vec: Vector[a], idx: Int, item: a, fuel: Int) -> Option[Vector[a]]:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       None
-    case _ if cmp_Int(fuel, 0) matches GT:
+    case _:
       match vec:
         case Leaf(sz, items):
           if cmp_Int(idx, 0) matches LT:
@@ -612,14 +606,12 @@ def updated_with_fuel_Vector(vec: Vector[a], idx: Int, item: a, fuel: Int) -> Op
                         case Some(next_child):
                           next_children = set_or_self_Array(children, child_idx, next_child)
                           Some(Branch(height, sz, prefix, next_children))
-    case _:
-      None
 
 def take_with_fuel_Vector(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       empty_Vector
-    case _ if cmp_Int(fuel, 0) matches GT:
+    case _:
       match vec:
         case Leaf(_, items):
           taken = slice_Array(items, 0, count)
@@ -643,14 +635,12 @@ def take_with_fuel_Vector(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
                 left_children = slice_Array(children, 0, child_idx)
                 kept_children = concat_all_Array([left_children, from_List_Array([child_taken])])
                 node_from_children(height, kept_children)
-    case _:
-      empty_Vector
 
 def drop_with_fuel_Vector(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       empty_Vector
-    case _ if cmp_Int(fuel, 0) matches GT:
+    case _:
       match vec:
         case Leaf(_, items):
           sz = size_Array(items)
@@ -678,14 +668,12 @@ def drop_with_fuel_Vector(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
                 else:
                   concat_all_Array([from_List_Array([child_kept]), right_children])
                 node_from_children(height, kept_children)
-    case _:
-      empty_Vector
 
 def next_leaf_Vector(stack: List[Vector[a]], fuel: Int) -> Option[(Array[a], List[Vector[a]])]:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       None
-    case _ if cmp_Int(fuel, 0) matches GT:
+    case _:
       match stack:
         case []:
           None
@@ -693,14 +681,12 @@ def next_leaf_Vector(stack: List[Vector[a]], fuel: Int) -> Option[(Array[a], Lis
           Some((items, tail))
         case [Branch(_, _, _, children), *tail]:
           next_leaf_Vector(push_children_ltr(children, tail), fuel.sub(1))
-    case _:
-      None
 
 def zip_chunk_with_fuel(left_items: Array[a], left_idx: Int, right_items: Array[b], right_idx: Int, rem: Int, rev_pairs: List[(a, b)]) -> (Int, Int, List[(a, b)]):
   recur rem:
     case _ if cmp_Int(rem, 0) matches LT | EQ:
       (left_idx, right_idx, rev_pairs)
-    case _ if cmp_Int(rem, 0) matches GT:
+    case _:
       match get_Array(left_items, left_idx):
         case None:
           (left_idx, right_idx, rev_pairs)
@@ -717,8 +703,6 @@ def zip_chunk_with_fuel(left_items: Array[a], left_idx: Int, right_items: Array[
                 rem.sub(1),
                 [(left_item, right_item), *rev_pairs]
               )
-    case _:
-      (left_idx, right_idx, rev_pairs)
 
 def zip_rev_with_fuel(left_stack: List[Vector[a]], right_stack: List[Vector[b]], left_curr: Option[(Array[a], Int)], right_curr: Option[(Array[b], Int)], rem: Int, rev_pairs: List[(a, b)], fuel: Int) -> List[(a, b)]:
   recur fuel:
@@ -726,7 +710,7 @@ def zip_rev_with_fuel(left_stack: List[Vector[a]], right_stack: List[Vector[b]],
       rev_pairs
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       rev_pairs
-    case _ if cmp_Int(fuel, 0) matches GT:
+    case _:
       left_ready = match left_curr:
         case Some(curr):
           Some((curr, left_stack))
@@ -777,8 +761,6 @@ def zip_rev_with_fuel(left_stack: List[Vector[a]], right_stack: List[Vector[b]],
             )
         case _:
           rev_pairs
-    case _:
-      rev_pairs
 
 # Appends a single element to the end of a vector.
 def append_Vector(vec: Vector[a], item: a) -> Vector[a]:

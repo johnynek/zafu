@@ -156,7 +156,7 @@ def foldl_Chain(chain: Chain[a], init: b, fn: (b, a) -> b) -> b:
     recur rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         acc
-      case _ if cmp_Int(rem, 0) matches GT:
+      case _:
         match stack:
           case []:
             acc
@@ -170,8 +170,6 @@ def foldl_Chain(chain: Chain[a], init: b, fn: (b, a) -> b) -> b:
             loop_fold(rem.sub(1), tail, items.foldl_List(acc, fn))
           case [Concat(left, right), *tail]:
             loop_fold(rem.sub(1), [left, right, *tail], acc)
-      case _:
-        acc
   loop_fold(traversal_fuel(chain), [chain], init)
 
 def foldr_Array(items: Array[a], init: b, fn: (a, b) -> b) -> b:
@@ -187,7 +185,7 @@ def foldr_Chain(chain: Chain[a], init: b, fn: (a, b) -> b) -> b:
     recur rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         acc
-      case _ if cmp_Int(rem, 0) matches GT:
+      case _:
         match stack:
           case []:
             acc
@@ -201,8 +199,6 @@ def foldr_Chain(chain: Chain[a], init: b, fn: (a, b) -> b) -> b:
             loop_fold(rem.sub(1), tail, foldr_List_Chain(items, acc, fn))
           case [Concat(left, right), *tail]:
             loop_fold(rem.sub(1), [right, left, *tail], acc)
-      case _:
-        acc
   loop_fold(traversal_fuel(chain), [chain], init)
 
 # Convert to a list in iteration order.
@@ -217,7 +213,7 @@ def find_with_Chain(chain: Chain[a], idx: Int, on_missing: () -> b, on_found: a 
       recur rem:
         case _ if cmp_Int(rem, 0) matches LT | EQ:
           on_missing()
-        case _ if cmp_Int(rem, 0) matches GT:
+        case _:
           match stack:
             case []:
               on_missing()
@@ -250,8 +246,6 @@ def find_with_Chain(chain: Chain[a], idx: Int, on_missing: () -> b, on_found: a 
                 loop_find(rem.sub(1), tail, rem_idx.sub(cnt))
             case [Concat(left, right), *tail]:
               loop_find(rem.sub(1), [left, right, *tail], rem_idx)
-        case _:
-          on_missing()
     loop_find(traversal_fuel(chain), [chain], idx)
 
 # Option-returning index lookup.
@@ -388,10 +382,8 @@ def deep_concat_chain(size: Int) -> Chain[Int]:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         acc
-      case _ if cmp_Int(rem, 0) matches GT:
-        loop_deep(rem.sub(1), concat_Chain(acc, singleton_Chain(rem)))
       case _:
-        acc
+        loop_deep(rem.sub(1), concat_Chain(acc, singleton_Chain(rem)))
   loop_deep(size, empty_Chain)
 
 rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))

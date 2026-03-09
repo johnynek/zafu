@@ -34,7 +34,7 @@ def combine_n_positive_from_combine(combine_fn: (a, a) -> a, value: a, n: Int) -
     recur rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         acc
-      case _ if cmp_Int(rem, 0) matches GT:
+      case _:
         next_total = (
           if mod_Int(rem, 2).eq_Int(1):
             combine_fn(acc, power)
@@ -42,8 +42,6 @@ def combine_n_positive_from_combine(combine_fn: (a, a) -> a, value: a, n: Int) -
             acc
         )
         go(div(rem, 2), next_total, combine_fn(power, power))
-      case _:
-        acc
   go(n.sub(1), value, value)
 
 def combine_all_option_from_combine(combine_fn: (a, a) -> a, items: List[a]) -> Option[a]:
