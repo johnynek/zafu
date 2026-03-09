@@ -35,7 +35,16 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop,
 )
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_specialized,
+)
 from Zafu/Collection/List import size as size_List
+from Zafu/Control/IterState import (
+  IterState,
+  Done,
+  Continue,
+)
 
 export (
   Vector,
@@ -60,6 +69,7 @@ export (
   drop,
   split,
   zip,
+  foldable_Vector,
 )
 
 chunk_width = 32
@@ -305,6 +315,42 @@ def index(vec: Vector[a], idx: Int) -> Option[a]:
 def get_or(vec: Vector[a], idx: Int, fn: Unit -> a) -> a:
   find_with(vec, idx, fn, item -> item)
 
+def foldl_iter_Array(items: Array[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  cnt = size_Array(items)
+  def go(rem: Int, idx: Int, acc: b) -> IterState[b, b]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        Continue(acc)
+      case _:
+        match get_Array(items, idx):
+          case Some(item):
+            match fn(acc, item):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                go(rem.sub(1), idx.add(1), next_acc)
+          case None:
+            Continue(acc)
+  go(cnt, 0, init)
+
+def foldr_iter_Array(items: Array[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  cnt = size_Array(items)
+  def go(rem: Int, idx: Int, acc: b) -> IterState[b, b]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        Continue(acc)
+      case _:
+        match get_Array(items, idx):
+          case Some(item):
+            match fn(item, acc):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                go(rem.sub(1), idx.sub(1), next_acc)
+          case None:
+            Continue(acc)
+  go(cnt, cnt.sub(1), init)
+
 # Left fold over all vector elements.
 def foldl(vec: Vector[a], init: b, fn: (b, a) -> b) -> b:
   def go(fuel, stack, acc):
@@ -340,6 +386,56 @@ def foldr(vec: Vector[a], init: b, fn: (a, b) -> b) -> b:
             next_stack = push_children_rtl(children, tail)
             go(rem.sub(1), next_stack, acc)
   go(fuel, [vec], init)
+
+def foldl_iter(vec: Vector[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
+  def go(rem: Int, stack: List[Vector[a]], acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Leaf(_, items), *tail]:
+            match foldl_iter_Array(items, acc, fn):
+              case Done(done_value):
+                done_value
+              case Continue(next_acc):
+                go(rem.sub(1), tail, next_acc)
+          case [Branch(_, _, _, children), *tail]:
+            next_stack = push_children_ltr(children, tail)
+            go(rem.sub(1), next_stack, acc)
+  go(traversal_fuel(vec), [vec], init)
+
+def foldr_iter(vec: Vector[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
+  def go(rem: Int, stack: List[Vector[a]], acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Leaf(_, items), *tail]:
+            match foldr_iter_Array(items, acc, fn):
+              case Done(done_value):
+                done_value
+              case Continue(next_acc):
+                go(rem.sub(1), tail, next_acc)
+          case [Branch(_, _, _, children), *tail]:
+            next_stack = push_children_rtl(children, tail)
+            go(rem.sub(1), next_stack, acc)
+  go(traversal_fuel(vec), [vec], init)
+
+foldable_Vector: Foldable[Vector] = foldable_specialized(
+  foldl,
+  foldr,
+  foldl_iter,
+  foldr_iter,
+  (vec) -> size(vec).eq_Int(0),
+  size,
+  to_List,
+)
 
 def map_with_fuel(vec: Vector[a], fn: a -> b, fuel: Int) -> Vector[b]:
   recur fuel:

@@ -25,6 +25,10 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop,
 )
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_specialized,
+)
 from Zafu/Abstract/Eq import (
   Eq,
   eq_by,
@@ -51,6 +55,11 @@ from Zafu/Abstract/Instances/Predef import (
 from Zafu/Collection/List import (
   size as size_List,
   get_List,
+)
+from Zafu/Control/IterState import (
+  IterState,
+  Done,
+  Continue,
 )
 
 export (
@@ -80,6 +89,7 @@ export (
   append,
   concat,
   concat_all,
+  foldable_Chain,
 )
 
 # Internal tree used to support O(1) concat while preserving order.
@@ -233,6 +243,124 @@ def foldr(chain: Chain[a], init: b, fn: (a, b) -> b) -> b:
             loop_fold(rem.sub(1), tail, foldr_Array(items, acc, fn))
           case [WrapList(items), *tail]:
             loop_fold(rem.sub(1), tail, foldr_List(items, acc, fn))
+          case [Concat(_, left, right), *tail]:
+            loop_fold(rem.sub(1), [right, left, *tail], acc)
+  loop_fold(traversal_fuel(chain), [chain], init)
+
+def foldl_iter_List(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  def go(rem: List[a], acc: b) -> IterState[b, b]:
+    loop rem:
+      case []:
+        Continue(acc)
+      case [head, *tail]:
+        match fn(acc, head):
+          case Done(done_value):
+            Done(done_value)
+          case Continue(next_acc):
+            go(tail, next_acc)
+  go(items, init)
+
+def foldl_iter_Array(items: Array[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  cnt = size_Array(items)
+  def go(rem: Int, idx: Int, acc: b) -> IterState[b, b]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        Continue(acc)
+      case _:
+        match get_Array(items, idx):
+          case Some(item):
+            match fn(acc, item):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                go(rem.sub(1), idx.add(1), next_acc)
+          case None:
+            Continue(acc)
+  go(cnt, 0, init)
+
+def foldr_iter_List(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  foldl_iter_List(items.reverse(), init, (acc, item) -> fn(item, acc))
+
+def foldr_iter_Array(items: Array[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  cnt = size_Array(items)
+  def go(rem: Int, idx: Int, acc: b) -> IterState[b, b]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        Continue(acc)
+      case _:
+        match get_Array(items, idx):
+          case Some(item):
+            match fn(item, acc):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                go(rem.sub(1), idx.sub(1), next_acc)
+          case None:
+            Continue(acc)
+  go(cnt, cnt.sub(1), init)
+
+def foldl_iter(chain: Chain[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
+  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_fold(rem.sub(1), tail, acc)
+          case [Singleton(item), *tail]:
+            match fn(acc, item):
+              case Done(done_value):
+                done_value
+              case Continue(next_acc):
+                loop_fold(rem.sub(1), tail, next_acc)
+          case [WrapArray(items), *tail]:
+            match foldl_iter_Array(items, acc, fn):
+              case Done(done_value):
+                done_value
+              case Continue(next_acc):
+                loop_fold(rem.sub(1), tail, next_acc)
+          case [WrapList(items), *tail]:
+            match foldl_iter_List(items, acc, fn):
+              case Done(done_value):
+                done_value
+              case Continue(next_acc):
+                loop_fold(rem.sub(1), tail, next_acc)
+          case [Concat(_, left, right), *tail]:
+            loop_fold(rem.sub(1), [left, right, *tail], acc)
+  loop_fold(traversal_fuel(chain), [chain], init)
+
+def foldr_iter(chain: Chain[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
+  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_fold(rem.sub(1), tail, acc)
+          case [Singleton(item), *tail]:
+            match fn(item, acc):
+              case Done(done_value):
+                done_value
+              case Continue(next_acc):
+                loop_fold(rem.sub(1), tail, next_acc)
+          case [WrapArray(items), *tail]:
+            match foldr_iter_Array(items, acc, fn):
+              case Done(done_value):
+                done_value
+              case Continue(next_acc):
+                loop_fold(rem.sub(1), tail, next_acc)
+          case [WrapList(items), *tail]:
+            match foldr_iter_List(items, acc, fn):
+              case Done(done_value):
+                done_value
+              case Continue(next_acc):
+                loop_fold(rem.sub(1), tail, next_acc)
           case [Concat(_, left, right), *tail]:
             loop_fold(rem.sub(1), [right, left, *tail], acc)
   loop_fold(traversal_fuel(chain), [chain], init)
@@ -425,6 +553,16 @@ def filter(chain: Chain[a], pred: a -> Bool) -> Chain[a]:
 # Map each element to a chain and concatenate.
 def flat_map(chain: Chain[a], fn: a -> Chain[b]) -> Chain[b]:
   foldr(chain, empty, (item, acc) -> concat(fn(item), acc))
+
+foldable_Chain: Foldable[Chain] = foldable_specialized(
+  foldl,
+  foldr,
+  foldl_iter,
+  foldr_iter,
+  (chain) -> size(chain).eq_Int(0),
+  size,
+  to_List,
+)
 
 def eq_Chain(eq_item: Eq[a]) -> Eq[Chain[a]]:
   eq_by(eq_List_inst(eq_item), to_List)

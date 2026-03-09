@@ -22,6 +22,10 @@ from Zafu/Abstract/Eq import (
   eq_by,
   eq as eq_Eq,
 )
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_specialized,
+)
 from Zafu/Abstract/Ord import (
   Ord,
   ord_by,
@@ -49,6 +53,11 @@ from Zafu/Abstract/Instances/Predef import (
   ord_List as ord_List_inst,
   hash_List as hash_List_inst,
   hash_Int,
+)
+from Zafu/Control/IterState import (
+  IterState,
+  Done,
+  Continue,
 )
 
 export (
@@ -89,6 +98,7 @@ export (
   eq_NonEmptyList,
   ord_NonEmptyList,
   hash_NonEmptyList,
+  foldable_NonEmptyList,
 )
 
 struct NonEmptyList[a: +*](head: a, tail: List[a])
@@ -173,6 +183,56 @@ def foldl(items: NonEmptyList[a], init: b, fn: (b, a) -> b) -> b:
 
 def foldr(items: NonEmptyList[a], init: b, fn: (a, b) -> b) -> b:
   foldr_List(to_List(items), init, fn)
+
+def foldl_iter_List(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  def go(rem: List[a], acc: b) -> IterState[b, b]:
+    loop rem:
+      case []:
+        Continue(acc)
+      case [head, *tail]:
+        match fn(acc, head):
+          case Done(done_value):
+            Done(done_value)
+          case Continue(next_acc):
+            go(tail, next_acc)
+  go(items, init)
+
+def foldr_iter_List(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  foldl_iter_List(items.reverse(), init, (acc, item) -> fn(item, acc))
+
+def foldl_iter(items: NonEmptyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
+  NonEmptyList(head0, tail0) = items
+  match fn(init, head0):
+    case Done(done_value):
+      done_value
+    case Continue(next_acc):
+      match foldl_iter_List(tail0, next_acc, fn):
+        case Done(done_value):
+          done_value
+        case Continue(total):
+          total
+
+def foldr_iter(items: NonEmptyList[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
+  NonEmptyList(head0, tail0) = items
+  match foldr_iter_List(tail0, init, fn):
+    case Done(done_value):
+      done_value
+    case Continue(tail_total):
+      match fn(head0, tail_total):
+        case Done(done_value):
+          done_value
+        case Continue(total):
+          total
+
+foldable_NonEmptyList: Foldable[NonEmptyList] = foldable_specialized(
+  foldl,
+  foldr,
+  foldl_iter,
+  foldr_iter,
+  is_empty,
+  size,
+  to_List,
+)
 
 def sum(items: NonEmptyList[Int]) -> Int:
   sum_List(to_List(items))

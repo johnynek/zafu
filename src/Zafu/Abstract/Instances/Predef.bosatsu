@@ -6,6 +6,14 @@ from Bosatsu/IO/Bytes import (
   size_Bytes,
   utf8_bytes_from_String,
 )
+from Bosatsu/Collection/Array import (
+  Array,
+  from_List_Array,
+  to_List_Array,
+  size_Array,
+  get_Array,
+  foldl_Array,
+)
 from Bosatsu/Num/Float64 import (
   addf,
   float64_bits_to_Int,
@@ -53,6 +61,22 @@ from Zafu/Abstract/Monoid import (
   empty as empty_Monoid,
   combine as combine_Monoid,
   combine_all as combine_all_Monoid,
+)
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_specialized,
+  foldl as foldl_Foldable,
+  foldl_iter as foldl_iter_Foldable,
+  foldr_iter as foldr_iter_Foldable,
+  to_List as to_List_Foldable,
+  size as size_Foldable,
+)
+from Zafu/Control/IterState import (
+  IterState,
+  Done,
+  Continue,
+  done,
+  continue,
 )
 
 export (
@@ -140,6 +164,7 @@ export (
   monoid_Tuple30,
   monoid_Tuple31,
   monoid_Tuple32,
+  foldable_Array,
   eq_Unit,
   ord_Unit,
   hash_Unit,
@@ -617,6 +642,66 @@ semigroup_List: Semigroup[List[a]] = semigroup_specialized(
   combine_all_option_List,
 )
 monoid_List: Monoid[List[a]] = monoid_from_semigroup([], semigroup_List)
+
+def foldr_Array(items: Array[a], init: b, fn: (a, b) -> b) -> b:
+  cnt = size_Array(items)
+  def go(rem: Int, idx: Int, acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match get_Array(items, idx):
+          case Some(item):
+            go(rem.sub(1), idx.sub(1), fn(item, acc))
+          case None:
+            acc
+  go(cnt, cnt.sub(1), init)
+
+def foldl_iter_Array(items: Array[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
+  cnt = size_Array(items)
+  def go(rem: Int, idx: Int, acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match get_Array(items, idx):
+          case Some(item):
+            match fn(acc, item):
+              case Done(done_value):
+                done_value
+              case Continue(next_acc):
+                go(rem.sub(1), idx.add(1), next_acc)
+          case None:
+            acc
+  go(cnt, 0, init)
+
+def foldr_iter_Array(items: Array[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
+  cnt = size_Array(items)
+  def go(rem: Int, idx: Int, acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match get_Array(items, idx):
+          case Some(item):
+            match fn(item, acc):
+              case Done(done_value):
+                done_value
+              case Continue(next_acc):
+                go(rem.sub(1), idx.sub(1), next_acc)
+          case None:
+            acc
+  go(cnt, cnt.sub(1), init)
+
+foldable_Array: Foldable[Array] = foldable_specialized(
+  foldl_Array,
+  foldr_Array,
+  foldl_iter_Array,
+  foldr_iter_Array,
+  (items) -> cmp_Int(size_Array(items), 0) matches EQ,
+  size_Array,
+  to_List_Array,
+)
 
 def eq_Tuple1(eq1: Eq[a1]) -> Eq[Tuple1[a1]]:
   eq_from_fn((left, right) -> (
@@ -3151,6 +3236,39 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid instances", [
     expected32 = Tuple32(3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
     tuple32_eq = eq_Tuple32(eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int)
     Assertion(eq_Eq(tuple32_eq, combine_Monoid(tuple32_monoid, left32, right32), expected32), "monoid_Tuple32")
+  ),
+  (
+    arr = from_List_Array([1, 2, 3])
+    Assertion(cmp_Int(foldl_Foldable(foldable_Array, arr, 0, add), 6) matches EQ, "foldable_Array foldl")
+  ),
+  (
+    arr = from_List_Array([1, 2, 3, 4])
+    total = foldl_iter_Foldable(foldable_Array, arr, 0, (acc, item) -> (
+      next = acc.add(item)
+      if cmp_Int(next, 3) matches GT:
+        done(next)
+      else:
+        continue(next)
+    ))
+    Assertion(cmp_Int(total, 6) matches EQ, "foldable_Array foldl_iter")
+  ),
+  (
+    arr = from_List_Array([1, 2, 3])
+    total = foldr_iter_Foldable(foldable_Array, arr, 0, (item, acc) -> (
+      if cmp_Int(item, 2) matches EQ:
+        done(item.add(acc))
+      else:
+        continue(item.add(acc))
+    ))
+    Assertion(cmp_Int(total, 5) matches EQ, "foldable_Array foldr_iter")
+  ),
+  (
+    arr = from_List_Array([1, 2, 3])
+    Assertion(to_List_Foldable(foldable_Array, arr) matches [1, 2, 3], "foldable_Array to_List")
+  ),
+  (
+    arr = from_List_Array([1, 2, 3])
+    Assertion(cmp_Int(size_Foldable(foldable_Array, arr), 3) matches EQ, "foldable_Array size")
   ),
   Assertion(eq_Eq(eq_Int, 1, 1), "eq_Int"),
   Assertion(cmp_Ord(ord_Int, 1, 2) matches LT, "ord_Int"),

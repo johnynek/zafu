@@ -19,7 +19,16 @@ from Zafu/Abstract/Eq import (
   eq_from_fn,
   eq as eq_Eq,
 )
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_specialized,
+)
 from Zafu/Abstract/Instances/Predef import eq_List as eq_List_Eq
+from Zafu/Control/IterState import (
+  IterState,
+  Done,
+  Continue,
+)
 
 export (
   any,
@@ -44,6 +53,7 @@ export (
   flat_map,
   filter,
   concat_all,
+  foldable_List,
 )
 
 def any(items: List[Bool]) -> Bool:
@@ -106,6 +116,22 @@ def foldr(items: List[a], init: b, fn: (a, b) -> b) -> b:
   # Reverse + foldl gives right-fold semantics with stack-safe traversal.
   items.reverse().foldl_List(init, (acc, item) -> fn(item, acc))
 
+def foldl_iter(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
+  def go(rem: List[a], acc: b) -> b:
+    loop rem:
+      case []:
+        acc
+      case [head, *tail]:
+        match fn(acc, head):
+          case Done(done_value):
+            done_value
+          case Continue(next_acc):
+            go(tail, next_acc)
+  go(items, init)
+
+def foldr_iter(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
+  foldl_iter(items.reverse(), init, (acc, item) -> fn(item, acc))
+
 def map(items: List[a], fn: a -> b) -> List[b]:
   items.map_List(fn)
 
@@ -123,6 +149,16 @@ def filter(items: List[a], pred: a -> Bool) -> List[a]:
 
 def concat_all(items: List[List[a]]) -> List[a]:
   foldr(items, [], (next, acc) -> [*next, *acc])
+
+foldable_List: Foldable[List] = foldable_specialized(
+  foldl,
+  foldr,
+  foldl_iter,
+  foldr_iter,
+  is_empty,
+  size,
+  items -> items,
+)
 
 tests = TestSuite("Zafu/Collection/List tests", [
   Assertion(any([False, True, False]), "any has true"),

@@ -20,6 +20,10 @@ from Bosatsu/Testing/Properties import (
   run_Prop,
 )
 from Zafu/Collection/List import size as size_List
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_specialized,
+)
 from Zafu/Abstract/Eq import (
   Eq,
   eq_from_fn,
@@ -38,6 +42,11 @@ from Zafu/Abstract/Instances/Predef import (
   eq_Comparison as eq_Comparison_inst,
   eq_Option,
 )
+from Zafu/Control/IterState import (
+  IterState,
+  Done,
+  Continue,
+)
 
 export (
   Heap,
@@ -53,6 +62,7 @@ export (
   from_List,
   to_List,
   foldl,
+  foldable_Heap,
   eq,
   ord,
 )
@@ -252,6 +262,52 @@ def foldl(heap: Heap[a], init: b, fn: (b, a) -> b) -> b:
           case Some((item, next)):
             go(fuel.sub(1), next, fn(acc, item))
   go(size(heap).add(1), heap, init)
+
+def foldl_iter(heap: Heap[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
+  def go(fuel: Int, rem: Heap[a], acc: b) -> b:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        acc
+      case _:
+        match pop_min(rem):
+          case None:
+            acc
+          case Some((item, next)):
+            match fn(acc, item):
+              case Done(done_value):
+                done_value
+              case Continue(next_acc):
+                go(fuel.sub(1), next, next_acc)
+  go(size(heap).add(1), heap, init)
+
+def foldr(heap: Heap[a], init: b, fn: (a, b) -> b) -> b:
+  to_List(heap).reverse().foldl_List(init, (acc, item) -> fn(item, acc))
+
+def foldl_iter_List(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
+  def go(rem: List[a], acc: b) -> b:
+    loop rem:
+      case []:
+        acc
+      case [head, *tail]:
+        match fn(acc, head):
+          case Done(done_value):
+            done_value
+          case Continue(next_acc):
+            go(tail, next_acc)
+  go(items, init)
+
+def foldr_iter(heap: Heap[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
+  foldl_iter_List(to_List(heap).reverse(), init, (acc, item) -> fn(item, acc))
+
+foldable_Heap: Foldable[Heap] = foldable_specialized(
+  foldl,
+  foldr,
+  foldl_iter,
+  foldr_iter,
+  is_empty,
+  size,
+  to_List,
+)
 
 def eq_fn(inst: Eq[a], left: Heap[a], right: Heap[a]) -> Bool:
   def go(fuel: Int, left_h: Heap[a], right_h: Heap[a]) -> Bool:

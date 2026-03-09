@@ -21,7 +21,16 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop,
 )
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_from_foldl_iter,
+)
 from Zafu/Collection/List import size as size_List
+from Zafu/Control/IterState import (
+  IterState,
+  Done,
+  Continue,
+)
 
 export (
   LazyList,
@@ -37,6 +46,7 @@ export (
   map,
   uncons,
   take,
+  foldable_LazyList,
 )
 
 
@@ -379,6 +389,26 @@ def foldl(ll: LazyList[a], init: b, fn: (b, a) -> b) -> b:
       case (sz, Filtered(source, to_value, pred)):
         foldl_filtered(sz, source, acc, to_value, pred, fn)
   loop_fold(size, vll, init)
+
+def foldl_iter(ll: LazyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
+  LazyList(limit, _) = ll
+  def step(rem: Int, current: LazyList[a], acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match uncons(current):
+          case None:
+            acc
+          case Some((head, tail)):
+            match fn(acc, get_Lazy(head)):
+              case Done(done_value):
+                done_value
+              case Continue(next_acc):
+                step(rem.sub(1), tail, next_acc)
+  step(limit, ll, init)
+
+foldable_LazyList: Foldable[LazyList] = foldable_from_foldl_iter(foldl_iter)
 
 # Lazily flat-maps elements with `fn`.
 # Expansion is bounded by the source list bound.
