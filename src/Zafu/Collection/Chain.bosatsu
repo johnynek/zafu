@@ -7,6 +7,7 @@ from Bosatsu/Collection/Array import (
   size_Array,
   get_Array,
   foldl_Array,
+  slice_Array,
   reverse_Array,
 )
 from Bosatsu/Rand import (
@@ -52,25 +53,47 @@ export (
 )
 
 # Internal tree used to support O(1) concat while preserving order.
+# Invariant: WrapArray and WrapList only hold collections with at least two items.
 enum Chain[a: +*]:
   Empty
   Singleton(item: a)
   WrapArray(items: Array[a])
   WrapList(items: List[a])
-  Concat(left: Chain[a], right: Chain[a])
+  Concat(nodes: Int, left: Chain[a], right: Chain[a])
 
-def chain_size(chain: Chain[a]) -> Int:
-  recur chain:
+def chain_nodes(chain: Chain[a]) -> Int:
+  match chain:
     case Empty:
       0
     case Singleton(_):
       1
-    case WrapArray(items):
-      size_Array(items)
-    case WrapList(items):
-      size_List(items)
-    case Concat(left, right):
-      chain_size(left).add(chain_size(right))
+    case WrapArray(_):
+      1
+    case WrapList(_):
+      1
+    case Concat(nodes, _, _):
+      nodes
+
+def chain_size(chain: Chain[a]) -> Int:
+  def loop_size(rem: Int, stack: List[Chain[a]], acc: Int) -> Int:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_size(rem.sub(1), tail, acc)
+          case [Singleton(_), *tail]:
+            loop_size(rem.sub(1), tail, acc.add(1))
+          case [WrapArray(items), *tail]:
+            loop_size(rem.sub(1), tail, acc.add(size_Array(items)))
+          case [WrapList(items), *tail]:
+            loop_size(rem.sub(1), tail, acc.add(size_List(items)))
+          case [Concat(_, left, right), *tail]:
+            loop_size(rem.sub(1), [left, right, *tail], acc)
+  loop_size(chain_nodes(chain).add(1), [chain], 0)
 
 def from_Array(items: Array[a]) -> Chain[a]:
   sz = size_Array(items)
@@ -112,7 +135,7 @@ def concat(left: Chain[a], right: Chain[a]) -> Chain[a]:
         case Empty:
           left
         case _:
-          Concat(left, right)
+          Concat(chain_nodes(left).add(chain_nodes(right)).add(1), left, right)
 
 # Concatenate all chains from left to right.
 def concat_all(chains: List[Chain[a]]) -> Chain[a]:
@@ -131,7 +154,7 @@ def size(chain: Chain[a]) -> Int:
   chain_size(chain)
 
 def traversal_fuel(chain: Chain[a]) -> Int:
-  chain_size(chain).mul(2).add(64)
+  chain_nodes(chain).add(64)
 
 # Stack-safe left fold.
 def foldl(chain: Chain[a], init: b, fn: (b, a) -> b) -> b:
@@ -151,7 +174,7 @@ def foldl(chain: Chain[a], init: b, fn: (b, a) -> b) -> b:
             loop_fold(rem.sub(1), tail, foldl_Array(items, acc, fn))
           case [WrapList(items), *tail]:
             loop_fold(rem.sub(1), tail, items.foldl_List(acc, fn))
-          case [Concat(left, right), *tail]:
+          case [Concat(_, left, right), *tail]:
             loop_fold(rem.sub(1), [left, right, *tail], acc)
   loop_fold(traversal_fuel(chain), [chain], init)
 
@@ -180,7 +203,7 @@ def foldr(chain: Chain[a], init: b, fn: (a, b) -> b) -> b:
             loop_fold(rem.sub(1), tail, foldr_Array(items, acc, fn))
           case [WrapList(items), *tail]:
             loop_fold(rem.sub(1), tail, foldr_List(items, acc, fn))
-          case [Concat(left, right), *tail]:
+          case [Concat(_, left, right), *tail]:
             loop_fold(rem.sub(1), [right, left, *tail], acc)
   loop_fold(traversal_fuel(chain), [chain], init)
 
@@ -227,7 +250,7 @@ def find_with(chain: Chain[a], idx: Int, on_missing: () -> b, on_found: a -> b) 
                     on_missing()
               else:
                 loop_find(rem.sub(1), tail, rem_idx.sub(cnt))
-            case [Concat(left, right), *tail]:
+            case [Concat(_, left, right), *tail]:
               loop_find(rem.sub(1), [left, right, *tail], rem_idx)
     loop_find(traversal_fuel(chain), [chain], idx)
 
@@ -239,23 +262,65 @@ def index(chain: Chain[a], idx: Int) -> Option[a]:
 def get_or(chain: Chain[a], idx: Int, fn: () -> a) -> a:
   find_with(chain, idx, fn, item -> item)
 
+def split_last_List(items: List[a]) -> Option[(List[a], a)]:
+  def loop_split(rem: List[a], rev_init: List[a]) -> Option[(List[a], a)]:
+    loop rem:
+      case []:
+        None
+      case [last]:
+        Some((rev_init.reverse(), last))
+      case [head, *tail]:
+        loop_split(tail, [head, *rev_init])
+  loop_split(items, [])
+
 def uncons_left(chain: Chain[a]) -> Option[(a, Chain[a])]:
-  foldr(chain, None, (item, state) -> (
-    match state:
-      case None:
-        Some((item, empty))
-      case Some((head, tail)):
-        Some((item, prepend(head, tail)))
-  ))
+  def loop_uncons(current: Chain[a], suffix: Chain[a]) -> Option[(a, Chain[a])]:
+    loop current:
+      case Empty:
+        None
+      case Singleton(item):
+        Some((item, suffix))
+      case WrapArray(items):
+        match get_Array(items, 0):
+          case Some(head):
+            tail = from_Array(slice_Array(items, 1, size_Array(items)))
+            Some((head, concat(tail, suffix)))
+          case None:
+            None
+      case WrapList(items):
+        match items:
+          case [head, *tail]:
+            Some((head, concat(from_List(tail), suffix)))
+          case _:
+            None
+      case Concat(_, left, right):
+        loop_uncons(left, concat(right, suffix))
+  loop_uncons(chain, empty)
 
 def uncons_right(chain: Chain[a]) -> Option[(Chain[a], a)]:
-  foldl(chain, None, (state, item) -> (
-    match state:
-      case None:
-        Some((empty, item))
-      case Some((prefix, last)):
-        Some((append(prefix, last), item))
-  ))
+  def loop_uncons(current: Chain[a], prefix: Chain[a]) -> Option[(Chain[a], a)]:
+    loop current:
+      case Empty:
+        None
+      case Singleton(item):
+        Some((prefix, item))
+      case WrapArray(items):
+        last_idx = size_Array(items).sub(1)
+        match get_Array(items, last_idx):
+          case Some(last):
+            init = from_Array(slice_Array(items, 0, last_idx))
+            Some((concat(prefix, init), last))
+          case None:
+            None
+      case WrapList(items):
+        match split_last_List(items):
+          case Some((init, last)):
+            Some((concat(prefix, from_List(init)), last))
+          case None:
+            None
+      case Concat(_, left, right):
+        loop_uncons(right, concat(prefix, left))
+  loop_uncons(chain, empty)
 
 # Map over all elements.
 def map(chain: Chain[a], fn: a -> b) -> Chain[b]:
@@ -580,6 +645,20 @@ tests = TestSuite("Chain tests", [
       case None:
         False,
     "uncons_right sanity"),
+  Assertion(
+    match uncons_left(from_Array(from_List_Array([1, 2, 3]))):
+      case Some((head, tail)):
+        and_Bool(head.eq_Int(1), tail.to_List() matches [2, 3])
+      case None:
+        False,
+    "uncons_left array sanity"),
+  Assertion(
+    match uncons_right(from_Array(from_List_Array([1, 2, 3]))):
+      case Some((init, last)):
+        and_Bool(last.eq_Int(3), init.to_List() matches [1, 2])
+      case None:
+        False,
+    "uncons_right array sanity"),
   Assertion(concat(empty, singleton(1)).to_List() matches [1], "concat left empty"),
   Assertion(concat(singleton(1), empty).to_List() matches [1], "concat right empty"),
   Assertion(prepend(1, from_List([2, 3])).to_List() matches [1, 2, 3], "prepend sanity"),
@@ -595,13 +674,33 @@ tests = TestSuite("Chain tests", [
     deep = deep_concat_chain(20000)
     expected_sum = 20000.mul(20001).div(2)
     deep_list = to_List(deep)
+    deep_uncons_left_ok =
+      match uncons_left(deep):
+        case Some((head, tail)):
+          and_Bool(
+            head.eq_Int(20000),
+            size(tail).eq_Int(19999))
+        case None:
+          False
+    deep_uncons_right_ok =
+      match uncons_right(deep):
+        case Some((init, last)):
+          and_Bool(
+            last.eq_Int(1),
+            size(init).eq_Int(19999))
+        case None:
+          False
     Assertion(and_Bool(
       and_Bool(
         size(deep).eq_Int(20000),
         size_List(deep_list).eq_Int(20000)),
       and_Bool(
-        foldl(deep, 0, add).eq_Int(expected_sum),
-        foldr(deep, 0, (item, acc) -> item.add(acc)).eq_Int(expected_sum))),
+        and_Bool(
+          foldl(deep, 0, add).eq_Int(expected_sum),
+          foldr(deep, 0, (item, acc) -> item.add(acc)).eq_Int(expected_sum)),
+        and_Bool(
+          deep_uncons_left_ok,
+          deep_uncons_right_ok))),
       "deep stack-safe operations")
   ),
   run_Prop(chain_props, 200, 20260303),
