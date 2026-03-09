@@ -27,7 +27,7 @@ _Issue: #90 (https://github.com/johnynek/zafu/issues/90)_
 
 ## Summary
 
-Add `Zafu/Abstract/Foldable` in the same dictionary style as existing abstract modules, inspired by Cats `Foldable` but without Eval-based APIs. Add explicit short-circuiting support through a new `IterState` control type and `fold_iter`, place deterministic-order instances in collection modules, and add `foldable_Array` in `Predef`.
+Add `Zafu/Abstract/Foldable` in the same dictionary style as existing abstract modules, inspired by Cats `Foldable` but without Eval-based APIs. Add explicit iterative control via `IterState` plus `foldl_iter`/`foldr_iter`, place deterministic-order instances in collection modules, and add `foldable_Array` in `Predef`.
 
 Reference inspiration: https://github.com/typelevel/cats/blob/main/core/src/main/scala/cats/Foldable.scala
 
@@ -47,7 +47,7 @@ Proposed
 ## Goals
 
 1. Add a complete non-Eval Foldable API with full function signatures.
-2. Add explicit short-circuit fold support via `fold_iter`.
+2. Add iterative fold control via `foldl_iter` and `foldr_iter`.
 3. Keep style and naming consistent with current `Zafu/Abstract` modules.
 4. Place instances in each deterministic-order collection module plus `Array` in `Predef`.
 5. Define acceptance criteria, rollout plan, and risks clearly enough to implement directly.
@@ -62,7 +62,7 @@ Proposed
 ## Decision Summary
 
 1. Introduce `Zafu/Control/IterState` for explicit early termination and reuse in future abstractions.
-2. Add `fold_iter` to `Foldable`; use it to implement short-circuiting helpers (`exists`, `for_all`, `find`, `collect_first_some`, etc.).
+2. Add `foldl_iter` and `foldr_iter` to `Foldable`; use `foldl_iter` for helper implementations that can short-circuit when instances support it.
 3. Keep `foldl` and strict `foldr` in Foldable for compatibility with existing fold usage and Cats-inspired shape.
 4. Offer constructor tiers (minimal and specialized) like current abstract modules.
 5. Implement deterministic-order collection instances only: `List`, `Vector`, `Chain`, `Deque`, `LazyList`, `Heap`, `NonEmptyList`, `NonEmptyChain`, plus `Array` in `Predef`.
@@ -86,67 +86,71 @@ Proposed helpers:
 
 Proposed dictionary shape:
 
-1. `struct Foldable[f: * -> *](foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b, foldr_fn: forall a, b. (f[a], b, (a, b) -> b) -> b, fold_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> b, is_empty_fn: forall a. f[a] -> Bool, size_fn: forall a. f[a] -> Int, to_List_fn: forall a. f[a] -> List[a])`
+1. `struct Foldable[f: * -> *](foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b, foldr_fn: forall a, b. (f[a], b, (a, b) -> b) -> b, foldl_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> b, foldr_iter_fn: forall a, b. (f[a], b, (a, b) -> IterState[b, b]) -> b, is_empty_fn: forall a. f[a] -> Bool, size_fn: forall a. f[a] -> Int, to_List_fn: forall a. f[a] -> List[a])`
 
 Complete proposed function list (full signatures):
 
 1. `Foldable`
-2. `foldable_from_fold_iter(fold_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> b) -> Foldable[f]`
-3. `foldable_from_foldl(foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b) -> Foldable[f]`
-4. `foldable_from_folds(foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b, foldr_fn: forall a, b. (f[a], b, (a, b) -> b) -> b) -> Foldable[f]`
-5. `foldable_specialized(foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b, foldr_fn: forall a, b. (f[a], b, (a, b) -> b) -> b, fold_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> b, is_empty_fn: forall a. f[a] -> Bool, size_fn: forall a. f[a] -> Int, to_List_fn: forall a. f[a] -> List[a]) -> Foldable[f]`
-6. `foldl(inst: Foldable[f], fa: f[a], init: b, fn: (b, a) -> b) -> b`
-7. `foldr(inst: Foldable[f], fa: f[a], init: b, fn: (a, b) -> b) -> b`
-8. `fold_iter(inst: Foldable[f], fa: f[a], init: b, fn: (b, a) -> IterState[b, b]) -> b`
-9. `is_empty(inst: Foldable[f], fa: f[a]) -> Bool`
-10. `non_empty(inst: Foldable[f], fa: f[a]) -> Bool`
-11. `size(inst: Foldable[f], fa: f[a]) -> Int`
-12. `to_List(inst: Foldable[f], fa: f[a]) -> List[a]`
-13. `fold(inst: Foldable[f], fa: f[a], monoid: Monoid[a]) -> a`
-14. `combine_all(inst: Foldable[f], fa: f[a], monoid: Monoid[a]) -> a`
-15. `combine_all_option(inst: Foldable[f], fa: f[a], semigroup: Semigroup[a]) -> Option[a]`
-16. `fold_map(inst: Foldable[f], fa: f[a], fn: a -> b, monoid: Monoid[b]) -> b`
-17. `fold_map_option(inst: Foldable[f], fa: f[a], fn: a -> b, semigroup: Semigroup[b]) -> Option[b]`
-18. `reduce_left_to_option(inst: Foldable[f], fa: f[a], first: a -> b, combine: (b, a) -> b) -> Option[b]`
-19. `reduce_right_to_option(inst: Foldable[f], fa: f[a], first: a -> b, combine: (a, b) -> b) -> Option[b]`
-20. `reduce_left_option(inst: Foldable[f], fa: f[a], combine: (a, a) -> a) -> Option[a]`
-21. `reduce_right_option(inst: Foldable[f], fa: f[a], combine: (a, a) -> a) -> Option[a]`
-22. `find(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> Option[a]`
-23. `exists(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> Bool`
-24. `for_all(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> Bool`
-25. `any(inst: Foldable[f], fa: f[Bool]) -> Bool`
-26. `all(inst: Foldable[f], fa: f[Bool]) -> Bool`
-27. `contains(inst: Foldable[f], eq_inst: Eq[a], fa: f[a], target: a) -> Bool`
-28. `count(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> Int`
-29. `get(inst: Foldable[f], fa: f[a], idx: Int) -> Option[a]`
-30. `collect_first_some(inst: Foldable[f], fa: f[a], fn: a -> Option[b]) -> Option[b]`
-31. `collect_fold_some(inst: Foldable[f], fa: f[a], fn: a -> Option[b], monoid: Monoid[b]) -> b`
-32. `minimum_option(inst: Foldable[f], ord_inst: Ord[a], fa: f[a]) -> Option[a]`
-33. `maximum_option(inst: Foldable[f], ord_inst: Ord[a], fa: f[a]) -> Option[a]`
-34. `minimum_by_option(inst: Foldable[f], ord_b: Ord[b], fa: f[a], fn: a -> b) -> Option[a]`
-35. `maximum_by_option(inst: Foldable[f], ord_b: Ord[b], fa: f[a], fn: a -> b) -> Option[a]`
-36. `minimum_list(inst: Foldable[f], ord_inst: Ord[a], fa: f[a]) -> List[a]`
-37. `maximum_list(inst: Foldable[f], ord_inst: Ord[a], fa: f[a]) -> List[a]`
-38. `minimum_by_list(inst: Foldable[f], ord_b: Ord[b], fa: f[a], fn: a -> b) -> List[a]`
-39. `maximum_by_list(inst: Foldable[f], ord_b: Ord[b], fa: f[a], fn: a -> b) -> List[a]`
-40. `intercalate(inst: Foldable[f], fa: f[a], middle: a, monoid: Monoid[a]) -> a`
-41. `filter_to_List(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> List[a]`
-42. `take_while_to_List(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> List[a]`
-43. `drop_while_to_List(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> List[a]`
-44. `laws_Foldable(inst: Foldable[f], eq_item: Eq[a], fa: f[a]) -> Test`
+2. `foldable_from_foldl_iter(foldl_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> b) -> Foldable[f]`
+3. `foldable_from_foldr_iter(foldr_iter_fn: forall a, b. (f[a], b, (a, b) -> IterState[b, b]) -> b) -> Foldable[f]`
+4. `foldable_from_fold_iters(foldl_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> b, foldr_iter_fn: forall a, b. (f[a], b, (a, b) -> IterState[b, b]) -> b) -> Foldable[f]`
+5. `foldable_from_folds(foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b, foldr_fn: forall a, b. (f[a], b, (a, b) -> b) -> b) -> Foldable[f]`
+6. `foldable_specialized(foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b, foldr_fn: forall a, b. (f[a], b, (a, b) -> b) -> b, foldl_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> b, foldr_iter_fn: forall a, b. (f[a], b, (a, b) -> IterState[b, b]) -> b, is_empty_fn: forall a. f[a] -> Bool, size_fn: forall a. f[a] -> Int, to_List_fn: forall a. f[a] -> List[a]) -> Foldable[f]`
+7. `foldl(inst: Foldable[f], fa: f[a], init: b, fn: (b, a) -> b) -> b`
+8. `foldr(inst: Foldable[f], fa: f[a], init: b, fn: (a, b) -> b) -> b`
+9. `foldl_iter(inst: Foldable[f], fa: f[a], init: b, fn: (b, a) -> IterState[b, b]) -> b`
+10. `foldr_iter(inst: Foldable[f], fa: f[a], init: b, fn: (a, b) -> IterState[b, b]) -> b`
+11. `is_empty(inst: Foldable[f], fa: f[a]) -> Bool`
+12. `non_empty(inst: Foldable[f], fa: f[a]) -> Bool`
+13. `size(inst: Foldable[f], fa: f[a]) -> Int`
+14. `to_List(inst: Foldable[f], fa: f[a]) -> List[a]`
+15. `fold(inst: Foldable[f], fa: f[a], monoid: Monoid[a]) -> a`
+16. `combine_all(inst: Foldable[f], fa: f[a], monoid: Monoid[a]) -> a`
+17. `combine_all_option(inst: Foldable[f], fa: f[a], semigroup: Semigroup[a]) -> Option[a]`
+18. `fold_map(inst: Foldable[f], fa: f[a], fn: a -> b, monoid: Monoid[b]) -> b`
+19. `fold_map_option(inst: Foldable[f], fa: f[a], fn: a -> b, semigroup: Semigroup[b]) -> Option[b]`
+20. `reduce_left_to_option(inst: Foldable[f], fa: f[a], first: a -> b, combine: (b, a) -> b) -> Option[b]`
+21. `reduce_right_to_option(inst: Foldable[f], fa: f[a], first: a -> b, combine: (a, b) -> b) -> Option[b]`
+22. `reduce_left_option(inst: Foldable[f], fa: f[a], combine: (a, a) -> a) -> Option[a]`
+23. `reduce_right_option(inst: Foldable[f], fa: f[a], combine: (a, a) -> a) -> Option[a]`
+24. `find(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> Option[a]`
+25. `exists(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> Bool`
+26. `for_all(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> Bool`
+27. `any(inst: Foldable[f], fa: f[Bool]) -> Bool`
+28. `all(inst: Foldable[f], fa: f[Bool]) -> Bool`
+29. `contains(inst: Foldable[f], eq_inst: Eq[a], fa: f[a], target: a) -> Bool`
+30. `count(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> Int`
+31. `get(inst: Foldable[f], fa: f[a], idx: Int) -> Option[a]`
+32. `collect_first_some(inst: Foldable[f], fa: f[a], fn: a -> Option[b]) -> Option[b]`
+33. `collect_fold_some(inst: Foldable[f], fa: f[a], fn: a -> Option[b], monoid: Monoid[b]) -> b`
+34. `minimum_option(inst: Foldable[f], ord_inst: Ord[a], fa: f[a]) -> Option[a]`
+35. `maximum_option(inst: Foldable[f], ord_inst: Ord[a], fa: f[a]) -> Option[a]`
+36. `minimum_by_option(inst: Foldable[f], ord_b: Ord[b], fa: f[a], fn: a -> b) -> Option[a]`
+37. `maximum_by_option(inst: Foldable[f], ord_b: Ord[b], fa: f[a], fn: a -> b) -> Option[a]`
+38. `minimum_list(inst: Foldable[f], ord_inst: Ord[a], fa: f[a]) -> List[a]`
+39. `maximum_list(inst: Foldable[f], ord_inst: Ord[a], fa: f[a]) -> List[a]`
+40. `minimum_by_list(inst: Foldable[f], ord_b: Ord[b], fa: f[a], fn: a -> b) -> List[a]`
+41. `maximum_by_list(inst: Foldable[f], ord_b: Ord[b], fa: f[a], fn: a -> b) -> List[a]`
+42. `intercalate(inst: Foldable[f], fa: f[a], middle: a, monoid: Monoid[a]) -> a`
+43. `filter_to_List(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> List[a]`
+44. `take_while_to_List(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> List[a]`
+45. `drop_while_to_List(inst: Foldable[f], fa: f[a], pred: a -> Bool) -> List[a]`
+46. `laws_Foldable(inst: Foldable[f], eq_item: Eq[a], fa: f[a]) -> Test`
 
 Constructor behavior:
 
-1. `foldable_from_fold_iter` derives `foldl`, `foldr`, `to_List`, `is_empty`, and `size`.
-2. `foldable_from_foldl` derives `fold_iter` as a never-short-circuit fold (`Continue(...)`) and derives the rest from `foldl`.
-3. `foldable_from_folds` derives `fold_iter` from `foldl` and derives structural helpers.
-4. `foldable_specialized` allows efficient native short-circuit loops and O(1) metadata access.
+1. `foldable_from_foldl_iter` derives `foldl`, `foldr`, `foldr_iter`, `to_List`, `is_empty`, and `size`.
+2. `foldable_from_foldr_iter` derives `foldr`, `foldl`, `foldl_iter`, `to_List`, `is_empty`, and `size`.
+3. `foldable_from_fold_iters` wires both iterative folds directly and derives strict folds and structural helpers.
+4. `foldable_from_folds` derives `foldl_iter` and `foldr_iter` as `Continue(...)` wrappers (no short-circuit promise).
+5. `foldable_specialized` allows efficient native iteration and metadata access.
 
 Method notes:
 
-1. `exists`, `for_all`, `find`, `collect_first_some`, and `get` should be implemented via `fold_iter` to short-circuit.
-2. `foldr` remains strict (non-Eval) and does not promise lazy right-associative short-circuit semantics.
-3. Eval-based and effectful Foldable methods remain deferred.
+1. `exists`, `for_all`, `find`, `collect_first_some`, and `get` should use `foldl_iter`.
+2. `foldl_iter`/`foldr_iter` expose early-stop control, but this API does not guarantee every instance can realize early termination in all cases.
+3. `foldr` remains strict (non-Eval) and does not promise lazy right-associative short-circuit semantics.
+4. Eval-based and effectful Foldable methods remain deferred.
 
 ## Law Design
 
@@ -157,8 +161,9 @@ Method notes:
 3. `non_empty(inst, fa)` is equivalent to logical negation of `is_empty(inst, fa)`.
 4. `foldl(inst, fa, [], (acc, a) -> [a, *acc]).reverse()` equals `to_List(inst, fa)`.
 5. `foldr(inst, fa, [], (a, acc) -> [a, *acc])` equals `to_List(inst, fa)`.
-6. `fold_iter(inst, fa, 0, (count, _) -> Done(count.add(1)) if count.eq_Int(0) else Continue(count.add(1)))` stops after first element.
-7. `reduce_left_option` and `reduce_right_option` agree with list-model reductions on `to_List(inst, fa)`.
+6. `foldl_iter(inst, fa, z, (acc, a) -> Continue(step(acc, a)))` agrees with `foldl(inst, fa, z, step)` for sample `step`.
+7. `foldr_iter(inst, fa, z, (a, acc) -> Continue(step(a, acc)))` agrees with `foldr(inst, fa, z, step)` for sample `step`.
+8. `reduce_left_option` and `reduce_right_option` agree with list-model reductions on `to_List(inst, fa)`.
 
 ## Instance Placement Plan
 
@@ -187,19 +192,19 @@ Placement decisions:
 1. Add `src/Zafu/Control/IterState.bosatsu`.
 2. Add `src/Zafu/Abstract/Foldable.bosatsu`.
 3. Implement dictionary shape, constructors, and all exported functions listed above.
-4. Implement short-circuiting helpers in terms of `fold_iter`.
+4. Implement helper functions in terms of `foldl_iter` and use `foldr_iter` where direction matters.
 5. Add `laws_Foldable` and unit tests.
 
 ### Phase 2: Add Predef Array instance
 
 1. Update `src/Zafu/Abstract/Instances/Predef.bosatsu` imports for `Array` folding helpers.
 2. Add and export `foldable_Array`.
-3. Add instance tests that cover `foldl`, `fold_iter` short-circuit, `to_List`, and `size`.
+3. Add instance tests that cover `foldl`, `foldl_iter`, `foldr_iter`, `to_List`, and `size`.
 
 ### Phase 3: Add collection instances
 
 1. Add Foldable imports and `foldable_*` exports in each deterministic-order collection module listed in touch paths.
-2. Use native loops when available so `fold_iter` can short-circuit efficiently.
+2. Use native loops when available so `foldl_iter`/`foldr_iter` can short-circuit efficiently.
 3. Keep existing concrete APIs unchanged (`foldl`, `foldr`, etc.).
 
 ### Phase 4: Validation
@@ -214,8 +219,8 @@ Placement decisions:
 2. `src/Zafu/Control/IterState.bosatsu` exists with `IterState` and helper constructors.
 3. `src/Zafu/Abstract/Foldable.bosatsu` exists and exports every function in the “Complete proposed function list”.
 4. No Eval-based methods are included in this Foldable issue.
-5. `fold_iter` exists and is used for short-circuiting helpers.
-6. `laws_Foldable` validates ordering, structural helpers, and short-circuit behavior.
+5. `foldl_iter` and `foldr_iter` exist and are used in helper implementations where applicable.
+6. `laws_Foldable` validates ordering and structural helper consistency between strict and iterative folds.
 7. `foldable_Array` exists in `src/Zafu/Abstract/Instances/Predef.bosatsu`.
 8. `foldable_List` exists in `src/Zafu/Collection/List.bosatsu`.
 9. `foldable_Vector` exists in `src/Zafu/Collection/Vector.bosatsu`.
@@ -238,8 +243,8 @@ Placement decisions:
 2. Risk: derived strict `foldr` can allocate intermediate structures and regress performance.
    Mitigation: prefer `foldable_specialized` in performance-sensitive modules.
 
-3. Risk: short-circuit semantics could diverge across instances.
-   Mitigation: enforce via `laws_Foldable` tests that exercise early termination.
+3. Risk: users might assume `foldl_iter`/`foldr_iter` always short-circuit in every instance.
+   Mitigation: document the no-guarantee contract and test semantic equivalence with `Continue(...)` paths.
 
 4. Risk: naming collisions (`foldl`, `foldr`) with collection modules.
    Mitigation: keep alias import style (`foldl as foldl_Foldable`) in examples and usage.
