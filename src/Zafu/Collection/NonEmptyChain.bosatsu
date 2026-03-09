@@ -9,7 +9,7 @@ from Zafu/Collection/Chain import (
   from_List as from_List_Chain,
   to_List as to_List_Chain,
   size as size_Chain,
-  index as index_Chain,
+  get as get_Chain,
   get_or as get_or_Chain,
   any as any_Chain,
   exists as exists_Chain,
@@ -211,43 +211,10 @@ def size(items: NonEmptyChain[a]) -> Int:
       size_Chain(init0).add(1)
 
 def get(items: NonEmptyChain[a], idx: Int) -> Option[a]:
-  if cmp_Int(idx, 0) matches LT:
-    None
-  else:
-    match items:
-      case Prepend(head0, tail0):
-        if idx.eq_Int(0):
-          Some(head0)
-        else:
-          index_Chain(tail0, idx.sub(1))
-      case Append(init0, last0):
-        init_size = size_Chain(init0)
-        # init occupies [0, init_size); last sits exactly at init_size.
-        if cmp_Int(idx, init_size) matches LT:
-          index_Chain(init0, idx)
-        elif idx.eq_Int(init_size):
-          Some(last0)
-        else:
-          None
+  get_Chain(to_Chain(items), idx)
 
 def get_or(items: NonEmptyChain[a], idx: Int, on_missing: () -> a) -> a:
-  if cmp_Int(idx, 0) matches LT:
-    on_missing()
-  else:
-    match items:
-      case Prepend(head0, tail0):
-        if idx.eq_Int(0):
-          head0
-        else:
-          get_or_Chain(tail0, idx.sub(1), on_missing)
-      case Append(init0, last0):
-        init_size = size_Chain(init0)
-        if cmp_Int(idx, init_size) matches LT:
-          get_or_Chain(init0, idx, on_missing)
-        elif idx.eq_Int(init_size):
-          last0
-        else:
-          on_missing()
+  get_or_Chain(to_Chain(items), idx, on_missing)
 
 def any(items: NonEmptyChain[Bool]) -> Bool:
   match items:
@@ -257,10 +224,10 @@ def any(items: NonEmptyChain[Bool]) -> Bool:
       else:
         any_Chain(tail0)
     case Append(init0, last0):
-      if any_Chain(init0):
+      if last0:
         True
       else:
-        last0
+        any_Chain(init0)
 
 def exists(items: NonEmptyChain[a], pred: a -> Bool) -> Bool:
   match items:
@@ -270,10 +237,10 @@ def exists(items: NonEmptyChain[a], pred: a -> Bool) -> Bool:
       else:
         exists_Chain(tail0, pred)
     case Append(init0, last0):
-      if exists_Chain(init0, pred):
+      if pred(last0):
         True
       else:
-        pred(last0)
+        exists_Chain(init0, pred)
 
 def for_all(items: NonEmptyChain[a], pred: a -> Bool) -> Bool:
   match items:

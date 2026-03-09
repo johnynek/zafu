@@ -59,7 +59,7 @@ export (
   from_List,
   to_List,
   size,
-  index,
+  get,
   get_or,
   any,
   exists,
@@ -301,8 +301,8 @@ def find_with(chain: Chain[a], idx: Int, on_missing: () -> b, on_found: a -> b) 
               loop_find(rem.sub(1), [left, right, *tail], rem_idx)
     loop_find(traversal_fuel(chain), [chain], idx)
 
-# Option-returning index lookup.
-def index(chain: Chain[a], idx: Int) -> Option[a]:
+# Option-returning lookup.
+def get(chain: Chain[a], idx: Int) -> Option[a]:
   find_with(chain, idx, () -> None, item -> Some(item))
 
 # Index lookup with fallback thunk.
@@ -504,14 +504,14 @@ singleton_prop: Prop = forall_Prop(
     Assertion(eq_List(eq_Int)(as_list, [item]), "singleton law")
   ))
 
-index_prop: Prop = forall_Prop(
+get_prop: Prop = forall_Prop(
   rand_list_with_index,
-  "index matches list indexing",
+  "get matches list indexing",
   ((list, idx)) -> (
     chain = from_List(list)
     expected = get_List(list, idx)
-    actual = index(chain, idx)
-    Assertion(eq_Option(eq_Int)(actual, expected), "index law")
+    actual = get(chain, idx)
+    Assertion(eq_Option(eq_Int)(actual, expected), "get law")
   ))
 
 get_or_prop: Prop = forall_Prop(
@@ -644,7 +644,7 @@ chain_props: Prop = suite_Prop(
     roundtrip_prop,
     size_prop,
     singleton_prop,
-    index_prop,
+    get_prop,
     get_or_prop,
     uncons_left_prop,
     uncons_right_prop,
@@ -663,7 +663,7 @@ tests = TestSuite("Chain tests", [
   Assertion(size(empty).eq_Int(0), "empty size"),
   Assertion(from_Array(from_List_Array([1])).to_List() matches [1], "array singleton to singleton"),
   Assertion(to_List(empty) matches [], "empty to list"),
-  Assertion(index(empty, 0) matches None, "empty index"),
+  Assertion(get(empty, 0) matches None, "empty get"),
   Assertion(get_or(empty, 0, () -> 11).eq_Int(11), "empty get_or fallback"),
   Assertion(any(from_List([False, True, False])), "any sanity"),
   Assertion(any(from_List([False])) matches False, "any all false"),
