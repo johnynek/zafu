@@ -1,11 +1,36 @@
 package Zafu/Text/Parse
 
+from Bosatsu/Lazy import (
+  lazy,
+  get_Lazy,
+)
+
 from Bosatsu/Char import (
   eq_ignore_ascii_case,
   is_ascii_alpha,
   is_ascii_digit,
   string_to_Char,
   string_to_Char_List,
+)
+
+from Zafu/Abstract/Eq import eq as eq_Eq
+
+from Zafu/Abstract/Instances/Predef import (
+  eq_Char,
+  hash_Char,
+)
+
+from Zafu/Collection/HashSet import (
+  from_List as from_List_HashSet,
+  contains as contains_HashSet,
+)
+
+from Zafu/Collection/NonEmptyList import (
+  NonEmptyList as NonEmpty,
+  from_prepend as from_prepend_NonEmptyList,
+  to_List as to_List_NonEmptyList,
+  head as head_NonEmptyList,
+  tail as tail_NonEmptyList,
 )
 
 from Zafu/Control/Result import (
@@ -60,7 +85,7 @@ from Zafu/Text/Parse/Internal/Engine import (
   parse1_with_state,
 )
 
-from Zafu/Text/Parse/Internal/Error import (
+from Zafu/Text/Parse/Error import (
   Expectation,
   Caret,
   Error,
@@ -93,6 +118,7 @@ export (
   end,
   defer0,
   defer,
+  map0,
   map,
   as,
   void,
@@ -160,15 +186,8 @@ def dispatch(state: ParseState, run: ParseState -> Step[a]) -> Step[a]:
     case None:
       Failure(fuel_failure(state))
 
-def fail0_with(expected: List[Expectation]) -> Parser0[a]:
-  mk_parser0(
-    state -> dispatch(state, spent_state -> Failure(epsilon_failure_at(spent_state, expected))),
-    1,
-    False,
-  )
-
 def char_eq(left: Char, right: Char) -> Bool:
-  char_to_Int(left).eq_Int(char_to_Int(right))
+  eq_Eq(eq_Char, left, right)
 
 def or_Bool(left: Bool, right: Bool) -> Bool:
   if left:
@@ -189,7 +208,7 @@ def parse_chars(
   matches_char: (Char, Char) -> Bool,
 ) -> Step[Unit]:
   def loop_chars(curr_state: ParseState, rem_chars: List[Char], consumed_any: Bool) -> Step[Unit]:
-    recur rem_chars:
+    loop rem_chars:
       case []:
         Success(Unit, curr_state)
       case [next_expected, *tail_expected]:
@@ -214,14 +233,6 @@ def parse_chars(
                 failure0
             Failure(failure)
   loop_chars(first_state, chars, False)
-
-def list_mem_Char(items: List[Char], target: Char) -> Bool:
-  items.foldl_List(False, (acc, next) -> (
-    if acc:
-      True
-    else:
-      char_eq(next, target)
-  ))
 
 def pure0(value: a) -> Parser0[a]:
   mk_parser0(
@@ -269,11 +280,12 @@ def char(ch: Char) -> Parser[Unit]:
   )
 
 def char_in(chars: List[Char]) -> Parser[Char]:
+  char_set = from_List_HashSet(hash_Char, chars)
   mk_parser(
     state -> dispatch(state, spent_state -> (
       match uncons_String(state_remaining(spent_state)):
         case Some((next, tail_input)):
-          if list_mem_Char(chars, next):
+          if contains_HashSet(char_set, next):
             Success(next, advance_char_state(spent_state, next, tail_input))
           else:
             Failure(epsilon_failure_at(spent_state, [ExpectedPredicate("one of supplied characters")]))
@@ -387,19 +399,21 @@ end: Parser[Unit] = mk_parser(
 )
 
 def defer0(mk: () -> Parser0[a]) -> Parser0[a]:
+  lazy_parser = lazy(mk)
   mk_parser0(
-    state -> dispatch(state, spent_state -> run_parser0(mk(), spent_state)),
+    state -> dispatch(state, spent_state -> run_parser0(get_Lazy(lazy_parser), spent_state)),
     2,
     True,
   )
 
 def defer(mk: () -> Parser[a]) -> Parser[a]:
+  lazy_parser = lazy(mk)
   mk_parser(
-    state -> dispatch(state, spent_state -> run_parser(mk(), spent_state)),
+    state -> dispatch(state, spent_state -> run_parser(get_Lazy(lazy_parser), spent_state)),
     2,
   )
 
-def map(parser: Parser0[a], fn: a -> b) -> Parser0[b]:
+def map0(parser: Parser0[a], fn: a -> b) -> Parser0[b]:
   mk_parser0(
     state -> dispatch(state, spent_state -> (
       match run_parser0(parser, spent_state):
@@ -412,7 +426,7 @@ def map(parser: Parser0[a], fn: a -> b) -> Parser0[b]:
     parser0_allows_epsilon(parser),
   )
 
-def map_parser(parser: Parser[a], fn: a -> b) -> Parser[b]:
+def map(parser: Parser[a], fn: a -> b) -> Parser[b]:
   mk_parser(
     state -> dispatch(state, spent_state -> (
       match run_parser(parser, spent_state):
@@ -425,7 +439,7 @@ def map_parser(parser: Parser[a], fn: a -> b) -> Parser[b]:
   )
 
 def as(parser: Parser0[a], value: b) -> Parser0[b]:
-  map(parser, _ -> value)
+  map0(parser, _ -> value)
 
 def void(parser: Parser0[a]) -> Parser0[Unit]:
   as(parser, Unit)
@@ -444,7 +458,7 @@ def with_string(parser: Parser0[a]) -> Parser0[(a, String)]:
   )
 
 def matched(parser: Parser0[a]) -> Parser0[String]:
-  map(with_string(parser), pair -> (
+  map0(with_string(parser), pair -> (
     (_, text) = pair
     text
   ))
@@ -546,37 +560,48 @@ def flat_map(parser: Parser[a], fn: a -> Parser[b]) -> Parser[b]:
     parser_cost(parser).add(2),
   )
 
-def or_else(left: Parser0[a], right: Parser0[a]) -> Parser0[a]:
+def one_of0(choices: List[Parser0[a]]) -> Parser0[a]:
+  total_cost = choices.foldl_List(1, (acc, next) -> acc.add(parser0_cost(next)))
+  allows_epsilon = choices.foldl_List(False, (acc, next) -> or_Bool(acc, parser0_allows_epsilon(next)))
   mk_parser0(
     state -> dispatch(state, spent_state -> (
-      match run_parser0(left, spent_state):
-        case Success(value, final_state):
-          Success(value, final_state)
-        case Failure(left_failure):
-          if failure_kind(left_failure) matches Arresting:
-            Failure(left_failure)
-          else:
-            match run_parser0(right, spent_state):
+      def loop_choices(rem_choices: List[Parser0[a]], merged_failure: Option[ParseFailure]) -> Step[a]:
+        loop rem_choices:
+          case []:
+            match merged_failure:
+              case Some(failure):
+                Failure(failure)
+              case None:
+                Failure(epsilon_failure_at(spent_state, [ExpectedPredicate("one_of0 non-empty choice list")]))
+          case [next_choice, *tail_choices]:
+            match run_parser0(next_choice, spent_state):
               case Success(value, final_state):
                 Success(value, final_state)
-              case Failure(right_failure):
-                Failure(merge_failures(left_failure, right_failure))
+              case Failure(next_failure):
+                if failure_kind(next_failure) matches Arresting:
+                  Failure(next_failure)
+                else:
+                  next_merged =
+                    match merged_failure:
+                      case Some(prev_failure):
+                        merge_failures(prev_failure, next_failure)
+                      case None:
+                        next_failure
+                  loop_choices(tail_choices, Some(next_merged))
+      loop_choices(choices, None)
     )),
-    parser0_cost(left).add(parser0_cost(right)).add(1),
-    or_Bool(parser0_allows_epsilon(left), parser0_allows_epsilon(right)),
+    total_cost,
+    allows_epsilon,
   )
 
-def either_or(left: Parser0[a], right: Parser0[b]) -> Parser0[Either[b, a]]:
-  left_side = map(left, value -> Right(value))
-  right_side = map(right, value -> Left(value))
-  or_else(left_side, right_side)
+def or_else(left: Parser0[a], right: Parser0[a]) -> Parser0[a]:
+  one_of0([left, right])
 
-def one_of0(choices: List[Parser0[a]]) -> Parser0[a]:
-  match choices:
-    case []:
-      fail0_with([ExpectedPredicate("one_of0 non-empty choice list")])
-    case [head, *tail]:
-      tail.foldl_List(head, (acc, next) -> or_else(acc, next))
+def either_or(first: Parser0[a], second: Parser0[b]) -> Parser0[Either[b, a]]:
+  # Either keeps the first parser in Right and the fallback parser in Left.
+  first_choice = map0(first, value -> Right(value))
+  second_choice = map0(second, value -> Left(value))
+  or_else(first_choice, second_choice)
 
 def one_of(choices: List[Parser[a]]) -> Parser[a]:
   parsers0 = choices.map_List(parser_as_parser0)
@@ -672,25 +697,25 @@ def product(left: Parser[a], right: Parser[b]) -> Parser[(a, b)]:
   )
 
 def keep_left0(left: Parser0[a], right: Parser0[b]) -> Parser0[a]:
-  map(product0(left, right), pair -> (
+  map0(product0(left, right), pair -> (
     (left_value, _) = pair
     left_value
   ))
 
 def keep_right0(left: Parser0[a], right: Parser0[b]) -> Parser0[b]:
-  map(product0(left, right), pair -> (
+  map0(product0(left, right), pair -> (
     (_, right_value) = pair
     right_value
   ))
 
 def keep_left(left: Parser[a], right: Parser0[b]) -> Parser[a]:
-  map_parser(product10(left, right), pair -> (
+  map(product10(left, right), pair -> (
     (left_value, _) = pair
     left_value
   ))
 
 def keep_right(left: Parser0[a], right: Parser[b]) -> Parser[b]:
-  map_parser(product01(left, right), pair -> (
+  map(product01(left, right), pair -> (
     (_, right_value) = pair
     right_value
   ))
@@ -699,7 +724,7 @@ def between0(open: Parser0[o], inner: Parser0[a], close: Parser0[c]) -> Parser0[
   keep_left0(keep_right0(open, inner), close)
 
 def between(open: Parser0[o], inner: Parser[a], close: Parser0[c]) -> Parser[a]:
-  map_parser(keep_left(product01(open, inner), close), pair -> (
+  map(keep_left(product01(open, inner), close), pair -> (
     (_, value) = pair
     value
   ))
@@ -736,13 +761,73 @@ def backtrack(parser: Parser[a]) -> Parser[a]:
   )
 
 def soft_product0(left: Parser0[a], right: Parser0[b]) -> Parser0[(a, b)]:
-  backtrack0(product0(left, right))
+  mk_parser0(
+    state -> dispatch(state, spent_state -> (
+      match run_parser0(left, spent_state):
+        case Success(left_value, after_left):
+          match run_parser0(right, after_left):
+            case Success(right_value, after_right):
+              Success((left_value, right_value), after_right)
+            case Failure(right_failure):
+              failure =
+                # Soft product backtracks only when right fails without consumption.
+                if failure_kind(right_failure) matches Arresting:
+                  right_failure
+                elif consumed_tokens(spent_state, after_left):
+                  ParseFailure(Epsilon, failure_error(right_failure))
+                else:
+                  right_failure
+              Failure(failure)
+        case Failure(left_failure):
+          Failure(left_failure)
+    )),
+    parser0_cost(left).add(parser0_cost(right)).add(1),
+    and_Bool(parser0_allows_epsilon(left), parser0_allows_epsilon(right)),
+  )
 
 def soft_product10(left: Parser[a], right: Parser0[b]) -> Parser[(a, b)]:
-  backtrack(product10(left, right))
+  mk_parser(
+    state -> dispatch(state, spent_state -> (
+      match run_parser(left, spent_state):
+        case Success(left_value, after_left):
+          match run_parser0(right, after_left):
+            case Success(right_value, after_right):
+              Success((left_value, right_value), after_right)
+            case Failure(right_failure):
+              failure =
+                if failure_kind(right_failure) matches Arresting:
+                  right_failure
+                else:
+                  ParseFailure(Epsilon, failure_error(right_failure))
+              Failure(failure)
+        case Failure(left_failure):
+          Failure(left_failure)
+    )),
+    parser_cost(left).add(parser0_cost(right)).add(1),
+  )
 
 def soft_product01(left: Parser0[a], right: Parser[b]) -> Parser[(a, b)]:
-  backtrack(product01(left, right))
+  mk_parser(
+    state -> dispatch(state, spent_state -> (
+      match run_parser0(left, spent_state):
+        case Success(left_value, after_left):
+          match run_parser(right, after_left):
+            case Success(right_value, after_right):
+              Success((left_value, right_value), after_right)
+            case Failure(right_failure):
+              failure =
+                if failure_kind(right_failure) matches Arresting:
+                  right_failure
+                elif consumed_tokens(spent_state, after_left):
+                  ParseFailure(Epsilon, failure_error(right_failure))
+                else:
+                  right_failure
+              Failure(failure)
+        case Failure(left_failure):
+          Failure(left_failure)
+    )),
+    parser0_cost(left).add(parser_cost(right)).add(1),
+  )
 
 def optional(parser: Parser[a]) -> Parser0[Option[a]]:
   mk_parser0(
@@ -786,23 +871,23 @@ def not(parser: Parser0[a]) -> Parser0[Unit]:
     True,
   )
 
-def not_then(forbidden: Parser[a], then_parse: Parser[b]) -> Parser[b]:
+def not_then(forbidden: Parser0[a], then_parse: Parser[b]) -> Parser[b]:
   mk_parser(
     state -> dispatch(state, spent_state -> (
-      match run_parser(forbidden, spent_state):
+      match run_parser0(forbidden, spent_state):
         case Success(_, _):
           Failure(epsilon_failure_at(spent_state, [ExpectedPredicate("not_then")]))
         case Failure(_):
           run_parser(then_parse, spent_state)
     )),
-    parser_cost(forbidden).add(parser_cost(then_parse)).add(2),
+    parser0_cost(forbidden).add(parser_cost(then_parse)).add(2),
   )
 
 def rep0(parser: Parser[a]) -> Parser0[List[a]]:
   mk_parser0(
     state -> dispatch(state, spent_state -> (
       def loop_rep(rem_steps: Int, curr_state: ParseState, rev_items: List[a]) -> Step[List[a]]:
-        recur rem_steps:
+        loop rem_steps:
           case _ if cmp_Int(rem_steps, 0) matches LT | EQ:
             # A secondary guard keeps this loop total even if a malformed parser violates invariants.
             Failure(fuel_failure(curr_state))
@@ -824,37 +909,43 @@ def rep0(parser: Parser[a]) -> Parser0[List[a]]:
     True,
   )
 
-def rep(parser: Parser[a]) -> Parser[List[a]]:
-  map_parser(product10(parser, rep0(parser)), pair -> (
+def rep(parser: Parser[a]) -> Parser[NonEmpty[a]]:
+  map(product10(parser, rep0(parser)), pair -> (
     (head, tail) = pair
-    [head, *tail]
+    from_prepend_NonEmptyList(head, tail)
   ))
 
-def rep_exactly(parser: Parser[a], times: Int) -> Parser[List[a]]:
+def rep_exactly(parser: Parser[a], times: Int) -> Parser[NonEmpty[a]]:
   if cmp_Int(times, 1) matches LT:
     fail_with("rep_exactly requires times >= 1")
   else:
     mk_parser(
       state -> dispatch(state, spent_state -> (
-        def loop_exact(curr_state: ParseState, rem_times: Int, rev_items: List[a], consumed_any: Bool) -> Step[List[a]]:
-          recur rem_times:
-            case _ if cmp_Int(rem_times, 0) matches LT | EQ:
-              Success(rev_items.reverse(), curr_state)
-            case _:
-              match run_parser(parser, curr_state):
-                case Success(item, next_state):
-                  if consumed_tokens(curr_state, next_state):
-                    loop_exact(next_state, rem_times.sub(1), [item, *rev_items], True)
-                  else:
-                    Failure(epsilon_failure_at(next_state, [FailWith("rep_exactly invariant violation: item parser did not consume input")]))
-                case Failure(failure):
-                  committed_failure =
-                    if consumed_any:
-                      mark_arresting(failure)
-                    else:
-                      failure
-                  Failure(committed_failure)
-        loop_exact(spent_state, times, [], False)
+        match run_parser(parser, spent_state):
+          case Success(head, first_state):
+            if consumed_tokens(spent_state, first_state):
+              def loop_exact(
+                curr_state: ParseState,
+                rem_times: Int,
+                rev_tail: List[a],
+              ) -> Step[NonEmpty[a]]:
+                loop rem_times:
+                  case _ if cmp_Int(rem_times, 0) matches LT | EQ:
+                    Success(from_prepend_NonEmptyList(head, rev_tail.reverse()), curr_state)
+                  case _:
+                    match run_parser(parser, curr_state):
+                      case Success(item, next_state):
+                        if consumed_tokens(curr_state, next_state):
+                          loop_exact(next_state, rem_times.sub(1), [item, *rev_tail])
+                        else:
+                          Failure(epsilon_failure_at(next_state, [FailWith("rep_exactly invariant violation: item parser did not consume input")]))
+                      case Failure(failure):
+                        Failure(mark_arresting(failure))
+              loop_exact(first_state, times.sub(1), [])
+            else:
+              Failure(epsilon_failure_at(first_state, [FailWith("rep_exactly invariant violation: item parser did not consume input")]))
+          case Failure(failure):
+            Failure(failure)
       )),
       parser_cost(parser).mul(times).add(1),
     )
@@ -887,7 +978,7 @@ def rep0_max(parser: Parser[a], max_items: Int) -> Parser0[List[a]]:
       True,
     )
 
-def rep_min(parser: Parser[a], min_items: Int) -> Parser[List[a]]:
+def rep_min(parser: Parser[a], min_items: Int) -> Parser[NonEmpty[a]]:
   normalized_min =
     if cmp_Int(min_items, 1) matches LT:
       1
@@ -896,12 +987,15 @@ def rep_min(parser: Parser[a], min_items: Int) -> Parser[List[a]]:
   if normalized_min.eq_Int(1):
     rep(parser)
   else:
-    map_parser(product10(rep_exactly(parser, normalized_min), rep0(parser)), pair -> (
+    map(product10(rep_exactly(parser, normalized_min), rep0(parser)), pair -> (
       (required_items, extra_items) = pair
-      [*required_items, *extra_items]
+      from_prepend_NonEmptyList(
+        head_NonEmptyList(required_items),
+        [*tail_NonEmptyList(required_items), *extra_items],
+      )
     ))
 
-def rep_min_max(parser: Parser[a], min_items: Int, max_items: Int) -> Parser[List[a]]:
+def rep_min_max(parser: Parser[a], min_items: Int, max_items: Int) -> Parser[NonEmpty[a]]:
   normalized_min =
     if cmp_Int(min_items, 1) matches LT:
       1
@@ -910,27 +1004,30 @@ def rep_min_max(parser: Parser[a], min_items: Int, max_items: Int) -> Parser[Lis
   if cmp_Int(max_items, normalized_min) matches LT:
     fail_with("rep_min_max requires max >= min and min >= 1")
   else:
-    map_parser(product10(rep_exactly(parser, normalized_min), rep0_max(parser, max_items.sub(normalized_min))), pair -> (
+    map(product10(rep_exactly(parser, normalized_min), rep0_max(parser, max_items.sub(normalized_min))), pair -> (
       (required_items, extra_items) = pair
-      [*required_items, *extra_items]
+      from_prepend_NonEmptyList(
+        head_NonEmptyList(required_items),
+        [*tail_NonEmptyList(required_items), *extra_items],
+      )
     ))
 
 def tail_value(pair: (a, b)) -> b:
   (_, right) = pair
   right
 
-def rep_sep(parser: Parser[a], sep: Parser0[s]) -> Parser[List[a]]:
-  tail_parser = map_parser(product01(sep, parser), tail_value)
-  map_parser(product10(parser, rep0(tail_parser)), pair -> (
+def rep_sep(parser: Parser[a], sep: Parser0[s]) -> Parser[NonEmpty[a]]:
+  tail_parser = map(product01(sep, parser), tail_value)
+  map(product10(parser, rep0(tail_parser)), pair -> (
     (head, tail) = pair
-    [head, *tail]
+    from_prepend_NonEmptyList(head, tail)
   ))
 
 def rep_sep0(parser: Parser[a], sep: Parser0[s]) -> Parser0[List[a]]:
-  map(optional(rep_sep(parser, sep)), maybe_items -> (
+  map0(optional(rep_sep(parser, sep)), maybe_items -> (
     match maybe_items:
       case Some(items):
-        items
+        to_List_NonEmptyList(items)
       case None:
         []
   ))
@@ -939,7 +1036,7 @@ def rep_until0(parser: Parser[a], end_parser: Parser0[e]) -> Parser0[List[a]]:
   mk_parser0(
     state -> dispatch(state, spent_state -> (
       def loop_until(rem_steps: Int, curr_state: ParseState, rev_items: List[a]) -> Step[List[a]]:
-        recur rem_steps:
+        loop rem_steps:
           case _ if cmp_Int(rem_steps, 0) matches LT | EQ:
             Failure(fuel_failure(curr_state))
           case _:
@@ -969,7 +1066,7 @@ def rep_until0(parser: Parser[a], end_parser: Parser0[e]) -> Parser0[List[a]]:
   )
 
 def rep_until(parser: Parser[a], end_parser: Parser0[e]) -> Parser[List[a]]:
-  map_parser(product10(parser, rep_until0(parser, end_parser)), pair -> (
+  map(product10(parser, rep_until0(parser, end_parser)), pair -> (
     (head, tail) = pair
     [head, *tail]
   ))
@@ -977,7 +1074,7 @@ def rep_until(parser: Parser[a], end_parser: Parser0[e]) -> Parser[List[a]]:
 def chain_left1(term: Parser[a], op: Parser[(a, a) -> a]) -> Parser[a]:
   pair_parser = product(op, term)
   tail_parser = rep0(pair_parser)
-  map_parser(product10(term, tail_parser), pair -> (
+  map(product10(term, tail_parser), pair -> (
     (first, pairs) = pair
     pairs.foldl_List(first, (acc, next_pair) -> (
       (fn, rhs) = next_pair
@@ -988,7 +1085,7 @@ def chain_left1(term: Parser[a], op: Parser[(a, a) -> a]) -> Parser[a]:
 def chain_right1(term: Parser[a], op: Parser[(a, a) -> a]) -> Parser[a]:
   pair_parser = product(op, term)
   tail_parser = rep0(pair_parser)
-  map_parser(product10(term, tail_parser), pair -> (
+  map(product10(term, tail_parser), pair -> (
     (first, pairs) = pair
     match pairs:
       case []:
@@ -1002,7 +1099,7 @@ def chain_right1(term: Parser[a], op: Parser[(a, a) -> a]) -> Parser[a]:
         match terms_rev:
           case [last_term, *rest_terms_rev]:
             def reduce_loop(rem_ops: List[(a, a) -> a], rem_terms: List[a], acc_value: a) -> a:
-              recur rem_ops:
+              loop rem_ops:
                 case []:
                   acc_value
                 case [next_op, *tail_ops]:
@@ -1123,16 +1220,16 @@ tests = TestSuite("Zafu/Text/Parse tests", [
   Assertion(parse(ignore_case_string("AbC"), "aBc") matches Ok(Unit), "ignore_case_string"),
   Assertion(parse(one_of([string("ab"), string("ac")]), "ac") matches Err(_), "committed failure blocks fallback"),
   Assertion(parse(one_of([backtrack(string("ab")), string("ac")]), "ac") matches Ok(Unit), "backtrack enables fallback"),
-  Assertion(parse(not_then(string("ab"), string("ac")), "ac") matches Ok(Unit), "not_then success"),
-  Assertion(parse(not_then(string("ab"), string("ac")), "ab") matches Err(_), "not_then blocks forbidden"),
+  Assertion(parse(not_then(parser_as_parser0(string("ab")), string("ac")), "ac") matches Ok(Unit), "not_then success"),
+  Assertion(parse(not_then(parser_as_parser0(string("ab")), string("ac")), "ab") matches Err(_), "not_then blocks forbidden"),
   Assertion(parse(rep(char_where(is_ascii_digit, "digit")), "1234") matches Ok(_), "rep over consuming parser"),
   Assertion(parse(rep_sep(char_where(is_ascii_alpha, "alpha"), string0(",")), "a,b,c") matches Ok(_), "rep_sep"),
   Assertion(parse(rep_until(char_where(is_ascii_digit, "digit"), string0(".")), "12.") matches Ok(_), "rep_until"),
   Assertion(
     parse(
       chain_left1(
-        map_parser(char_where(is_ascii_digit, "digit"), _ -> 1),
-        map_parser(string("+"), _ -> ((a, b) -> a.add(b))),
+        map(char_where(is_ascii_digit, "digit"), _ -> 1),
+        map(string("+"), _ -> ((a, b) -> a.add(b))),
       ),
       "1+1+1",
     ) matches Ok(3),
@@ -1141,8 +1238,8 @@ tests = TestSuite("Zafu/Text/Parse tests", [
   Assertion(
     parse(
       chain_right1(
-        map_parser(char_where(is_ascii_digit, "digit"), _ -> 2),
-        map_parser(string("^"), _ -> ((a, b) -> a.shift_left_Int(b))),
+        map(char_where(is_ascii_digit, "digit"), _ -> 2),
+        map(string("^"), _ -> ((a, b) -> a.shift_left_Int(b))),
       ),
       "2^2^2",
     ) matches Ok(512),

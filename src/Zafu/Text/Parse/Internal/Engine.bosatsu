@@ -19,7 +19,7 @@ from Zafu/Text/Parse/Internal/Core import (
   parser_cost,
   failure_error,
 )
-from Zafu/Text/Parse/Internal/Error import Error
+from Zafu/Text/Parse/Error import Error
 
 export (
   parser0_fuel,

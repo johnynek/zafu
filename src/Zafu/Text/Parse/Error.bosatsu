@@ -1,4 +1,28 @@
-package Zafu/Text/Parse/Internal/Error
+package Zafu/Text/Parse/Error
+
+from Bosatsu/Char import cmp_Char
+
+from Zafu/Abstract/Eq import eq_from_fn
+
+from Zafu/Abstract/Hash import (
+  Hash,
+  hash_from_fn,
+  hash as hash_Hash,
+  mix_61,
+  finish_61,
+)
+
+from Zafu/Abstract/Instances/Predef import (
+  hash_Char,
+  hash_String,
+)
+
+from Zafu/Collection/HashSet import (
+  HashSet,
+  empty as empty_HashSet,
+  contains as contains_HashSet,
+  updated as updated_HashSet,
+)
 
 export (
   Expectation(),
@@ -34,6 +58,11 @@ struct Error(
   contexts: List[String],
 )
 
+struct DistinctList[a](
+  member: HashSet[a],
+  items: List[a],
+)
+
 def and_Bool(left: Bool, right: Bool) -> Bool:
   if left:
     right
@@ -44,7 +73,7 @@ def string_eq(left: String, right: String) -> Bool:
   cmp_String(left, right) matches EQ
 
 def char_eq(left: Char, right: Char) -> Bool:
-  char_to_Int(left).eq_Int(char_to_Int(right))
+  cmp_Char(left, right) matches EQ
 
 def expectation_eq(left: Expectation, right: Expectation) -> Bool:
   match (left, right):
@@ -65,39 +94,48 @@ def expectation_eq(left: Expectation, right: Expectation) -> Bool:
     case _:
       False
 
-def contains_expectation(items: List[Expectation], item: Expectation) -> Bool:
-  items.foldl_List(False, (acc, next) -> (
-    if acc:
-      True
-    else:
-      expectation_eq(next, item)
-  ))
+def hash_expectation(value: Expectation) -> Int:
+  match value:
+    case ExpectedChar(ch):
+      finish_61(hash_Hash(hash_Char, ch), 1, 1)
+    case ExpectedString(text):
+      finish_61(hash_Hash(hash_String, text), 1, 2)
+    case InRange(lower, upper):
+      finish_61(mix_61(hash_Hash(hash_Char, lower), hash_Hash(hash_Char, upper)), 2, 3)
+    case ExpectedEnd:
+      finish_61(0, 0, 4)
+    case ExpectedPredicate(label):
+      finish_61(hash_Hash(hash_String, label), 1, 5)
+    case FailWith(message):
+      finish_61(hash_Hash(hash_String, message), 1, 6)
+    case InContext(label):
+      finish_61(hash_Hash(hash_String, label), 1, 7)
 
-def append_unique_expectations(items: List[Expectation], item: Expectation) -> List[Expectation]:
-  if contains_expectation(items, item):
+expectation_hash: Hash[Expectation] = hash_from_fn(hash_expectation, eq_from_fn(expectation_eq))
+
+def distinct_empty(hash_item: Hash[a]) -> DistinctList[a]:
+  DistinctList(empty_HashSet(hash_item), [])
+
+def distinct_add(items: DistinctList[a], item: a) -> DistinctList[a]:
+  DistinctList(members, rev_items) = items
+  if contains_HashSet(members, item):
     items
   else:
-    [*items, item]
+    DistinctList(updated_HashSet(members, item), [item, *rev_items])
+
+def distinct_to_List(items: DistinctList[a]) -> List[a]:
+  DistinctList(_, rev_items) = items
+  rev_items.reverse()
 
 def merge_expectations(left: List[Expectation], right: List[Expectation]) -> List[Expectation]:
-  right.foldl_List(left, append_unique_expectations)
-
-def contains_string(items: List[String], item: String) -> Bool:
-  items.foldl_List(False, (acc, next) -> (
-    if acc:
-      True
-    else:
-      string_eq(next, item)
-  ))
-
-def append_unique_context(items: List[String], item: String) -> List[String]:
-  if contains_string(items, item):
-    items
-  else:
-    [*items, item]
+  seeded = left.foldl_List(distinct_empty(expectation_hash), distinct_add)
+  merged = right.foldl_List(seeded, distinct_add)
+  distinct_to_List(merged)
 
 def merge_contexts(left: List[String], right: List[String]) -> List[String]:
-  right.foldl_List(left, append_unique_context)
+  seeded = left.foldl_List(distinct_empty(hash_String), distinct_add)
+  merged = right.foldl_List(seeded, distinct_add)
+  distinct_to_List(merged)
 
 def merge_errors(left: Error, right: Error) -> Error:
   Error(input_left, failed_left, expected_left, contexts_left) = left

@@ -1,6 +1,6 @@
 package Zafu/Text/Parse/Internal/Core
 
-from Zafu/Text/Parse/Internal/Error import (
+from Zafu/Text/Parse/Error import (
   Expectation,
   Caret,
   Error,
