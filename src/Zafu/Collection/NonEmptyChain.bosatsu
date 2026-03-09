@@ -326,7 +326,7 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
-tests = TestSuite("Zafu/Collection/NonEmptyChain tests", [
+constructor_and_conversion_tests = TestSuite("constructors and conversions", [
   Assertion(
     match Prepend(1, from_List_Chain([2, 3])):
       case Prepend(1, _):
@@ -360,6 +360,9 @@ tests = TestSuite("Zafu/Collection/NonEmptyChain tests", [
     "to/from List roundtrip",
   ),
   Assertion(to_List_NonEmptyList(to_NonEmptyList(from_prepend(1, from_List_Chain([2, 3])))) matches [1, 2, 3], "to_NonEmptyList"),
+])
+
+decomposition_tests = TestSuite("decomposition", [
   Assertion(head(from_prepend(1, from_List_Chain([2, 3]))).eq_Int(1), "head Prepend"),
   Assertion(head(from_append(from_List_Chain([1, 2]), 3)).eq_Int(1), "head Append"),
   Assertion(head(from_append(empty_Chain, 3)).eq_Int(3), "head Append empty init"),
@@ -397,6 +400,9 @@ tests = TestSuite("Zafu/Collection/NonEmptyChain tests", [
     "uncons_right Append",
   ),
   Assertion(size(from_prepend(1, from_List_Chain([2, 3]))).eq_Int(3), "size"),
+])
+
+query_and_fold_tests = TestSuite("queries and folds", [
   Assertion(any(from_prepend(False, from_List_Chain([True, False]))), "any hit"),
   Assertion(any(from_prepend(False, from_List_Chain([False]))) matches False, "any miss"),
   Assertion(exists(from_prepend(1, from_List_Chain([2, 3])), i -> i.eq_Int(2)), "exists hit"),
@@ -418,6 +424,9 @@ tests = TestSuite("Zafu/Collection/NonEmptyChain tests", [
   Assertion(foldr(from_prepend(1, from_List_Chain([2, 3])), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr"),
   Assertion(sum(from_prepend(1, from_List_Chain([2, 3, 4]))).eq_Int(10), "sum"),
   Assertion(sumf(from_prepend(1.25, from_List_Chain([2.5, 0.25]))).cmp_Float64(4.0) matches EQ, "sumf"),
+])
+
+transform_and_composition_tests = TestSuite("transforms and composition", [
   Assertion(to_List(map(from_prepend(1, from_List_Chain([2, 3])), i -> i.add(10))) matches [11, 12, 13], "map"),
   Assertion(to_List(map(singleton(4), i -> i.add(1))) matches [5], "map preserves non-empty"),
   Assertion(
@@ -451,6 +460,9 @@ tests = TestSuite("Zafu/Collection/NonEmptyChain tests", [
   Assertion(combine_all(from_prepend(1, from_List_Chain([2, 3])), semigroup_from_combine(add)).eq_Int(6), "combine_all"),
   Assertion(combine_all(singleton(7), semigroup_from_combine(add)).eq_Int(7), "combine_all singleton"),
   Assertion(to_List(reverse(from_prepend(1, from_List_Chain([2, 3])))) matches [3, 2, 1], "reverse"),
+])
+
+typeclass_adapter_tests = TestSuite("typeclass adapters", [
   (
     inst = eq_NonEmptyChain(eq_Int_inst)
     Assertion(eq_Eq(inst, from_prepend(1, from_List_Chain([2])), from_append(from_List_Chain([1]), 2)), "eq_NonEmptyChain equal")
@@ -485,4 +497,12 @@ tests = TestSuite("Zafu/Collection/NonEmptyChain tests", [
       "hash_NonEmptyChain differs for sample unequal values",
     )
   ),
+])
+
+tests = TestSuite("Zafu/Collection/NonEmptyChain tests", [
+  constructor_and_conversion_tests,
+  decomposition_tests,
+  query_and_fold_tests,
+  transform_and_composition_tests,
+  typeclass_adapter_tests,
 ])
