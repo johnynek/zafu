@@ -59,20 +59,41 @@ enum Chain[a: +*]:
   Singleton(item: a)
   WrapArray(items: Array[a])
   WrapList(items: List[a])
-  Concat(size: Int, left: Chain[a], right: Chain[a])
+  Concat(nodes: Int, left: Chain[a], right: Chain[a])
 
-def chain_size(chain: Chain[a]) -> Int:
+def chain_nodes(chain: Chain[a]) -> Int:
   match chain:
     case Empty:
       0
     case Singleton(_):
       1
-    case WrapArray(items):
-      size_Array(items)
-    case WrapList(items):
-      size_List(items)
-    case Concat(size, _, _):
-      size
+    case WrapArray(_):
+      1
+    case WrapList(_):
+      1
+    case Concat(nodes, _, _):
+      nodes
+
+def chain_size(chain: Chain[a]) -> Int:
+  def loop_size(rem: Int, stack: List[Chain[a]], acc: Int) -> Int:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_size(rem.sub(1), tail, acc)
+          case [Singleton(_), *tail]:
+            loop_size(rem.sub(1), tail, acc.add(1))
+          case [WrapArray(items), *tail]:
+            loop_size(rem.sub(1), tail, acc.add(size_Array(items)))
+          case [WrapList(items), *tail]:
+            loop_size(rem.sub(1), tail, acc.add(size_List(items)))
+          case [Concat(_, left, right), *tail]:
+            loop_size(rem.sub(1), [left, right, *tail], acc)
+  loop_size(chain_nodes(chain).add(1), [chain], 0)
 
 def from_Array(items: Array[a]) -> Chain[a]:
   sz = size_Array(items)
@@ -114,7 +135,7 @@ def concat(left: Chain[a], right: Chain[a]) -> Chain[a]:
         case Empty:
           left
         case _:
-          Concat(chain_size(left).add(chain_size(right)), left, right)
+          Concat(chain_nodes(left).add(chain_nodes(right)).add(1), left, right)
 
 # Concatenate all chains from left to right.
 def concat_all(chains: List[Chain[a]]) -> Chain[a]:
@@ -133,7 +154,7 @@ def size(chain: Chain[a]) -> Int:
   chain_size(chain)
 
 def traversal_fuel(chain: Chain[a]) -> Int:
-  chain_size(chain).mul(2).add(64)
+  chain_nodes(chain).add(64)
 
 # Stack-safe left fold.
 def foldl(chain: Chain[a], init: b, fn: (b, a) -> b) -> b:
