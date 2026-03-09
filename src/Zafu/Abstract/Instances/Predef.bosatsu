@@ -423,7 +423,18 @@ ord_String: Ord[String] = ord_from_cmp(cmp_String)
 eq_String: Eq[String] = ord_to_eq(ord_String)
 hash_String: Hash[String] = hash_specialized(hash_string_value, eq_String)
 
-semigroup_Unit: Semigroup[Unit] = semigroup_from_combine((left, _) -> left)
+def combine_all_option_Unit(items: List[Unit]) -> Option[Unit]:
+  match items:
+    case []:
+      None
+    case _:
+      Some(())
+
+semigroup_Unit: Semigroup[Unit] = semigroup_specialized(
+  (_, _) -> (),
+  (_, _) -> (),
+  combine_all_option_Unit,
+)
 monoid_Unit: Monoid[Unit] = monoid_from_semigroup((), semigroup_Unit)
 
 def combine_n_positive_or_self(semigroup_item: Semigroup[a], value: a, n: Int) -> a:
@@ -586,7 +597,25 @@ def hash_List(hash_item: Hash[a]) -> Hash[List[a]]:
     eq_List(eq_item),
   )
 
-semigroup_List: Semigroup[List[a]] = semigroup_from_combine((left, right) -> left.concat(right))
+list_concat_semigroup: Semigroup[List[a]] = semigroup_from_combine((left, right) -> left.concat(right))
+
+def combine_all_option_List(items: List[List[a]]) -> Option[List[a]]:
+  match items:
+    case []:
+      None
+    case _:
+      # Avoid repeated left-associated concat, which is quadratic.
+      chunks_rev = items.foldl_List([], (acc, chunk) -> [chunk, *acc])
+      flattened = chunks_rev.foldl_List([], (acc, chunk) -> (
+        chunk.reverse().foldl_List(acc, (chunk_acc, item) -> [item, *chunk_acc])
+      ))
+      Some(flattened)
+
+semigroup_List: Semigroup[List[a]] = semigroup_specialized(
+  (left, right) -> left.concat(right),
+  (value, n) -> combine_n_positive_or_self(list_concat_semigroup, value, n),
+  combine_all_option_List,
+)
 monoid_List: Monoid[List[a]] = monoid_from_semigroup([], semigroup_List)
 
 def eq_Tuple1(eq1: Eq[a1]) -> Eq[Tuple1[a1]]:
