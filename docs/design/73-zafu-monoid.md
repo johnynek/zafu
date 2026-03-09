@@ -57,7 +57,6 @@ Proposed
 3. Ensure `monoid_to_semigroup` preserves all specialization embedded in the original semigroup dictionary.
 4. Keep API and naming consistent with current `Semigroup` module style.
 5. Add practical `Predef` monoid instances for existing primitive and structural types.
-6. Document recommended `Semigroup` additions requested in the issue body.
 
 ## Non-goals
 
@@ -154,18 +153,6 @@ Naming policy:
 2. Keep suffixes for ambiguous scalar policies.
 3. Do not add unsuffixed aliases (`monoid_Int`, `monoid_Bool`, `monoid_Float64`) in this issue.
 
-### Semigroup suggestions requested by issue #73
-
-The issue also asks which semigroups should be added to `Predef`. Recommended candidates:
-
-1. `semigroup_Comparison_then`: left-biased non-`EQ` composition (`EQ` behaves as identity), matching lexicographic comparator chaining.
-2. `semigroup_Dict_merge(semigroup_value)`: key-wise union that combines colliding values with provided semigroup.
-3. Explicit bias variants if a default map policy is undesirable:
-`semigroup_Dict_first` (left-biased)
-`semigroup_Dict_last` (right-biased)
-
-These semigroup additions are recommendations; they are not required to ship `Monoid` core.
-
 ## Implementation Plan
 
 ### Phase 1: Monoid module
@@ -222,8 +209,8 @@ Mitigation: follow established tuple-generation pattern and include representati
 3. Risk: ambiguity of scalar operation choices causes confusion.
 Mitigation: keep explicit suffixed names and avoid unsuffixed defaults for ambiguous primitives.
 
-4. Risk: scope expansion from map/dict semigroup policy decisions delays monoid delivery.
-Mitigation: keep dict semigroup recommendations out of required scope for this issue.
+4. Risk: scope expansion into additional typeclass hierarchy work delays monoid delivery.
+Mitigation: keep this issue focused on core Monoid plus predef monoid instances.
 
 ## Rollout Notes
 
@@ -231,4 +218,3 @@ Mitigation: keep dict semigroup recommendations out of required scope for this i
 2. Existing semigroup-based code continues to work unchanged.
 3. Encourage downstream modules to prefer `monoid_from_semigroup` so optimized semigroup implementations are reused.
 4. Include short PR notes with examples of replacing manual empty+fold code with `combine_all`.
-5. Track semigroup recommendation follow-ups (`Comparison_then`, `Dict_*`) as separate issues if not included in this implementation PR.
