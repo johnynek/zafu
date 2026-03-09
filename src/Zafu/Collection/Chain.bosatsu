@@ -7,6 +7,7 @@ from Bosatsu/Collection/Array import (
   size_Array,
   get_Array,
   foldl_Array,
+  slice_Array,
   reverse_Array,
 )
 from Bosatsu/Rand import (
@@ -240,22 +241,78 @@ def get_or(chain: Chain[a], idx: Int, fn: () -> a) -> a:
   find_with(chain, idx, fn, item -> item)
 
 def uncons_left(chain: Chain[a]) -> Option[(a, Chain[a])]:
-  foldr(chain, None, (item, state) -> (
-    match state:
-      case None:
-        Some((item, empty))
-      case Some((head, tail)):
-        Some((item, prepend(head, tail)))
-  ))
+  def loop_uncons(rem: Int, current: Chain[a], suffix: Chain[a]) -> Option[(a, Chain[a])]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        None
+      case _:
+        match current:
+          case Empty:
+            match suffix:
+              case Empty:
+                None
+              case _:
+                loop_uncons(rem.sub(1), suffix, empty)
+          case Singleton(item):
+            Some((item, suffix))
+          case WrapArray(items):
+            cnt = size_Array(items)
+            if cnt.eq_Int(0):
+              loop_uncons(rem.sub(1), suffix, empty)
+            else:
+              match get_Array(items, 0):
+                case Some(head):
+                  tail = from_Array(slice_Array(items, 1, cnt))
+                  Some((head, concat(tail, suffix)))
+                case None:
+                  None
+          case WrapList(items):
+            match items:
+              case []:
+                loop_uncons(rem.sub(1), suffix, empty)
+              case [head, *tail]:
+                Some((head, concat(from_List(tail), suffix)))
+          case Concat(left, right):
+            loop_uncons(rem.sub(1), left, concat(right, suffix))
+  loop_uncons(traversal_fuel(chain), chain, empty)
 
 def uncons_right(chain: Chain[a]) -> Option[(Chain[a], a)]:
-  foldl(chain, None, (state, item) -> (
-    match state:
-      case None:
-        Some((empty, item))
-      case Some((prefix, last)):
-        Some((append(prefix, last), item))
-  ))
+  def loop_uncons(rem: Int, current: Chain[a], prefix: Chain[a]) -> Option[(Chain[a], a)]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        None
+      case _:
+        match current:
+          case Empty:
+            match prefix:
+              case Empty:
+                None
+              case _:
+                loop_uncons(rem.sub(1), prefix, empty)
+          case Singleton(item):
+            Some((prefix, item))
+          case WrapArray(items):
+            cnt = size_Array(items)
+            if cnt.eq_Int(0):
+              loop_uncons(rem.sub(1), prefix, empty)
+            else:
+              last_idx = cnt.sub(1)
+              match get_Array(items, last_idx):
+                case Some(last):
+                  init = from_Array(slice_Array(items, 0, last_idx))
+                  Some((concat(prefix, init), last))
+                case None:
+                  None
+          case WrapList(items):
+            rev = items.reverse()
+            match rev:
+              case []:
+                loop_uncons(rem.sub(1), prefix, empty)
+              case [last, *init_rev]:
+                Some((concat(prefix, from_List(init_rev.reverse())), last))
+          case Concat(left, right):
+            loop_uncons(rem.sub(1), right, concat(prefix, left))
+  loop_uncons(traversal_fuel(chain), chain, empty)
 
 # Map over all elements.
 def map(chain: Chain[a], fn: a -> b) -> Chain[b]:
@@ -580,6 +637,20 @@ tests = TestSuite("Chain tests", [
       case None:
         False,
     "uncons_right sanity"),
+  Assertion(
+    match uncons_left(from_Array(from_List_Array([1, 2, 3]))):
+      case Some((head, tail)):
+        and_Bool(head.eq_Int(1), tail.to_List() matches [2, 3])
+      case None:
+        False,
+    "uncons_left array sanity"),
+  Assertion(
+    match uncons_right(from_Array(from_List_Array([1, 2, 3]))):
+      case Some((init, last)):
+        and_Bool(last.eq_Int(3), init.to_List() matches [1, 2])
+      case None:
+        False,
+    "uncons_right array sanity"),
   Assertion(concat(empty, singleton(1)).to_List() matches [1], "concat left empty"),
   Assertion(concat(singleton(1), empty).to_List() matches [1], "concat right empty"),
   Assertion(prepend(1, from_List([2, 3])).to_List() matches [1, 2, 3], "prepend sanity"),
@@ -595,13 +666,33 @@ tests = TestSuite("Chain tests", [
     deep = deep_concat_chain(20000)
     expected_sum = 20000.mul(20001).div(2)
     deep_list = to_List(deep)
+    deep_uncons_left_ok =
+      match uncons_left(deep):
+        case Some((head, tail)):
+          and_Bool(
+            head.eq_Int(20000),
+            size(tail).eq_Int(19999))
+        case None:
+          False
+    deep_uncons_right_ok =
+      match uncons_right(deep):
+        case Some((init, last)):
+          and_Bool(
+            last.eq_Int(1),
+            size(init).eq_Int(19999))
+        case None:
+          False
     Assertion(and_Bool(
       and_Bool(
         size(deep).eq_Int(20000),
         size_List(deep_list).eq_Int(20000)),
       and_Bool(
-        foldl(deep, 0, add).eq_Int(expected_sum),
-        foldr(deep, 0, (item, acc) -> item.add(acc)).eq_Int(expected_sum))),
+        and_Bool(
+          foldl(deep, 0, add).eq_Int(expected_sum),
+          foldr(deep, 0, (item, acc) -> item.add(acc)).eq_Int(expected_sum)),
+        and_Bool(
+          deep_uncons_left_ok,
+          deep_uncons_right_ok))),
       "deep stack-safe operations")
   ),
   run_Prop(chain_props, 200, 20260303),
