@@ -2,7 +2,7 @@ package Zafu/Collection/Vector
 
 from Bosatsu/List import (
   eq_List,
-  zip,
+  zip as zip_List,
 )
 from Bosatsu/Collection/Array import (
   Array,
@@ -39,28 +39,27 @@ from Zafu/Collection/List import size as size_List
 
 export (
   Vector,
-  empty_Vector,
-  from_List_Vector,
-  to_List_Vector,
+  empty,
+  from_List,
+  to_List,
   size,
-  size_Vector,
-  index_Vector,
-  get_or_Vector,
-  foldl_Vector,
-  foldr_Vector,
-  map_Vector,
-  flat_map_Vector,
-  filter_Vector,
-  concat_Vector,
-  concat_all_Vector,
-  append_Vector,
-  prepend_Vector,
-  updated_Vector,
-  slice_Vector,
-  take_Vector,
-  drop_Vector,
-  split_Vector,
-  zip_Vector,
+  index,
+  get_or,
+  foldl,
+  foldr,
+  map,
+  flat_map,
+  filter,
+  concat,
+  concat_all,
+  append,
+  prepend,
+  updated,
+  slice,
+  take,
+  drop,
+  split,
+  zip,
 )
 
 chunk_width = 32
@@ -73,18 +72,14 @@ enum Vector:
 struct CatFrame(parent_height: Int, left_prefix: Array[Vector[a]], right_suffix: Array[Vector[a]])
 
 # The empty vector.
-empty_Vector: forall a. Vector[a] = Leaf(0, empty_Array)
+empty: forall a. Vector[a] = Leaf(0, empty_Array)
 
 # Returns the number of elements in a vector.
-def size_Vector(vec: Vector[a]) -> Int:
+def size(vec: Vector[a]) -> Int:
   Leaf(sz, _) | Branch(_, sz, _, _) = vec
   sz
 
-# Alias for size_Vector.
-def size(vec: Vector[a]) -> Int:
-  size_Vector(vec)
-
-def height_Vector(vec: Vector[a]) -> Int:
+def height(vec: Vector[a]) -> Int:
   match vec:
     case Leaf(_, _):
       0
@@ -121,8 +116,8 @@ def build_prefix(children: Array[Vector[a]]) -> Array[Int]:
   cnt = size_Array(children)
   (_, _, rev_prefix) = int_loop(cnt, (0, 0, []), (rem, state) -> (
     (idx, total, rev_prefix) = state
-    child = get_or_Array(children, idx, _ -> empty_Vector)
-    next_total = total.add(size_Vector(child))
+    child = get_or_Array(children, idx, _ -> empty)
+    next_total = total.add(size(child))
     (rem.sub(1), (idx.add(1), next_total, [next_total, *rev_prefix]))
   ))
   from_List_Array(rev_prefix.reverse())
@@ -147,7 +142,7 @@ def collapse_nodes(nodes: Array[Vector[a]]) -> Option[Vector[a]]:
   if cnt0.cmp_Int(1) matches LT | EQ:
     get_Array(nodes, 0)
   else:
-    child_height0 = get_or_Array(nodes, 0, _ -> empty_Vector).height_Vector()
+    child_height0 = get_or_Array(nodes, 0, _ -> empty).height()
     (nodes_final, _) = int_loop(cnt0.add(64), (nodes, child_height0), (rem, state) -> (
       (nodes, child_height) = state
       cnt = size_Array(nodes)
@@ -160,10 +155,10 @@ def collapse_nodes(nodes: Array[Vector[a]]) -> Option[Vector[a]]:
     ))
     get_Array(nodes_final, 0)
 
-def from_Array_Vector(arr: Array[a]) -> Vector[a]:
+def from_Array(arr: Array[a]) -> Vector[a]:
   total = size_Array(arr)
   if total.eq_Int(0):
-    empty_Vector
+    empty
   else:
     leaf_cnt = chunk_count(total)
     leaves = tabulate_Array(leaf_cnt, idx -> (
@@ -174,7 +169,7 @@ def from_Array_Vector(arr: Array[a]) -> Vector[a]:
     ))
 
     if leaf_cnt.eq_Int(1):
-      get_or_Array(leaves, 0, _ -> empty_Vector)
+      get_or_Array(leaves, 0, _ -> empty)
     else:
       (nodes_final, _) = int_loop(leaf_cnt.add(64), (leaves, 0), (rem, state) -> (
         (nodes, child_height) = state
@@ -192,11 +187,11 @@ def from_Array_Vector(arr: Array[a]) -> Vector[a]:
           ))
           (rem.sub(1), (next_nodes, parent_height))
       ))
-      get_or_Array(nodes_final, 0, _ -> empty_Vector)
+      get_or_Array(nodes_final, 0, _ -> empty)
 
 # Builds a vector from a list while preserving order.
-def from_List_Vector(list: List[a]) -> Vector[a]:
-  from_Array_Vector(from_List_Array(list))
+def from_List(list: List[a]) -> Vector[a]:
+  from_Array(from_List_Array(list))
 
 def push_children_ltr(children: Array[Vector[a]], stack: List[Vector[a]]) -> List[Vector[a]]:
   rev_children = reverse_Array(children)
@@ -205,7 +200,7 @@ def push_children_ltr(children: Array[Vector[a]], stack: List[Vector[a]]) -> Lis
 def push_children_rtl(children: Array[Vector[a]], stack: List[Vector[a]]) -> List[Vector[a]]:
   foldl_Array(children, stack, (acc, child) -> [child, *acc])
 
-def to_Array_Vector(vec: Vector[a]) -> Array[a]:
+def to_Array(vec: Vector[a]) -> Array[a]:
   fuel = traversal_fuel(vec)
   (_, rev_chunks) = int_loop(fuel, ([vec], []), (rem, state) -> (
     (stack, rev_chunks) = state
@@ -221,8 +216,8 @@ def to_Array_Vector(vec: Vector[a]) -> Array[a]:
   concat_all_Array(rev_chunks.reverse())
 
 # Converts a vector to a list in element order.
-def to_List_Vector(vec: Vector[a]) -> List[a]:
-  to_List_Array(to_Array_Vector(vec))
+def to_List(vec: Vector[a]) -> List[a]:
+  to_List_Array(to_Array(vec))
 
 def choose_child_loop(prefix: Array[Int], target: Int, low: Int, high: Int, fuel: Int) -> Option[Int]:
   recur fuel:
@@ -250,7 +245,7 @@ def choose_child_loop(prefix: Array[Int], target: Int, low: Int, high: Int, fuel
 def choose_child(prefix: Array[Int], target: Int, low: Int, high: Int, fuel: Int) -> Option[Int]:
   choose_child_loop(prefix, target, low, high, fuel)
 
-def find_with_Vector_loop(current: Vector[a], current_idx: Int, fuel: Int, on_missing: () -> b, on_found: a -> b) -> b:
+def find_with_loop(current: Vector[a], current_idx: Int, fuel: Int, on_missing: () -> b, on_found: a -> b) -> b:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       on_missing(Unit)
@@ -276,30 +271,30 @@ def find_with_Vector_loop(current: Vector[a], current_idx: Int, fuel: Int, on_mi
                 local_idx = current_idx.sub(prev)
                 match get_Array(children, child_idx):
                   case Some(child):
-                    find_with_Vector_loop(child, local_idx, fuel.sub(1), on_missing, on_found)
+                    find_with_loop(child, local_idx, fuel.sub(1), on_missing, on_found)
                   case None:
                     on_missing(Unit)
 
-# Lookup helper used by both index_Vector and get_or_Vector.
-def find_with_Vector(vec: Vector[a], idx: Int, on_missing: () -> b, on_found: a -> b) -> b:
+# Lookup helper used by both index and get_or.
+def find_with(vec: Vector[a], idx: Int, on_missing: () -> b, on_found: a -> b) -> b:
   if cmp_Int(idx, 0) matches LT:
     on_missing()
   elif cmp_Int(idx, size(vec)) matches GT | EQ:
     on_missing()
   else:
-    fuel = height_Vector(vec).add(4).add(1)
-    find_with_Vector_loop(vec, idx, fuel, on_missing, on_found)
+    fuel = height(vec).add(4).add(1)
+    find_with_loop(vec, idx, fuel, on_missing, on_found)
 
 # Returns the element at an index when it is in bounds.
-def index_Vector(vec: Vector[a], idx: Int) -> Option[a]:
-  find_with_Vector(vec, idx, _ -> None, item -> Some(item))
+def index(vec: Vector[a], idx: Int) -> Option[a]:
+  find_with(vec, idx, _ -> None, item -> Some(item))
 
 # Returns the element at an index, or calls fn when out of bounds.
-def get_or_Vector(vec: Vector[a], idx: Int, fn: Unit -> a) -> a:
-  find_with_Vector(vec, idx, fn, item -> item)
+def get_or(vec: Vector[a], idx: Int, fn: Unit -> a) -> a:
+  find_with(vec, idx, fn, item -> item)
 
 # Left fold over all vector elements.
-def foldl_Vector(vec: Vector[a], init: b, fn: (b, a) -> b) -> b:
+def foldl(vec: Vector[a], init: b, fn: (b, a) -> b) -> b:
   def go(fuel, stack, acc):
     loop (fuel, stack):
         case (_, [Leaf(_, items), *tail]) if cmp_Int(fuel, 0) matches GT:
@@ -316,7 +311,7 @@ def foldr_leaf(items: Array[a], init: b, fn: (a, b) -> b) -> b:
   foldl_Array(rev, init, (acc, item) -> fn(item, acc))
 
 # Right fold over all vector elements.
-def foldr_Vector(vec: Vector[a], init: b, fn: (a, b) -> b) -> b:
+def foldr(vec: Vector[a], init: b, fn: (a, b) -> b) -> b:
   fuel = traversal_fuel(vec)
   (_, acc) = int_loop(fuel, ([vec], init), (rem, state) -> (
     (stack, acc) = state
@@ -332,32 +327,32 @@ def foldr_Vector(vec: Vector[a], init: b, fn: (a, b) -> b) -> b:
   ))
   acc
 
-def map_with_fuel_Vector(vec: Vector[a], fn: a -> b, fuel: Int) -> Vector[b]:
+def map_with_fuel(vec: Vector[a], fn: a -> b, fuel: Int) -> Vector[b]:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches GT:
       match vec:
         case Leaf(sz, items):
           Leaf(sz, map_Array(items, fn))
         case Branch(height, sz, prefix, children):
-          mapped_children = map_Array(children, child -> map_with_fuel_Vector(child, fn, fuel.sub(1)))
+          mapped_children = map_Array(children, child -> map_with_fuel(child, fn, fuel.sub(1)))
           Branch(height, sz, prefix, mapped_children)
     case _:
-      empty_Vector
+      empty
 
 # Maps each element to a new vector while preserving tree shape.
-def map_Vector(vec: Vector[a], fn: a -> b) -> Vector[b]:
-  map_with_fuel_Vector(vec, fn, height_Vector(vec).add(1))
+def map(vec: Vector[a], fn: a -> b) -> Vector[b]:
+  map_with_fuel(vec, fn, height(vec).add(1))
 
 # Keeps elements that satisfy a predicate.
-def filter_Vector(vec: Vector[a], pred: a -> Bool) -> Vector[a]:
-  arr = to_Array_Vector(vec)
+def filter(vec: Vector[a], pred: a -> Bool) -> Vector[a]:
+  arr = to_Array(vec)
   rev = foldl_Array(arr, [], (acc, item) -> [item, *acc] if pred(item) else acc)
-  from_List_Vector(rev.reverse())
+  from_List(rev.reverse())
 
 # Maps each element to a vector and concatenates the results.
-def flat_map_Vector(vec: Vector[a], fn: a -> Vector[b]) -> Vector[b]:
-  rev_arrays = foldl_Vector(vec, [], (acc, item) -> [to_Array_Vector(fn(item)), *acc])
-  from_Array_Vector(concat_all_Array(rev_arrays.reverse()))
+def flat_map(vec: Vector[a], fn: a -> Vector[b]) -> Vector[b]:
+  rev_arrays = foldl(vec, [], (acc, item) -> [to_Array(fn(item)), *acc])
+  from_Array(concat_all_Array(rev_arrays.reverse()))
 
 def split_first_Array(arr: Array[a]) -> Option[(a, Array[a])]:
   match get_Array(arr, 0):
@@ -390,18 +385,18 @@ def leaf_nodes(arr: Array[a]) -> Array[Vector[a]]:
   ))
 
 def raise_to_height(vec: Vector[a], target_height: Int) -> Vector[a]:
-  current_height = height_Vector(vec)
+  current_height = height(vec)
   if cmp_Int(current_height, target_height) matches LT:
     diff = target_height.sub(current_height)
     int_loop(diff, vec, (rem, node) -> (
       child_arr = from_List_Array([node])
-      (rem.sub(1), make_branch(height_Vector(node).add(1), child_arr))
+      (rem.sub(1), make_branch(height(node).add(1), child_arr))
     ))
   else:
     vec
 
 def descend_edges(left: Vector[a], right: Vector[a]) -> Option[(List[CatFrame[a]], Array[a], Array[a])]:
-  fuel = height_Vector(left).add(height_Vector(right)).add(8)
+  fuel = height(left).add(height(right)).add(8)
   (_, result) = int_loop(fuel, (Some((left, right, [])), None), (rem, state) -> (
     (pending, _) = state
     match pending:
@@ -447,8 +442,8 @@ def concat_same_height(left: Vector[a], right: Vector[a]) -> Option[Array[Vector
       Some(ascend_frames(frames, merged_leaves))
 
 def concat_rrb(left: Vector[a], right: Vector[a]) -> Option[Vector[a]]:
-  left_h = height_Vector(left)
-  right_h = height_Vector(right)
+  left_h = height(left)
+  right_h = height(right)
   (aligned_left, aligned_right) = match cmp_Int(left_h, right_h):
     case LT:
       (raise_to_height(left, right_h), right)
@@ -464,11 +459,11 @@ def concat_rrb(left: Vector[a], right: Vector[a]) -> Option[Vector[a]]:
       collapse_nodes(nodes)
 
 def concat_fallback(left: Vector[a], right: Vector[a]) -> Vector[a]:
-  arr = concat_all_Array([to_Array_Vector(left), to_Array_Vector(right)])
-  from_Array_Vector(arr)
+  arr = concat_all_Array([to_Array(left), to_Array(right)])
+  from_Array(arr)
 
 # Concatenates two vectors.
-def concat_Vector(left: Vector[a], right: Vector[a]) -> Vector[a]:
+def concat(left: Vector[a], right: Vector[a]) -> Vector[a]:
   if size(left).eq_Int(0):
     right
   elif size(right).eq_Int(0):
@@ -481,8 +476,8 @@ def concat_Vector(left: Vector[a], right: Vector[a]) -> Vector[a]:
         concat_fallback(left, right)
 
 # Concatenates all vectors in a list from left to right.
-def concat_all_Vector(vecs: List[Vector[a]]) -> Vector[a]:
-  vecs.foldl_List(empty_Vector, concat_Vector)
+def concat_all(vecs: List[Vector[a]]) -> Vector[a]:
+  vecs.foldl_List(empty, concat)
 
 def singleton_leaf(item: a) -> Vector[a]:
   Leaf(1, from_List_Array([item]))
@@ -490,9 +485,9 @@ def singleton_leaf(item: a) -> Vector[a]:
 def node_from_children(height: Int, children: Array[Vector[a]]) -> Vector[a]:
   cnt = size_Array(children)
   if cnt.eq_Int(0):
-    empty_Vector
+    empty
   elif cnt.eq_Int(1):
-    get_or_Array(children, 0, _ -> empty_Vector)
+    get_or_Array(children, 0, _ -> empty)
   else:
     make_branch(height, children)
 
@@ -514,7 +509,7 @@ def append_nodes_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Array[Vector[a
             from_List_Array([concat_fallback(vec, singleton_leaf(item))])
           else:
             last_idx = cnt.sub(1)
-            child = get_or_Array(children, last_idx, _ -> empty_Vector)
+            child = get_or_Array(children, last_idx, _ -> empty)
             grown = append_nodes_with_fuel(child, item, fuel.sub(1))
             grown_cnt = size_Array(grown)
             if grown_cnt.eq_Int(1):
@@ -549,7 +544,7 @@ def prepend_nodes_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Array[Vector[
           if cnt.eq_Int(0):
             from_List_Array([concat_fallback(singleton_leaf(item), vec)])
           else:
-            child = get_or_Array(children, 0, _ -> empty_Vector)
+            child = get_or_Array(children, 0, _ -> empty)
             grown = prepend_nodes_with_fuel(child, item, fuel.sub(1))
             grown_cnt = size_Array(grown)
             if grown_cnt.eq_Int(1):
@@ -567,7 +562,7 @@ def prepend_nodes_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Array[Vector[
                 right_children = slice_Array(expanded_children, chunk_width, expanded_cnt)
                 from_List_Array([make_branch(height, left_children), make_branch(height, right_children)])
 
-def updated_with_fuel_Vector(vec: Vector[a], idx: Int, item: a, fuel: Int) -> Option[Vector[a]]:
+def updated_with_fuel(vec: Vector[a], idx: Int, item: a, fuel: Int) -> Option[Vector[a]]:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       None
@@ -600,17 +595,17 @@ def updated_with_fuel_Vector(vec: Vector[a], idx: Int, item: a, fuel: Int) -> Op
                     case None:
                       None
                     case Some(child):
-                      match updated_with_fuel_Vector(child, local_idx, item, fuel.sub(1)):
+                      match updated_with_fuel(child, local_idx, item, fuel.sub(1)):
                         case None:
                           None
                         case Some(next_child):
                           next_children = set_or_self_Array(children, child_idx, next_child)
                           Some(Branch(height, sz, prefix, next_children))
 
-def take_with_fuel_Vector(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
+def take_with_fuel(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
-      empty_Vector
+      empty
     case _:
       match vec:
         case Leaf(_, items):
@@ -619,27 +614,27 @@ def take_with_fuel_Vector(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
         case Branch(height, _, prefix, children):
           cnt = size_Array(children)
           if cnt.eq_Int(0):
-            empty_Vector
+            empty
           else:
             match choose_child(prefix, count.sub(1), 0, cnt.sub(1), cnt.add(4)):
               case None:
-                empty_Vector
+                empty
               case Some(child_idx):
                 prev = get_or_Array(prefix, child_idx.sub(1), _ -> 0)
                 local_count = count.sub(prev)
-                child = get_or_Array(children, child_idx, _ -> empty_Vector)
-                child_taken = if local_count.eq_Int(size_Vector(child)):
+                child = get_or_Array(children, child_idx, _ -> empty)
+                child_taken = if local_count.eq_Int(size(child)):
                   child
                 else:
-                  take_with_fuel_Vector(child, local_count, fuel.sub(1))
+                  take_with_fuel(child, local_count, fuel.sub(1))
                 left_children = slice_Array(children, 0, child_idx)
                 kept_children = concat_all_Array([left_children, from_List_Array([child_taken])])
                 node_from_children(height, kept_children)
 
-def drop_with_fuel_Vector(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
+def drop_with_fuel(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
-      empty_Vector
+      empty
     case _:
       match vec:
         case Leaf(_, items):
@@ -649,27 +644,27 @@ def drop_with_fuel_Vector(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
         case Branch(height, _, prefix, children):
           cnt = size_Array(children)
           if cnt.eq_Int(0):
-            empty_Vector
+            empty
           else:
             match choose_child(prefix, count, 0, cnt.sub(1), cnt.add(4)):
               case None:
-                empty_Vector
+                empty
               case Some(child_idx):
                 prev = get_or_Array(prefix, child_idx.sub(1), _ -> 0)
                 local_count = count.sub(prev)
-                child = get_or_Array(children, child_idx, _ -> empty_Vector)
+                child = get_or_Array(children, child_idx, _ -> empty)
                 child_kept = if local_count.eq_Int(0):
                   child
                 else:
-                  drop_with_fuel_Vector(child, local_count, fuel.sub(1))
+                  drop_with_fuel(child, local_count, fuel.sub(1))
                 right_children = slice_Array(children, child_idx.add(1), cnt)
-                kept_children = if child_kept.size_Vector().eq_Int(0):
+                kept_children = if child_kept.size().eq_Int(0):
                   right_children
                 else:
                   concat_all_Array([from_List_Array([child_kept]), right_children])
                 node_from_children(height, kept_children)
 
-def next_leaf_Vector(stack: List[Vector[a]], fuel: Int) -> Option[(Array[a], List[Vector[a]])]:
+def next_leaf(stack: List[Vector[a]], fuel: Int) -> Option[(Array[a], List[Vector[a]])]:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       None
@@ -680,7 +675,7 @@ def next_leaf_Vector(stack: List[Vector[a]], fuel: Int) -> Option[(Array[a], Lis
         case [Leaf(_, items), *tail]:
           Some((items, tail))
         case [Branch(_, _, _, children), *tail]:
-          next_leaf_Vector(push_children_ltr(children, tail), fuel.sub(1))
+          next_leaf(push_children_ltr(children, tail), fuel.sub(1))
 
 def zip_chunk_with_fuel(left_items: Array[a], left_idx: Int, right_items: Array[b], right_idx: Int, rem: Int, rev_pairs: List[(a, b)]) -> (Int, Int, List[(a, b)]):
   recur rem:
@@ -715,7 +710,7 @@ def zip_rev_with_fuel(left_stack: List[Vector[a]], right_stack: List[Vector[b]],
         case Some(curr):
           Some((curr, left_stack))
         case None:
-          match next_leaf_Vector(left_stack, fuel.sub(1)):
+          match next_leaf(left_stack, fuel.sub(1)):
             case None:
               None
             case Some((items, next_stack)):
@@ -725,7 +720,7 @@ def zip_rev_with_fuel(left_stack: List[Vector[a]], right_stack: List[Vector[b]],
         case Some(curr):
           Some((curr, right_stack))
         case None:
-          match next_leaf_Vector(right_stack, fuel.sub(1)):
+          match next_leaf(right_stack, fuel.sub(1)):
             case None:
               None
             case Some((items, next_stack)):
@@ -763,91 +758,91 @@ def zip_rev_with_fuel(left_stack: List[Vector[a]], right_stack: List[Vector[b]],
           rev_pairs
 
 # Appends a single element to the end of a vector.
-def append_Vector(vec: Vector[a], item: a) -> Vector[a]:
-  nodes = append_nodes_with_fuel(vec, item, height_Vector(vec).add(8))
+def append(vec: Vector[a], item: a) -> Vector[a]:
+  nodes = append_nodes_with_fuel(vec, item, height(vec).add(8))
   cnt = size_Array(nodes)
   if cnt.eq_Int(0):
     vec
   elif cnt.eq_Int(1):
     get_or_Array(nodes, 0, _ -> vec)
   else:
-    make_branch(height_Vector(vec).add(1), nodes)
+    make_branch(height(vec).add(1), nodes)
 
 # Prepends a single element to the front of a vector.
-def prepend_Vector(vec: Vector[a], item: a) -> Vector[a]:
-  nodes = prepend_nodes_with_fuel(vec, item, height_Vector(vec).add(8))
+def prepend(vec: Vector[a], item: a) -> Vector[a]:
+  nodes = prepend_nodes_with_fuel(vec, item, height(vec).add(8))
   cnt = size_Array(nodes)
   if cnt.eq_Int(0):
     vec
   elif cnt.eq_Int(1):
     get_or_Array(nodes, 0, _ -> vec)
   else:
-    make_branch(height_Vector(vec).add(1), nodes)
+    make_branch(height(vec).add(1), nodes)
 
 # Replaces the element at idx when in bounds.
-def updated_Vector(vec: Vector[a], idx: Int, item: a) -> Vector[a]:
+def updated(vec: Vector[a], idx: Int, item: a) -> Vector[a]:
   if cmp_Int(idx, 0) matches LT:
     vec
   elif cmp_Int(idx, size(vec)) matches GT | EQ:
     vec
   else:
-    match updated_with_fuel_Vector(vec, idx, item, height_Vector(vec).add(8)):
+    match updated_with_fuel(vec, idx, item, height(vec).add(8)):
       case Some(next_vec):
         next_vec
       case None:
         vec
 
 # Takes the first count elements.
-def take_Vector(vec: Vector[a], count: Int) -> Vector[a]:
+def take(vec: Vector[a], count: Int) -> Vector[a]:
   total = size(vec)
   safe_count = clamp_Int(count, 0, total)
   if safe_count.eq_Int(0):
-    empty_Vector
+    empty
   elif safe_count.eq_Int(total):
     vec
   else:
-    take_with_fuel_Vector(vec, safe_count, height_Vector(vec).add(8))
+    take_with_fuel(vec, safe_count, height(vec).add(8))
 
 # Drops the first count elements.
-def drop_Vector(vec: Vector[a], count: Int) -> Vector[a]:
+def drop(vec: Vector[a], count: Int) -> Vector[a]:
   total = size(vec)
   safe_count = clamp_Int(count, 0, total)
   if safe_count.eq_Int(0):
     vec
   elif safe_count.eq_Int(total):
-    empty_Vector
+    empty
   else:
-    drop_with_fuel_Vector(vec, safe_count, height_Vector(vec).add(8))
+    drop_with_fuel(vec, safe_count, height(vec).add(8))
 
 # Splits at count into (take count, drop count).
-def split_Vector(vec: Vector[a], count: Int) -> (Vector[a], Vector[a]):
+def split(vec: Vector[a], count: Int) -> (Vector[a], Vector[a]):
   total = size(vec)
   safe_count = clamp_Int(count, 0, total)
-  (take_Vector(vec, safe_count), drop_Vector(vec, safe_count))
+  (take(vec, safe_count), drop(vec, safe_count))
 
 # Returns a slice in the half-open interval [start, end).
-def slice_Vector(vec: Vector[a], start: Int, end: Int) -> Vector[a]:
+def slice(vec: Vector[a], start: Int, end: Int) -> Vector[a]:
   total = size(vec)
   safe_start = clamp_Int(start, 0, total)
   safe_end = clamp_Int(end, 0, total)
   if cmp_Int(safe_end, safe_start) matches LT | EQ:
-    empty_Vector
+    empty
   elif safe_start.eq_Int(0):
-    take_Vector(vec, safe_end)
+    take(vec, safe_end)
   elif safe_end.eq_Int(total):
-    drop_Vector(vec, safe_start)
+    drop(vec, safe_start)
   else:
-    take_Vector(drop_Vector(vec, safe_start), safe_end.sub(safe_start))
+    take(drop(vec, safe_start), safe_end.sub(safe_start))
 
 # Zips two vectors to the shorter length.
-def zip_Vector(left: Vector[a], right: Vector[b]) -> Vector[(a, b)]:
+def zip(left: Vector[a], right: Vector[b]) -> Vector[(a, b)]:
   rem = min_Int(size(left), size(right))
   if rem.eq_Int(0):
-    empty_Vector
+    empty
   else:
-    fuel = rem.add(height_Vector(left)).add(height_Vector(right)).add(64)
+    fuel = rem.add(height(left)).add(height(right)).add(64)
     rev_pairs = zip_rev_with_fuel([left], [right], None, None, rem, [], fuel)
-    from_List_Vector(rev_pairs.reverse())
+    from_List(rev_pairs.reverse())
 
 ############################
 # Property tests
@@ -947,91 +942,91 @@ rand_deep_list_int: Rand[List[Int]] = flat_map_Rand(
 
 size_prop: Prop = forall_Prop(
   rand_list_int,
-  "size(from_List_Vector(list)) == size_List(list)",
+  "size(from_List(list)) == size_List(list)",
   list -> (
-    vec = from_List_Vector(list)
+    vec = from_List(list)
     Assertion(size(vec).eq_Int(size_List(list)), "size law")
   ))
 
 index_prop: Prop = forall_Prop(
   rand_list_with_index,
-  "index_Vector matches list indexing",
+  "index matches list indexing",
   ((list, idx)) -> (
-    vec = from_List_Vector(list)
+    vec = from_List(list)
     expected = index_List(list, idx)
-    actual = index_Vector(vec, idx)
+    actual = index(vec, idx)
     Assertion(eq_Option(eq_Int)(actual, expected), "index at ${int_to_String(idx)}")
   ))
 
 append_prop: Prop = forall_Prop(
   prod_Rand(rand_list_int, rand_int),
-  "append_Vector agrees with list append",
+  "append agrees with list append",
   ((list, item)) -> (
-    vec = from_List_Vector(list)
-    expected = list.concat([item])
-    actual = append_Vector(vec, item).to_List_Vector()
+    vec = from_List(list)
+    expected = [*list, item]
+    actual = append(vec, item).to_List()
     Assertion(eq_List(eq_Int)(actual, expected), "append law")
   ))
 
 prepend_prop: Prop = forall_Prop(
   prod_Rand(rand_list_int, rand_int),
-  "prepend_Vector agrees with list prepend",
+  "prepend agrees with list prepend",
   ((list, item)) -> (
-    vec = from_List_Vector(list)
+    vec = from_List(list)
     expected = [item, *list]
-    actual = prepend_Vector(vec, item).to_List_Vector()
+    actual = prepend(vec, item).to_List()
     Assertion(eq_List(eq_Int)(actual, expected), "prepend law")
   ))
 
 updated_prop: Prop = forall_Prop(
   rand_list_with_index_item,
-  "updated_Vector agrees with set_or_self model",
+  "updated agrees with set_or_self model",
   ((list, idx, item)) -> (
-    vec = from_List_Vector(list)
+    vec = from_List(list)
     expected = updated_list_model(list, idx, item)
-    actual = updated_Vector(vec, idx, item).to_List_Vector()
+    actual = updated(vec, idx, item).to_List()
     Assertion(eq_List(eq_Int)(actual, expected), "updated at ${int_to_String(idx)}")
   ))
 
 slice_prop: Prop = forall_Prop(
   rand_list_with_slice_bounds,
-  "slice_Vector agrees with array slice model",
+  "slice agrees with array slice model",
   ((list, start, end)) -> (
-    vec = from_List_Vector(list)
+    vec = from_List(list)
     expected = slice_list_model(list, start, end)
-    actual = slice_Vector(vec, start, end).to_List_Vector()
+    actual = slice(vec, start, end).to_List()
     Assertion(eq_List(eq_Int)(actual, expected), "slice ${int_to_String(start)} ${int_to_String(end)}")
   ))
 
 take_prop: Prop = forall_Prop(
   rand_list_with_index,
-  "take_Vector agrees with slice model",
+  "take agrees with slice model",
   ((list, count)) -> (
-    vec = from_List_Vector(list)
+    vec = from_List(list)
     expected = take_list_model(list, count)
-    actual = take_Vector(vec, count).to_List_Vector()
+    actual = take(vec, count).to_List()
     Assertion(eq_List(eq_Int)(actual, expected), "take ${int_to_String(count)}")
   ))
 
 drop_prop: Prop = forall_Prop(
   rand_list_with_index,
-  "drop_Vector agrees with slice model",
+  "drop agrees with slice model",
   ((list, count)) -> (
-    vec = from_List_Vector(list)
+    vec = from_List(list)
     expected = drop_list_model(list, count)
-    actual = drop_Vector(vec, count).to_List_Vector()
+    actual = drop(vec, count).to_List()
     Assertion(eq_List(eq_Int)(actual, expected), "drop ${int_to_String(count)}")
   ))
 
 split_prop: Prop = forall_Prop(
   rand_list_with_index,
-  "split_Vector agrees with take/drop model",
+  "split agrees with take/drop model",
   ((list, count)) -> (
-    vec = from_List_Vector(list)
+    vec = from_List(list)
     (expected_left, expected_right) = split_list_model(list, count)
-    (actual_left_vec, actual_right_vec) = split_Vector(vec, count)
-    actual_left = to_List_Vector(actual_left_vec)
-    actual_right = to_List_Vector(actual_right_vec)
+    (actual_left_vec, actual_right_vec) = split(vec, count)
+    actual_left = to_List(actual_left_vec)
+    actual_right = to_List(actual_right_vec)
     same_left = eq_List(eq_Int)(actual_left, expected_left)
     same_right = eq_List(eq_Int)(actual_right, expected_right)
     Assertion(and_Bool(same_left, same_right), "split ${int_to_String(count)}")
@@ -1039,35 +1034,35 @@ split_prop: Prop = forall_Prop(
 
 zip_prop: Prop = forall_Prop(
   prod_Rand(rand_list_int, rand_list_int),
-  "zip_Vector agrees with list zip",
+  "zip agrees with list zip",
   ((left, right)) -> (
-    expected = zip(left, right)
-    actual = zip_Vector(from_List_Vector(left), from_List_Vector(right)).to_List_Vector()
+    expected = zip_List(left, right)
+    actual = zip(from_List(left), from_List(right)).to_List()
     Assertion(eq_List(eq_Int_pair)(actual, expected), "zip law")
   ))
 
 concat_prop: Prop = forall_Prop(
   prod_Rand(rand_list_int, rand_list_int),
-  "concat_Vector matches list concat",
+  "concat matches list concat",
   ((left, right)) -> (
-    vec = concat_Vector(from_List_Vector(left), from_List_Vector(right))
-    expected = left.concat(right)
-    same_list = eq_List(eq_Int)(to_List_Vector(vec), expected)
+    vec = concat(from_List(left), from_List(right))
+    expected = [*left, *right]
+    same_list = eq_List(eq_Int)(to_List(vec), expected)
     same_size = size(vec).eq_Int(size_List(expected))
     Assertion(and_Bool(same_list, same_size), "concat law")
   ))
 
 concat_deep_iso_prop: Prop = forall_Prop(
   prod_Rand(rand_deep_list_int, rand_deep_list_int),
-  "concat_Vector (deep trees) isomorphic to list concat",
+  "concat (deep trees) isomorphic to list concat",
   ((left, right)) -> (
-    vec = concat_Vector(from_List_Vector(left), from_List_Vector(right))
-    expected = left.concat(right)
-    same_list = eq_List(eq_Int)(to_List_Vector(vec), expected)
+    vec = concat(from_List(left), from_List(right))
+    expected = [*left, *right]
+    same_list = eq_List(eq_Int)(to_List(vec), expected)
     same_size = size(vec).eq_Int(size_List(expected))
     left_sz = size_List(left)
     boundary_ok = if cmp_Int(left_sz, size_List(expected)) matches LT:
-      eq_Option(eq_Int)(index_Vector(vec, left_sz), index_List(expected, left_sz))
+      eq_Option(eq_Int)(index(vec, left_sz), index_List(expected, left_sz))
     else:
       True
     Assertion(and_Bool(and_Bool(same_list, same_size), boundary_ok), "deep concat iso")
@@ -1075,54 +1070,54 @@ concat_deep_iso_prop: Prop = forall_Prop(
 
 map_prop: Prop = forall_Prop(
   rand_list_int,
-  "map_Vector agrees with list map",
+  "map agrees with list map",
   list -> (
-    vec = from_List_Vector(list)
+    vec = from_List(list)
     fn = i -> i.add(1)
     expected = list.map_List(fn)
-    actual = map_Vector(vec, fn).to_List_Vector()
+    actual = map(vec, fn).to_List()
     Assertion(eq_List(eq_Int)(actual, expected), "map law")
   ))
 
 filter_prop: Prop = forall_Prop(
   rand_list_int,
-  "filter_Vector agrees with list filter",
+  "filter agrees with list filter",
   list -> (
-    vec = from_List_Vector(list)
+    vec = from_List(list)
     keep_even = i -> mod_Int(i, 2).eq_Int(0)
     expected = [i for i in list if keep_even(i)]
-    actual = filter_Vector(vec, keep_even).to_List_Vector()
+    actual = filter(vec, keep_even).to_List()
     Assertion(eq_List(eq_Int)(actual, expected), "filter law")
   ))
 
 flat_map_prop: Prop = forall_Prop(
   rand_list_int,
-  "flat_map_Vector agrees with list model",
+  "flat_map agrees with list model",
   list -> (
-    vec = from_List_Vector(list)
-    fn = i -> from_List_Vector([i, i.add(1)])
+    vec = from_List(list)
+    fn = i -> from_List([i, i.add(1)])
     expected = flat_map_model(list)
-    actual = flat_map_Vector(vec, fn).to_List_Vector()
+    actual = flat_map(vec, fn).to_List()
     Assertion(eq_List(eq_Int)(actual, expected), "flat_map law")
   ))
 
 foldl_prop: Prop = forall_Prop(
   rand_list_int,
-  "foldl_Vector agrees with list foldl",
+  "foldl agrees with list foldl",
   list -> (
-    vec = from_List_Vector(list)
+    vec = from_List(list)
     expected = list.foldl_List(0, add)
-    actual = foldl_Vector(vec, 0, add)
+    actual = foldl(vec, 0, add)
     Assertion(actual.eq_Int(expected), "foldl law")
   ))
 
 foldr_prop: Prop = forall_Prop(
   rand_list_int,
-  "foldr_Vector agrees with list foldr model",
+  "foldr agrees with list foldr model",
   list -> (
-    vec = from_List_Vector(list)
+    vec = from_List(list)
     expected = foldr_list_model(list, 0)
-    actual = foldr_Vector(vec, 0, (item, acc) -> item.sub(acc))
+    actual = foldr(vec, 0, (item, acc) -> item.sub(acc))
     Assertion(actual.eq_Int(expected), "foldr law")
   ))
 
@@ -1155,23 +1150,23 @@ concat_rrb_props: Prop = suite_Prop(
   ])
 
 tests = TestSuite("Vector tests", [
-  Assertion(size(empty_Vector).eq_Int(0), "empty size"),
-  Assertion(empty_Vector.index_Vector(0) matches None, "empty index"),
-  Assertion(from_List_Vector([1, 2, 3]).index_Vector(1) matches Some(2), "basic index"),
-  Assertion(get_or_Vector(from_List_Vector([1, 2, 3]), 1, _ -> -1).eq_Int(2), "get_or hit"),
-  Assertion(get_or_Vector(from_List_Vector([1, 2, 3]), 6, _ -> 12).eq_Int(12), "get_or miss fallback"),
-  Assertion(from_List_Vector([1, 2]).concat_Vector(from_List_Vector([3, 4])).to_List_Vector() matches [1, 2, 3, 4], "concat sanity"),
-  Assertion(concat_all_Vector([]).to_List_Vector() matches [], "concat_all empty"),
+  Assertion(size(empty).eq_Int(0), "empty size"),
+  Assertion(empty.index(0) matches None, "empty index"),
+  Assertion(from_List([1, 2, 3]).index(1) matches Some(2), "basic index"),
+  Assertion(get_or(from_List([1, 2, 3]), 1, _ -> -1).eq_Int(2), "get_or hit"),
+  Assertion(get_or(from_List([1, 2, 3]), 6, _ -> 12).eq_Int(12), "get_or miss fallback"),
+  Assertion(from_List([1, 2]).concat(from_List([3, 4])).to_List() matches [1, 2, 3, 4], "concat sanity"),
+  Assertion(concat_all([]).to_List() matches [], "concat_all empty"),
   Assertion(
-    concat_all_Vector([
-      from_List_Vector([1, 2]),
-      empty_Vector,
-      from_List_Vector([3]),
-      from_List_Vector([4, 5]),
-    ]).to_List_Vector() matches [1, 2, 3, 4, 5],
+    concat_all([
+      from_List([1, 2]),
+      empty,
+      from_List([3]),
+      from_List([4, 5]),
+    ]).to_List() matches [1, 2, 3, 4, 5],
     "concat_all sanity"),
-  Assertion(foldl_Vector(from_List_Vector([1, 2, 3]), 0, add).eq_Int(6), "foldl sanity"),
-  Assertion(foldr_Vector(from_List_Vector([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
+  Assertion(foldl(from_List([1, 2, 3]), 0, add).eq_Int(6), "foldl sanity"),
+  Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
   run_Prop(vector_props, 200, 4242),
   run_Prop(concat_rrb_props, 30, 99123),
 ])
