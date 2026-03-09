@@ -80,6 +80,7 @@ jobs:
               --from=gfm \
               --to=html5 \
               --standalone \
+              --lua-filter scripts/rewrite_md_links.lua \
               --metadata "title=${rel_path%.md}" \
               --output "$html_path"
           done < <(find docs/markdown -type f -name '*.md' -print0)
