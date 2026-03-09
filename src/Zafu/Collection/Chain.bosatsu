@@ -24,7 +24,10 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop,
 )
-from Zafu/Collection/List import size as size_List
+from Zafu/Collection/List import (
+  size as size_List,
+  get_List,
+)
 
 export (
   Chain,
@@ -55,21 +58,6 @@ enum Chain[a: +*]:
   WrapArray(items: Array[a])
   WrapList(items: List[a])
   Concat(left: Chain[a], right: Chain[a])
-
-def index_List_loop(list: List[a], idx: Int) -> Option[a]:
-  loop list:
-    case []:
-      None
-    case [head, *_] if idx.eq_Int(0):
-      Some(head)
-    case [_, *tail]:
-      index_List_loop(tail, idx.sub(1))
-
-def index_List(list: List[a], idx: Int) -> Option[a]:
-  if cmp_Int(idx, 0) matches LT:
-    None
-  else:
-    index_List_loop(list, idx)
 
 def chain_size(chain: Chain[a]) -> Int:
   recur chain:
@@ -148,7 +136,7 @@ def traversal_fuel(chain: Chain[a]) -> Int:
 # Stack-safe left fold.
 def foldl(chain: Chain[a], init: b, fn: (b, a) -> b) -> b:
   def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> b:
-    recur rem:
+    loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         acc
       case _:
@@ -177,7 +165,7 @@ def foldr_List(items: List[a], init: b, fn: (a, b) -> b) -> b:
 # Stack-safe right fold.
 def foldr(chain: Chain[a], init: b, fn: (a, b) -> b) -> b:
   def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> b:
-    recur rem:
+    loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         acc
       case _:
@@ -205,7 +193,7 @@ def find_with(chain: Chain[a], idx: Int, on_missing: () -> b, on_found: a -> b) 
     on_missing()
   else:
     def loop_find(rem: Int, stack: List[Chain[a]], rem_idx: Int) -> b:
-      recur rem:
+      loop rem:
         case _ if cmp_Int(rem, 0) matches LT | EQ:
           on_missing()
         case _:
@@ -232,7 +220,7 @@ def find_with(chain: Chain[a], idx: Int, on_missing: () -> b, on_found: a -> b) 
             case [WrapList(items), *tail]:
               cnt = size_List(items)
               if cmp_Int(rem_idx, cnt) matches LT:
-                match index_List(items, rem_idx):
+                match get_List(items, rem_idx):
                   case Some(item):
                     on_found(item)
                   case None:
@@ -300,23 +288,8 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
-def index_List_loop(list: List[a], idx: Int) -> Option[a]:
-  loop list:
-    case []:
-      None
-    case [head, *_] if idx.eq_Int(0):
-      Some(head)
-    case [_, *tail]:
-      index_List_loop(tail, idx.sub(1))
-
-def index_List(list: List[a], idx: Int) -> Option[a]:
-  if cmp_Int(idx, 0) matches LT:
-    None
-  else:
-    index_List_loop(list, idx)
-
 def get_or_List(list: List[a], idx: Int, fn: () -> a) -> a:
-  match index_List(list, idx):
+  match get_List(list, idx):
     case Some(item):
       item
     case None:
@@ -435,7 +408,7 @@ index_prop: Prop = forall_Prop(
   "index matches list indexing",
   ((list, idx)) -> (
     chain = from_List(list)
-    expected = index_List(list, idx)
+    expected = get_List(list, idx)
     actual = index(chain, idx)
     Assertion(eq_Option(eq_Int)(actual, expected), "index law")
   ))
