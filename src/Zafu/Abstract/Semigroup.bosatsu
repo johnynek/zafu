@@ -1,0 +1,225 @@
+package Zafu/Abstract/Semigroup
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq as eq_Eq,
+  eq_from_fn,
+)
+
+export (
+  Semigroup,
+  semigroup_from_combine,
+  semigroup_specialized,
+  combine,
+  combine_n,
+  combine_all_option,
+  maybe_combine_left,
+  maybe_combine_right,
+  reverse,
+  intercalate,
+  first,
+  last,
+  laws_Semigroup,
+)
+
+struct Semigroup[a](
+  combine_fn: (a, a) -> a,
+  combine_n_positive_fn: (a, Int) -> a,
+  combine_all_option_fn: List[a] -> Option[a],
+)
+
+# Default repeated-combine implementation with logarithmic combine count.
+def combine_n_positive_from_combine(combine_fn: (a, a) -> a, value: a, n: Int) -> a:
+  def go(rem: Int, acc: a, power: a) -> a:
+    recur rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _ if cmp_Int(rem, 0) matches GT:
+        next_total = (
+          if mod_Int(rem, 2).eq_Int(1):
+            combine_fn(acc, power)
+          else:
+            acc
+        )
+        go(div(rem, 2), next_total, combine_fn(power, power))
+      case _:
+        acc
+  go(n.sub(1), value, value)
+
+def combine_all_option_from_combine(combine_fn: (a, a) -> a, items: List[a]) -> Option[a]:
+  items.foldl_List(None, (state, item) -> (
+    match state:
+      case None:
+        Some(item)
+      case Some(acc):
+        Some(combine_fn(acc, item))
+  ))
+
+def reverse_list(items: List[a]) -> List[a]:
+  items.foldl_List([], (acc, item) -> [item, *acc])
+
+# Constructor for specialized implementations.
+def semigroup_specialized(
+  combine_fn: (a, a) -> a,
+  combine_n_positive_fn: (a, Int) -> a,
+  combine_all_option_fn: List[a] -> Option[a],
+) -> Semigroup[a]:
+  Semigroup(combine_fn, combine_n_positive_fn, combine_all_option_fn)
+
+# Constructor from combine with helper operations derived.
+def semigroup_from_combine(combine_fn: (a, a) -> a) -> Semigroup[a]:
+  semigroup_specialized(
+    combine_fn,
+    (value, n) -> combine_n_positive_from_combine(combine_fn, value, n),
+    (items) -> combine_all_option_from_combine(combine_fn, items),
+  )
+
+def combine(inst: Semigroup[a], left: a, right: a) -> a:
+  Semigroup(combine_fn, _, _) = inst
+  combine_fn(left, right)
+
+def combine_n(inst: Semigroup[a], value: a, n: Int) -> Option[a]:
+  if cmp_Int(n, 0) matches GT:
+    Semigroup(_, combine_n_positive_fn, _) = inst
+    Some(combine_n_positive_fn(value, n))
+  else:
+    None
+
+def combine_all_option(inst: Semigroup[a], items: List[a]) -> Option[a]:
+  Semigroup(_, _, combine_all_option_fn) = inst
+  combine_all_option_fn(items)
+
+def maybe_combine_left(inst: Semigroup[a], left_opt: Option[a], right: a) -> a:
+  match left_opt:
+    case None:
+      right
+    case Some(left):
+      combine(inst, left, right)
+
+def maybe_combine_right(inst: Semigroup[a], left: a, right_opt: Option[a]) -> a:
+  match right_opt:
+    case None:
+      left
+    case Some(right):
+      combine(inst, left, right)
+
+def reverse(inst: Semigroup[a]) -> Semigroup[a]:
+  Semigroup { combine_fn, combine_n_positive_fn, combine_all_option_fn, ... } = inst
+  # Keep specialized combine_n for repeated-value behavior; reverse list input
+  # so combine_all_option matches the flipped argument order.
+  semigroup_specialized(
+    (left, right) -> combine_fn(right, left),
+    combine_n_positive_fn,
+    (items) -> combine_all_option_fn(reverse_list(items)),
+  )
+
+def intercalate(inst: Semigroup[a], middle: a) -> Semigroup[a]:
+  Semigroup { combine_fn, combine_n_positive_fn, combine_all_option_fn, ... } = inst
+  semigroup_specialized(
+    (left, right) -> combine_fn(combine_fn(left, middle), right),
+    (value, n) -> (
+      if n.eq_Int(1):
+        value
+      else:
+        tail_value = combine_fn(middle, value)
+        combine_fn(value, combine_n_positive_fn(tail_value, n.sub(1)))
+    ),
+    (items) -> (
+      match items:
+        case []:
+          None
+        case [head, *tail]:
+          interleaved_rev = tail.foldl_List([head], (acc, item) -> [item, middle, *acc])
+          combine_all_option_fn(reverse_list(interleaved_rev))
+    ),
+  )
+
+first: Semigroup[a] = semigroup_specialized(
+  (left, _) -> left,
+  (value, _) -> value,
+  (items) -> (
+    match items:
+      case []:
+        None
+      case [head, *_]:
+        Some(head)
+  ),
+)
+
+last: Semigroup[a] = semigroup_specialized(
+  (_, right) -> right,
+  (value, _) -> value,
+  (items) -> (
+    match items:
+      case []:
+        None
+      case [head, *tail]:
+        Some(tail.foldl_List(head, (_, item) -> item))
+  ),
+)
+
+def laws_Semigroup(inst: Semigroup[a], eq_inst: Eq[a], x: a, y: a, z: a) -> Test:
+  associative = Assertion(
+    eq_Eq(eq_inst, combine(inst, x, combine(inst, y, z)), combine(inst, combine(inst, x, y), z)),
+    "associative",
+  )
+  TestSuite("Semigroup laws", [associative])
+
+tests = TestSuite("Semigroup tests", [
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(combine(int_add, 1, 2).eq_Int(3), "combine")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(combine_n(int_add, 5, 0) matches None, "combine_n non-positive")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(combine_n(int_add, 3, 100000) matches Some(300000), "combine_n large n")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(combine_all_option(int_add, []) matches None, "combine_all_option empty")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(combine_all_option(int_add, [1, 2, 3]) matches Some(6), "combine_all_option non-empty")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(maybe_combine_left(int_add, Some(2), 3).eq_Int(5), "maybe_combine_left Some")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(maybe_combine_right(int_add, 2, None).eq_Int(2), "maybe_combine_right None")
+  ),
+  (
+    list_sg = semigroup_from_combine((left, right) -> left.concat(right))
+    reversed = reverse(list_sg)
+    Assertion(combine(reversed, [1], [2, 3]) matches [2, 3, 1], "reverse combine order")
+  ),
+  (
+    list_sg = semigroup_from_combine((left, right) -> left.concat(right))
+    reversed = reverse(list_sg)
+    Assertion(combine_n(reversed, [1], 4) matches Some([1, 1, 1, 1]), "reverse combine_n repeated values")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    inter = intercalate(int_add, 10)
+    Assertion(combine(inter, 1, 2).eq_Int(13), "intercalate")
+  ),
+  (
+    first_int = first
+    Assertion(combine(first_int, 1, 2).eq_Int(1), "first")
+  ),
+  (
+    last_int = last
+    Assertion(combine(last_int, 1, 2).eq_Int(2), "last")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    int_eq = eq_from_fn(eq_Int)
+    laws_Semigroup(int_add, int_eq, 1, 2, 3)
+  ),
+])

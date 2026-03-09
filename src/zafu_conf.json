@@ -1,6 +1,7 @@
 {
   "name": "zafu",
   "repo_uri": "https://github.com/johnynek/zafu/",
+  "doc_base_url": "https://johnynek.github.io/zafu",
   "next_version": "0.0.1",
   "exported_packages": [],
   "all_packages": [

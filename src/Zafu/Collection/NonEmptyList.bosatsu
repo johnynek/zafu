@@ -1,0 +1,374 @@
+package Zafu/Collection/NonEmptyList
+
+from Zafu/Collection/List import (
+  any as any_List,
+  exists as exists_List,
+  for_all as for_all_List,
+  get_List as get_List_base,
+  get_or as get_or_List,
+  set_List as set_List_base,
+  foldl as foldl_List,
+  foldr as foldr_List,
+  sum as sum_List,
+  sumf as sumf_List,
+  sort as sort_List,
+  zip as zip_List,
+  filter as filter_List,
+  flat_map as flat_map_List,
+)
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_by,
+  eq as eq_Eq,
+)
+from Zafu/Abstract/Ord import (
+  Ord,
+  ord_by,
+  cmp as cmp_Ord,
+)
+from Zafu/Abstract/Hash import (
+  Hash,
+  hash_by,
+  hash as hash_Hash,
+)
+from Zafu/Abstract/Semigroup import (
+  Semigroup,
+  semigroup_specialized,
+  combine_all_option as combine_all_option_Semigroup,
+)
+from Zafu/Collection/HashSet import (
+  empty as empty_HashSet,
+  contains as contains_HashSet,
+  updated as updated_HashSet,
+)
+from Zafu/Abstract/Instances/Predef import (
+  eq_Int as eq_Int_inst,
+  ord_Int as ord_Int_inst,
+  eq_List as eq_List_inst,
+  ord_List as ord_List_inst,
+  hash_List as hash_List_inst,
+  hash_Int,
+)
+
+export (
+  NonEmptyList(),
+  singleton,
+  from_prepend,
+  from_append,
+  from_List,
+  to_List,
+  head,
+  tail,
+  uncons,
+  last,
+  size,
+  is_empty,
+  any,
+  exists,
+  for_all,
+  get,
+  get_or,
+  set,
+  foldl,
+  foldr,
+  sum,
+  sumf,
+  map,
+  flat_map,
+  sort,
+  zip,
+  filter,
+  distinct_by_hash,
+  prepend,
+  append,
+  concat,
+  concat_all,
+  combine_all,
+  reverse,
+  eq_NonEmptyList,
+  ord_NonEmptyList,
+  hash_NonEmptyList,
+)
+
+struct NonEmptyList[a: +*](head: a, tail: List[a])
+
+# Shared reconstruction helper for list-parity functions that should stay non-empty.
+def from_non_empty_List_or(items: List[a], on_empty: () -> NonEmptyList[a]) -> NonEmptyList[a]:
+  match items:
+    case [head0, *tail0]:
+      NonEmptyList(head0, tail0)
+    case []:
+      on_empty()
+
+def singleton(item: a) -> NonEmptyList[a]:
+  NonEmptyList(item, [])
+
+def from_prepend(head0: a, tail0: List[a]) -> NonEmptyList[a]:
+  NonEmptyList(head0, tail0)
+
+def from_append(lst: List[a], last0: a) -> NonEmptyList[a]:
+  from_non_empty_List_or([*lst, last0], () -> singleton(last0))
+
+def from_List(lst: List[a]) -> Option[NonEmptyList[a]]:
+  match lst:
+    case [head0, *tail0]:
+      Some(NonEmptyList(head0, tail0))
+    case []:
+      None
+
+def to_List(items: NonEmptyList[a]) -> List[a]:
+  NonEmptyList(head0, tail0) = items
+  [head0, *tail0]
+
+def head(items: NonEmptyList[a]) -> a:
+  NonEmptyList(head0, _) = items
+  head0
+
+def tail(items: NonEmptyList[a]) -> List[a]:
+  NonEmptyList(_, tail0) = items
+  tail0
+
+def uncons(items: NonEmptyList[a]) -> (a, List[a]):
+  NonEmptyList(head0, tail0) = items
+  (head0, tail0)
+
+def last(items: NonEmptyList[a]) -> a:
+  NonEmptyList(head0, tail0) = items
+  tail0.foldl_List(head0, (_, item) -> item)
+
+def size(items: NonEmptyList[a]) -> Int:
+  NonEmptyList(_, tail0) = items
+  tail0.foldl_List(1, (acc, _) -> acc.add(1))
+
+def is_empty(items: NonEmptyList[a]) -> Bool:
+  match items:
+    case NonEmptyList(_, _):
+      False
+
+def any(items: NonEmptyList[Bool]) -> Bool:
+  any_List(to_List(items))
+
+def exists(items: NonEmptyList[a], pred: a -> Bool) -> Bool:
+  exists_List(to_List(items), pred)
+
+def for_all(items: NonEmptyList[a], pred: a -> Bool) -> Bool:
+  for_all_List(to_List(items), pred)
+
+def get(items: NonEmptyList[a], idx: Int) -> Option[a]:
+  get_List_base(to_List(items), idx)
+
+def get_or(items: NonEmptyList[a], idx: Int, on_missing: () -> a) -> a:
+  get_or_List(to_List(items), idx, on_missing)
+
+def set(items: NonEmptyList[a], idx: Int, value: a) -> Option[NonEmptyList[a]]:
+  match set_List_base(to_List(items), idx, value):
+    case Some(next):
+      Some(from_non_empty_List_or(next, () -> items))
+    case None:
+      None
+
+def foldl(items: NonEmptyList[a], init: b, fn: (b, a) -> b) -> b:
+  foldl_List(to_List(items), init, fn)
+
+def foldr(items: NonEmptyList[a], init: b, fn: (a, b) -> b) -> b:
+  foldr_List(to_List(items), init, fn)
+
+def sum(items: NonEmptyList[Int]) -> Int:
+  sum_List(to_List(items))
+
+def sumf(items: NonEmptyList[Float64]) -> Float64:
+  sumf_List(to_List(items))
+
+def map(items: NonEmptyList[a], fn: a -> b) -> NonEmptyList[b]:
+  NonEmptyList(head0, tail0) = items
+  NonEmptyList(fn(head0), tail0.map_List(fn))
+
+def flat_map(items: NonEmptyList[a], fn: a -> NonEmptyList[b]) -> NonEmptyList[b]:
+  NonEmptyList(head0, tail0) = items
+  head_list = to_List(fn(head0))
+  tail_list = flat_map_List(tail0, item -> to_List(fn(item)))
+  from_non_empty_List_or([*head_list, *tail_list], () -> fn(head0))
+
+def sort(order: Order[a], items: NonEmptyList[a]) -> NonEmptyList[a]:
+  from_non_empty_List_or(sort_List(order, to_List(items)), () -> items)
+
+def zip(left: NonEmptyList[a], right: NonEmptyList[b]) -> NonEmptyList[(a, b)]:
+  from_non_empty_List_or(
+    zip_List(to_List(left), to_List(right)),
+    () -> singleton((head(left), head(right))),
+  )
+
+def filter(items: NonEmptyList[a], pred: a -> Bool) -> Option[NonEmptyList[a]]:
+  from_List(filter_List(to_List(items), pred))
+
+def prepend(item: a, items: NonEmptyList[a]) -> NonEmptyList[a]:
+  NonEmptyList(head0, tail0) = items
+  NonEmptyList(item, [head0, *tail0])
+
+def append(items: NonEmptyList[a], item: a) -> NonEmptyList[a]:
+  NonEmptyList(head0, tail0) = items
+  NonEmptyList(head0, [*tail0, item])
+
+def concat(left: NonEmptyList[a], right: NonEmptyList[a]) -> NonEmptyList[a]:
+  NonEmptyList(left_head, left_tail) = left
+  NonEmptyList(left_head, [*left_tail, *to_List(right)])
+
+def concat_all(items: NonEmptyList[NonEmptyList[a]]) -> NonEmptyList[a]:
+  flat_map(items, item -> item)
+
+def combine_all(items: NonEmptyList[a], sg: Semigroup[a]) -> a:
+  NonEmptyList(head0, tail0) = items
+  match tail0:
+    case []:
+      head0
+    case _:
+      # Use Semigroup's specialized list combine path when available.
+      match combine_all_option_Semigroup(sg, [head0, *tail0]):
+        case Some(total):
+          total
+        case None:
+          head0
+
+def reverse(items: NonEmptyList[a]) -> NonEmptyList[a]:
+  reversed = to_List(items).foldl_List([], (acc, item) -> [item, *acc])
+  from_non_empty_List_or(reversed, () -> items)
+
+def distinct_by_hash(h: Hash[a], items: NonEmptyList[a]) -> NonEmptyList[a]:
+  # Track accepted items in reverse order, then reverse once to restore input order.
+  (_, accepted_rev) = foldl(items, (empty_HashSet(h), []), (state, item) -> (
+    (seen, accepted_rev) = state
+    if contains_HashSet(seen, item):
+      (seen, accepted_rev)
+    else:
+      (updated_HashSet(seen, item), [item, *accepted_rev])
+  ))
+  accepted = accepted_rev.foldl_List([], (acc, item) -> [item, *acc])
+  from_non_empty_List_or(accepted, () -> singleton(head(items)))
+
+def eq_NonEmptyList(eq_item: Eq[a]) -> Eq[NonEmptyList[a]]:
+  eq_by(eq_List_inst(eq_item), to_List)
+
+def ord_NonEmptyList(ord_item: Ord[a]) -> Ord[NonEmptyList[a]]:
+  ord_by(ord_List_inst(ord_item), to_List)
+
+def hash_NonEmptyList(hash_item: Hash[a]) -> Hash[NonEmptyList[a]]:
+  hash_by(hash_List_inst(hash_item), to_List)
+
+tests = TestSuite("Zafu/Collection/NonEmptyList tests", [
+  Assertion(
+    match NonEmptyList(1, [2, 3]):
+      case NonEmptyList(1, [2, 3]):
+        True
+      case _:
+        False,
+    "constructor export/pattern match",
+  ),
+  Assertion(to_List(singleton(7)) matches [7], "singleton"),
+  Assertion(to_List(from_prepend(1, [2, 3])) matches [1, 2, 3], "from_prepend"),
+  Assertion(to_List(from_append([], 3)) matches [3], "from_append empty"),
+  Assertion(to_List(from_append([1, 2], 3)) matches [1, 2, 3], "from_append non-empty"),
+  Assertion(from_List([]) matches None, "from_List empty"),
+  Assertion(from_List([1, 2]) matches Some(NonEmptyList(1, [2])), "from_List non-empty"),
+  Assertion(head(NonEmptyList(1, [2, 3])).eq_Int(1), "head"),
+  Assertion(tail(NonEmptyList(1, [2, 3])) matches [2, 3], "tail"),
+  Assertion(uncons(NonEmptyList(1, [2, 3])) matches (1, [2, 3]), "uncons"),
+  Assertion(last(NonEmptyList(1, [2, 3])).eq_Int(3), "last"),
+  Assertion(size(NonEmptyList(1, [2, 3])).eq_Int(3), "size"),
+  Assertion(is_empty(NonEmptyList(1, [2, 3])) matches False, "is_empty"),
+  Assertion(any(NonEmptyList(False, [True, False])), "any hit"),
+  Assertion(any(NonEmptyList(False, [False])) matches False, "any miss"),
+  Assertion(exists(NonEmptyList(1, [2, 3]), i -> i.eq_Int(2)), "exists hit"),
+  Assertion(exists(NonEmptyList(1, [2, 3]), i -> i.eq_Int(9)) matches False, "exists miss"),
+  Assertion(for_all(NonEmptyList(2, [4, 6]), i -> mod_Int(i, 2).eq_Int(0)), "for_all hit"),
+  Assertion(for_all(NonEmptyList(2, [3, 6]), i -> mod_Int(i, 2).eq_Int(0)) matches False, "for_all miss"),
+  Assertion(get(NonEmptyList(10, [11, 12]), 0) matches Some(10), "get first"),
+  Assertion(get(NonEmptyList(10, [11, 12]), 2) matches Some(12), "get last"),
+  Assertion(get(NonEmptyList(10, [11, 12]), 3) matches None, "get out-of-range"),
+  Assertion(get(NonEmptyList(10, [11, 12]), -1) matches None, "get negative"),
+  Assertion(get_or(NonEmptyList(10, [11, 12]), 1, () -> 99).eq_Int(11), "get_or hit"),
+  Assertion(get_or(NonEmptyList(10, [11, 12]), 9, () -> 99).eq_Int(99), "get_or out-of-range"),
+  Assertion(get_or(NonEmptyList(10, [11, 12]), -1, () -> 99).eq_Int(99), "get_or negative"),
+  Assertion(set(NonEmptyList(10, [11, 12]), 0, 99) matches Some(NonEmptyList(99, [11, 12])), "set first"),
+  Assertion(set(NonEmptyList(10, [11, 12]), 2, 99) matches Some(NonEmptyList(10, [11, 99])), "set last"),
+  Assertion(set(NonEmptyList(10, [11, 12]), 3, 99) matches None, "set out-of-range"),
+  Assertion(set(NonEmptyList(10, [11, 12]), -1, 99) matches None, "set negative"),
+  Assertion(foldl(NonEmptyList(1, [2, 3]), 0, add).eq_Int(6), "foldl"),
+  Assertion(foldr(NonEmptyList(1, [2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr"),
+  Assertion(sum(NonEmptyList(1, [2, 3, 4])).eq_Int(10), "sum"),
+  Assertion(sumf(NonEmptyList(1.25, [2.5, 0.25])).cmp_Float64(4.0) matches EQ, "sumf"),
+  Assertion(to_List(map(NonEmptyList(1, [2, 3]), i -> i.add(10))) matches [11, 12, 13], "map"),
+  Assertion(map(singleton(4), i -> i.add(1)) matches NonEmptyList(5, []), "map preserves non-empty"),
+  Assertion(to_List(flat_map(NonEmptyList(1, [2]), i -> NonEmptyList(i, [i.add(1)]))) matches [1, 2, 2, 3], "flat_map"),
+  Assertion(to_List(sort(Order(cmp_Int), NonEmptyList(3, [1, 2, 1]))) matches [1, 1, 2, 3], "sort"),
+  Assertion(sort(Order(cmp_Int), singleton(4)) matches NonEmptyList(4, []), "sort preserves non-empty"),
+  Assertion(to_List(zip(NonEmptyList(1, [2]), NonEmptyList("a", ["b", "c"]))) matches [(1, "a"), (2, "b")], "zip"),
+  Assertion(zip(singleton(1), singleton("x")) matches NonEmptyList((1, "x"), []), "zip singleton"),
+  Assertion(filter(NonEmptyList(1, [2, 3, 4]), i -> mod_Int(i, 2).eq_Int(0)) matches Some(NonEmptyList(2, [4])), "filter some"),
+  Assertion(filter(NonEmptyList(1, [2, 3, 4]), _ -> False) matches None, "filter none"),
+  Assertion(to_List(distinct_by_hash(hash_Int, NonEmptyList(1, [2, 1, 3, 2]))) matches [1, 2, 3], "distinct_by_hash stable"),
+  Assertion(to_List(prepend(0, NonEmptyList(1, [2, 3]))) matches [0, 1, 2, 3], "prepend"),
+  Assertion(to_List(append(NonEmptyList(1, [2, 3]), 4)) matches [1, 2, 3, 4], "append"),
+  Assertion(to_List(concat(NonEmptyList(1, [2]), NonEmptyList(3, [4]))) matches [1, 2, 3, 4], "concat"),
+  Assertion(
+    to_List(concat_all(NonEmptyList(NonEmptyList(1, [2]), [NonEmptyList(3, []), NonEmptyList(4, [5])]))) matches [1, 2, 3, 4, 5],
+    "concat_all",
+  ),
+  Assertion(combine_all(NonEmptyList(1, [2, 3]), semigroup_specialized(
+    (_, _) -> 999,
+    (value, _) -> value,
+    (items) -> (
+      match items:
+        case []:
+          None
+        case _:
+          Some(items.foldl_List(0, add))
+    ),
+  )).eq_Int(6), "combine_all uses specialized combine_all_option"),
+  Assertion(combine_all(singleton(7), semigroup_specialized(
+    (_, _) -> 999,
+    (value, _) -> value,
+    (items) -> (
+      match items:
+        case []:
+          None
+        case _:
+          Some(0)
+    ),
+  )).eq_Int(7), "combine_all singleton fast path"),
+  Assertion(to_List(reverse(NonEmptyList(1, [2, 3]))) matches [3, 2, 1], "reverse"),
+  (
+    inst = eq_NonEmptyList(eq_Int_inst)
+    Assertion(eq_Eq(inst, NonEmptyList(1, [2]), NonEmptyList(1, [2])), "eq_NonEmptyList equal")
+  ),
+  (
+    inst = eq_NonEmptyList(eq_Int_inst)
+    Assertion(eq_Eq(inst, NonEmptyList(1, [2]), NonEmptyList(1, [3])) matches False, "eq_NonEmptyList mismatch")
+  ),
+  (
+    inst = ord_NonEmptyList(ord_Int_inst)
+    Assertion(cmp_Ord(inst, NonEmptyList(1, [2]), NonEmptyList(1, [3])) matches LT, "ord_NonEmptyList payload")
+  ),
+  (
+    inst = ord_NonEmptyList(ord_Int_inst)
+    Assertion(cmp_Ord(inst, NonEmptyList(1, [2]), NonEmptyList(1, [2])) matches EQ, "ord_NonEmptyList equal")
+  ),
+  (
+    hash_inst = hash_NonEmptyList(hash_Int)
+    hx = hash_Hash(hash_inst, NonEmptyList(1, [2, 3]))
+    hy = hash_Hash(hash_inst, NonEmptyList(1, [2, 3]))
+    Assertion(eq_Int(hx, hy), "hash_NonEmptyList equal values")
+  ),
+  (
+    hash_inst = hash_NonEmptyList(hash_Int)
+    hx = hash_Hash(hash_inst, NonEmptyList(1, [2, 3]))
+    hy = hash_Hash(hash_inst, NonEmptyList(1, [2, 4]))
+    Assertion(
+      if eq_Int(hx, hy):
+        False
+      else:
+        True,
+      "hash_NonEmptyList differs for sample unequal values",
+    )
+  ),
+])

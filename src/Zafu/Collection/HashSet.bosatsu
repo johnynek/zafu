@@ -121,17 +121,6 @@ def eq_Bool(left: Bool, right: Bool) -> Bool:
   else:
     not_Bool(right)
 
-def popcount(value: Int) -> Int:
-  def go(rem: Int, bits: Int, acc: Int) -> Int:
-    loop rem:
-      case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc
-      case _ if cmp_Int(bits, 0) matches LT | EQ:
-        acc
-      case _:
-        go(rem - 1, bits >> 1, acc + (bits & 1))
-  go(64, value, 0)
-
 def fragment(entry_hash: Int, shift: Int) -> Int:
   (entry_hash >> shift) & fragment_mask
 
@@ -142,7 +131,7 @@ def has_bit(bitmap: Int, bit: Int) -> Bool:
   cmp_Int(bitmap & bit, 0) matches GT
 
 def bitmap_index(bitmap: Int, bit: Int) -> Int:
-  popcount(bitmap & (bit - 1))
+  popcount_Int(bitmap & (bit - 1))
 
 def singleton_Array(item: a) -> Array[a]:
   from_List_Array([item])
