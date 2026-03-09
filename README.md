@@ -37,6 +37,11 @@ Run the vector microbenchmarks with:
 scripts/benchmark_vector.sh
 ```
 
+The script prints two sections:
+
+1. `JVM benchmarks:` from `./bosatsu lib eval --main Zafu/Benchmark/Vector::main --run`
+2. `C benchmarks:` from a built native executable via `./bosatsu lib build --main_pack Zafu/Benchmark/Vector --exe_out ...`
+
 Or directly:
 
 ```bash

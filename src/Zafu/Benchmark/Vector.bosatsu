@@ -5,7 +5,6 @@ from Bosatsu/Prog import (
   Prog,
   await,
   pure,
-  observe,
   recover,
 )
 from Bosatsu/IO/Core import (
@@ -140,8 +139,6 @@ def run_iterations(iterations: Int, seed0: Int, run_once: Int -> Int) -> Prog[IO
         pure(sink)
       case _:
         value = run_once(seed)
-        # Force each measured value through Prog so pure work cannot be dropped.
-        _ <- observe(value).await()
         go(rem.sub(1), advance_seed(seed), sink.add(value))
 
   go(iterations, seed0, 0)
