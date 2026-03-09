@@ -46,6 +46,15 @@ from Zafu/Abstract/Semigroup import (
   combine_all_option as combine_all_option_Semigroup,
 )
 
+from Zafu/Abstract/Monoid import (
+  Monoid,
+  monoid_from_semigroup,
+  monoid_to_semigroup,
+  empty as empty_Monoid,
+  combine as combine_Monoid,
+  combine_all as combine_all_Monoid,
+)
+
 export (
   semigroup_Unit,
   semigroup_Bool_and,
@@ -89,6 +98,48 @@ export (
   semigroup_Tuple30,
   semigroup_Tuple31,
   semigroup_Tuple32,
+  monoid_Unit,
+  monoid_Bool_and,
+  monoid_Bool_or,
+  monoid_Int_add,
+  monoid_Int_mul,
+  monoid_Float64_add,
+  monoid_Float64_mul,
+  monoid_String,
+  monoid_Option,
+  monoid_List,
+  monoid_Tuple1,
+  monoid_Tuple2,
+  monoid_Tuple3,
+  monoid_Tuple4,
+  monoid_Tuple5,
+  monoid_Tuple6,
+  monoid_Tuple7,
+  monoid_Tuple8,
+  monoid_Tuple9,
+  monoid_Tuple10,
+  monoid_Tuple11,
+  monoid_Tuple12,
+  monoid_Tuple13,
+  monoid_Tuple14,
+  monoid_Tuple15,
+  monoid_Tuple16,
+  monoid_Tuple17,
+  monoid_Tuple18,
+  monoid_Tuple19,
+  monoid_Tuple20,
+  monoid_Tuple21,
+  monoid_Tuple22,
+  monoid_Tuple23,
+  monoid_Tuple24,
+  monoid_Tuple25,
+  monoid_Tuple26,
+  monoid_Tuple27,
+  monoid_Tuple28,
+  monoid_Tuple29,
+  monoid_Tuple30,
+  monoid_Tuple31,
+  monoid_Tuple32,
   eq_Unit,
   ord_Unit,
   hash_Unit,
@@ -372,7 +423,19 @@ ord_String: Ord[String] = ord_from_cmp(cmp_String)
 eq_String: Eq[String] = ord_to_eq(ord_String)
 hash_String: Hash[String] = hash_specialized(hash_string_value, eq_String)
 
-semigroup_Unit: Semigroup[Unit] = semigroup_from_combine((left, _) -> left)
+def combine_all_option_Unit(items: List[Unit]) -> Option[Unit]:
+  match items:
+    case []:
+      None
+    case _:
+      Some(())
+
+semigroup_Unit: Semigroup[Unit] = semigroup_specialized(
+  (_, _) -> (),
+  (_, _) -> (),
+  combine_all_option_Unit,
+)
+monoid_Unit: Monoid[Unit] = monoid_from_semigroup((), semigroup_Unit)
 
 def combine_n_positive_or_self(semigroup_item: Semigroup[a], value: a, n: Int) -> a:
   match combine_n_Semigroup(semigroup_item, value, n):
@@ -418,20 +481,27 @@ semigroup_Bool_and: Semigroup[Bool] = semigroup_specialized(
   (value, _) -> value,
   combine_all_option_Bool_and,
 )
+monoid_Bool_and: Monoid[Bool] = monoid_from_semigroup(True, semigroup_Bool_and)
 
 semigroup_Bool_or: Semigroup[Bool] = semigroup_specialized(
   or_Bool,
   (value, _) -> value,
   combine_all_option_Bool_or,
 )
+monoid_Bool_or: Monoid[Bool] = monoid_from_semigroup(False, semigroup_Bool_or)
 
 semigroup_Int_add: Semigroup[Int] = semigroup_from_combine((left, right) -> left.add(right))
 semigroup_Int_mul: Semigroup[Int] = semigroup_from_combine((left, right) -> left.mul(right))
+monoid_Int_add: Monoid[Int] = monoid_from_semigroup(0, semigroup_Int_add)
+monoid_Int_mul: Monoid[Int] = monoid_from_semigroup(1, semigroup_Int_mul)
 
 semigroup_Float64_add: Semigroup[Float64] = semigroup_from_combine(addf)
 semigroup_Float64_mul: Semigroup[Float64] = semigroup_from_combine(timesf)
+monoid_Float64_add: Monoid[Float64] = monoid_from_semigroup(0.0, semigroup_Float64_add)
+monoid_Float64_mul: Monoid[Float64] = monoid_from_semigroup(1.0, semigroup_Float64_mul)
 
 semigroup_String: Semigroup[String] = semigroup_from_combine((left, right) -> concat_String([left, right]))
+monoid_String: Monoid[String] = monoid_from_semigroup("", semigroup_String)
 
 def eq_Option(eq_item: Eq[a]) -> Eq[Option[a]]:
   eq_from_fn((left, right) -> (
@@ -511,6 +581,9 @@ def semigroup_Option(semigroup_item: Semigroup[a]) -> Semigroup[Option[a]]:
     ),
   )
 
+def monoid_Option(semigroup_item: Semigroup[a]) -> Monoid[Option[a]]:
+  monoid_from_semigroup(None, semigroup_Option(semigroup_item))
+
 def eq_List(eq_item: Eq[a]) -> Eq[List[a]]:
   eq_from_fn((left, right) -> eq_list(eq_item, left, right))
 
@@ -524,7 +597,26 @@ def hash_List(hash_item: Hash[a]) -> Hash[List[a]]:
     eq_List(eq_item),
   )
 
-semigroup_List: Semigroup[List[a]] = semigroup_from_combine((left, right) -> left.concat(right))
+list_concat_semigroup: Semigroup[List[a]] = semigroup_from_combine((left, right) -> left.concat(right))
+
+def combine_all_option_List(items: List[List[a]]) -> Option[List[a]]:
+  match items:
+    case []:
+      None
+    case _:
+      # Avoid repeated left-associated concat, which is quadratic.
+      chunks_rev = items.foldl_List([], (acc, chunk) -> [chunk, *acc])
+      flattened = chunks_rev.foldl_List([], (acc, chunk) -> (
+        chunk.reverse().foldl_List(acc, (chunk_acc, item) -> [item, *chunk_acc])
+      ))
+      Some(flattened)
+
+semigroup_List: Semigroup[List[a]] = semigroup_specialized(
+  (left, right) -> left.concat(right),
+  (value, n) -> combine_n_positive_or_self(list_concat_semigroup, value, n),
+  combine_all_option_List,
+)
+monoid_List: Monoid[List[a]] = monoid_from_semigroup([], semigroup_List)
 
 def eq_Tuple1(eq1: Eq[a1]) -> Eq[Tuple1[a1]]:
   eq_from_fn((left, right) -> (
@@ -2766,6 +2858,198 @@ def semigroup_Tuple32(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ),
   )
 
+def monoid_Tuple1(monoid1: Monoid[a1]) -> Monoid[Tuple1[a1]]:
+  monoid_from_semigroup(
+    Tuple1(empty_Monoid(monoid1)),
+    semigroup_Tuple1(monoid_to_semigroup(monoid1)),
+  )
+
+def monoid_Tuple2(monoid1: Monoid[a1], monoid2: Monoid[a2]) -> Monoid[Tuple2[a1, a2]]:
+  monoid_from_semigroup(
+    Tuple2(empty_Monoid(monoid1), empty_Monoid(monoid2)),
+    semigroup_Tuple2(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2)),
+  )
+
+def monoid_Tuple3(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3]) -> Monoid[Tuple3[a1, a2, a3]]:
+  monoid_from_semigroup(
+    Tuple3(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3)),
+    semigroup_Tuple3(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3)),
+  )
+
+def monoid_Tuple4(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4]) -> Monoid[Tuple4[a1, a2, a3, a4]]:
+  monoid_from_semigroup(
+    Tuple4(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4)),
+    semigroup_Tuple4(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4)),
+  )
+
+def monoid_Tuple5(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5]) -> Monoid[Tuple5[a1, a2, a3, a4, a5]]:
+  monoid_from_semigroup(
+    Tuple5(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5)),
+    semigroup_Tuple5(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5)),
+  )
+
+def monoid_Tuple6(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6]) -> Monoid[Tuple6[a1, a2, a3, a4, a5, a6]]:
+  monoid_from_semigroup(
+    Tuple6(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6)),
+    semigroup_Tuple6(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6)),
+  )
+
+def monoid_Tuple7(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7]) -> Monoid[Tuple7[a1, a2, a3, a4, a5, a6, a7]]:
+  monoid_from_semigroup(
+    Tuple7(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7)),
+    semigroup_Tuple7(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7)),
+  )
+
+def monoid_Tuple8(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8]) -> Monoid[Tuple8[a1, a2, a3, a4, a5, a6, a7, a8]]:
+  monoid_from_semigroup(
+    Tuple8(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8)),
+    semigroup_Tuple8(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8)),
+  )
+
+def monoid_Tuple9(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9]) -> Monoid[Tuple9[a1, a2, a3, a4, a5, a6, a7, a8, a9]]:
+  monoid_from_semigroup(
+    Tuple9(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9)),
+    semigroup_Tuple9(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9)),
+  )
+
+def monoid_Tuple10(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10]) -> Monoid[Tuple10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]]:
+  monoid_from_semigroup(
+    Tuple10(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10)),
+    semigroup_Tuple10(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10)),
+  )
+
+def monoid_Tuple11(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11]) -> Monoid[Tuple11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]]:
+  monoid_from_semigroup(
+    Tuple11(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11)),
+    semigroup_Tuple11(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11)),
+  )
+
+def monoid_Tuple12(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12]) -> Monoid[Tuple12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]]:
+  monoid_from_semigroup(
+    Tuple12(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12)),
+    semigroup_Tuple12(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12)),
+  )
+
+def monoid_Tuple13(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13]) -> Monoid[Tuple13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]]:
+  monoid_from_semigroup(
+    Tuple13(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13)),
+    semigroup_Tuple13(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13)),
+  )
+
+def monoid_Tuple14(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14]) -> Monoid[Tuple14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]]:
+  monoid_from_semigroup(
+    Tuple14(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14)),
+    semigroup_Tuple14(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14)),
+  )
+
+def monoid_Tuple15(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15]) -> Monoid[Tuple15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]]:
+  monoid_from_semigroup(
+    Tuple15(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15)),
+    semigroup_Tuple15(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15)),
+  )
+
+def monoid_Tuple16(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16]) -> Monoid[Tuple16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]]:
+  monoid_from_semigroup(
+    Tuple16(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16)),
+    semigroup_Tuple16(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16)),
+  )
+
+def monoid_Tuple17(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17]) -> Monoid[Tuple17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]]:
+  monoid_from_semigroup(
+    Tuple17(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17)),
+    semigroup_Tuple17(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17)),
+  )
+
+def monoid_Tuple18(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18]) -> Monoid[Tuple18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]]:
+  monoid_from_semigroup(
+    Tuple18(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18)),
+    semigroup_Tuple18(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18)),
+  )
+
+def monoid_Tuple19(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19]) -> Monoid[Tuple19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]]:
+  monoid_from_semigroup(
+    Tuple19(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19)),
+    semigroup_Tuple19(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19)),
+  )
+
+def monoid_Tuple20(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20]) -> Monoid[Tuple20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]]:
+  monoid_from_semigroup(
+    Tuple20(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20)),
+    semigroup_Tuple20(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20)),
+  )
+
+def monoid_Tuple21(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20], monoid21: Monoid[a21]) -> Monoid[Tuple21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]]:
+  monoid_from_semigroup(
+    Tuple21(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20), empty_Monoid(monoid21)),
+    semigroup_Tuple21(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20), monoid_to_semigroup(monoid21)),
+  )
+
+def monoid_Tuple22(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20], monoid21: Monoid[a21], monoid22: Monoid[a22]) -> Monoid[Tuple22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]]:
+  monoid_from_semigroup(
+    Tuple22(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20), empty_Monoid(monoid21), empty_Monoid(monoid22)),
+    semigroup_Tuple22(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20), monoid_to_semigroup(monoid21), monoid_to_semigroup(monoid22)),
+  )
+
+def monoid_Tuple23(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20], monoid21: Monoid[a21], monoid22: Monoid[a22], monoid23: Monoid[a23]) -> Monoid[Tuple23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]]:
+  monoid_from_semigroup(
+    Tuple23(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20), empty_Monoid(monoid21), empty_Monoid(monoid22), empty_Monoid(monoid23)),
+    semigroup_Tuple23(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20), monoid_to_semigroup(monoid21), monoid_to_semigroup(monoid22), monoid_to_semigroup(monoid23)),
+  )
+
+def monoid_Tuple24(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20], monoid21: Monoid[a21], monoid22: Monoid[a22], monoid23: Monoid[a23], monoid24: Monoid[a24]) -> Monoid[Tuple24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]]:
+  monoid_from_semigroup(
+    Tuple24(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20), empty_Monoid(monoid21), empty_Monoid(monoid22), empty_Monoid(monoid23), empty_Monoid(monoid24)),
+    semigroup_Tuple24(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20), monoid_to_semigroup(monoid21), monoid_to_semigroup(monoid22), monoid_to_semigroup(monoid23), monoid_to_semigroup(monoid24)),
+  )
+
+def monoid_Tuple25(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20], monoid21: Monoid[a21], monoid22: Monoid[a22], monoid23: Monoid[a23], monoid24: Monoid[a24], monoid25: Monoid[a25]) -> Monoid[Tuple25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]]:
+  monoid_from_semigroup(
+    Tuple25(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20), empty_Monoid(monoid21), empty_Monoid(monoid22), empty_Monoid(monoid23), empty_Monoid(monoid24), empty_Monoid(monoid25)),
+    semigroup_Tuple25(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20), monoid_to_semigroup(monoid21), monoid_to_semigroup(monoid22), monoid_to_semigroup(monoid23), monoid_to_semigroup(monoid24), monoid_to_semigroup(monoid25)),
+  )
+
+def monoid_Tuple26(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20], monoid21: Monoid[a21], monoid22: Monoid[a22], monoid23: Monoid[a23], monoid24: Monoid[a24], monoid25: Monoid[a25], monoid26: Monoid[a26]) -> Monoid[Tuple26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]]:
+  monoid_from_semigroup(
+    Tuple26(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20), empty_Monoid(monoid21), empty_Monoid(monoid22), empty_Monoid(monoid23), empty_Monoid(monoid24), empty_Monoid(monoid25), empty_Monoid(monoid26)),
+    semigroup_Tuple26(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20), monoid_to_semigroup(monoid21), monoid_to_semigroup(monoid22), monoid_to_semigroup(monoid23), monoid_to_semigroup(monoid24), monoid_to_semigroup(monoid25), monoid_to_semigroup(monoid26)),
+  )
+
+def monoid_Tuple27(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20], monoid21: Monoid[a21], monoid22: Monoid[a22], monoid23: Monoid[a23], monoid24: Monoid[a24], monoid25: Monoid[a25], monoid26: Monoid[a26], monoid27: Monoid[a27]) -> Monoid[Tuple27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]]:
+  monoid_from_semigroup(
+    Tuple27(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20), empty_Monoid(monoid21), empty_Monoid(monoid22), empty_Monoid(monoid23), empty_Monoid(monoid24), empty_Monoid(monoid25), empty_Monoid(monoid26), empty_Monoid(monoid27)),
+    semigroup_Tuple27(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20), monoid_to_semigroup(monoid21), monoid_to_semigroup(monoid22), monoid_to_semigroup(monoid23), monoid_to_semigroup(monoid24), monoid_to_semigroup(monoid25), monoid_to_semigroup(monoid26), monoid_to_semigroup(monoid27)),
+  )
+
+def monoid_Tuple28(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20], monoid21: Monoid[a21], monoid22: Monoid[a22], monoid23: Monoid[a23], monoid24: Monoid[a24], monoid25: Monoid[a25], monoid26: Monoid[a26], monoid27: Monoid[a27], monoid28: Monoid[a28]) -> Monoid[Tuple28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]]:
+  monoid_from_semigroup(
+    Tuple28(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20), empty_Monoid(monoid21), empty_Monoid(monoid22), empty_Monoid(monoid23), empty_Monoid(monoid24), empty_Monoid(monoid25), empty_Monoid(monoid26), empty_Monoid(monoid27), empty_Monoid(monoid28)),
+    semigroup_Tuple28(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20), monoid_to_semigroup(monoid21), monoid_to_semigroup(monoid22), monoid_to_semigroup(monoid23), monoid_to_semigroup(monoid24), monoid_to_semigroup(monoid25), monoid_to_semigroup(monoid26), monoid_to_semigroup(monoid27), monoid_to_semigroup(monoid28)),
+  )
+
+def monoid_Tuple29(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20], monoid21: Monoid[a21], monoid22: Monoid[a22], monoid23: Monoid[a23], monoid24: Monoid[a24], monoid25: Monoid[a25], monoid26: Monoid[a26], monoid27: Monoid[a27], monoid28: Monoid[a28], monoid29: Monoid[a29]) -> Monoid[Tuple29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]]:
+  monoid_from_semigroup(
+    Tuple29(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20), empty_Monoid(monoid21), empty_Monoid(monoid22), empty_Monoid(monoid23), empty_Monoid(monoid24), empty_Monoid(monoid25), empty_Monoid(monoid26), empty_Monoid(monoid27), empty_Monoid(monoid28), empty_Monoid(monoid29)),
+    semigroup_Tuple29(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20), monoid_to_semigroup(monoid21), monoid_to_semigroup(monoid22), monoid_to_semigroup(monoid23), monoid_to_semigroup(monoid24), monoid_to_semigroup(monoid25), monoid_to_semigroup(monoid26), monoid_to_semigroup(monoid27), monoid_to_semigroup(monoid28), monoid_to_semigroup(monoid29)),
+  )
+
+def monoid_Tuple30(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20], monoid21: Monoid[a21], monoid22: Monoid[a22], monoid23: Monoid[a23], monoid24: Monoid[a24], monoid25: Monoid[a25], monoid26: Monoid[a26], monoid27: Monoid[a27], monoid28: Monoid[a28], monoid29: Monoid[a29], monoid30: Monoid[a30]) -> Monoid[Tuple30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]]:
+  monoid_from_semigroup(
+    Tuple30(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20), empty_Monoid(monoid21), empty_Monoid(monoid22), empty_Monoid(monoid23), empty_Monoid(monoid24), empty_Monoid(monoid25), empty_Monoid(monoid26), empty_Monoid(monoid27), empty_Monoid(monoid28), empty_Monoid(monoid29), empty_Monoid(monoid30)),
+    semigroup_Tuple30(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20), monoid_to_semigroup(monoid21), monoid_to_semigroup(monoid22), monoid_to_semigroup(monoid23), monoid_to_semigroup(monoid24), monoid_to_semigroup(monoid25), monoid_to_semigroup(monoid26), monoid_to_semigroup(monoid27), monoid_to_semigroup(monoid28), monoid_to_semigroup(monoid29), monoid_to_semigroup(monoid30)),
+  )
+
+def monoid_Tuple31(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20], monoid21: Monoid[a21], monoid22: Monoid[a22], monoid23: Monoid[a23], monoid24: Monoid[a24], monoid25: Monoid[a25], monoid26: Monoid[a26], monoid27: Monoid[a27], monoid28: Monoid[a28], monoid29: Monoid[a29], monoid30: Monoid[a30], monoid31: Monoid[a31]) -> Monoid[Tuple31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]]:
+  monoid_from_semigroup(
+    Tuple31(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20), empty_Monoid(monoid21), empty_Monoid(monoid22), empty_Monoid(monoid23), empty_Monoid(monoid24), empty_Monoid(monoid25), empty_Monoid(monoid26), empty_Monoid(monoid27), empty_Monoid(monoid28), empty_Monoid(monoid29), empty_Monoid(monoid30), empty_Monoid(monoid31)),
+    semigroup_Tuple31(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20), monoid_to_semigroup(monoid21), monoid_to_semigroup(monoid22), monoid_to_semigroup(monoid23), monoid_to_semigroup(monoid24), monoid_to_semigroup(monoid25), monoid_to_semigroup(monoid26), monoid_to_semigroup(monoid27), monoid_to_semigroup(monoid28), monoid_to_semigroup(monoid29), monoid_to_semigroup(monoid30), monoid_to_semigroup(monoid31)),
+  )
+
+def monoid_Tuple32(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3], monoid4: Monoid[a4], monoid5: Monoid[a5], monoid6: Monoid[a6], monoid7: Monoid[a7], monoid8: Monoid[a8], monoid9: Monoid[a9], monoid10: Monoid[a10], monoid11: Monoid[a11], monoid12: Monoid[a12], monoid13: Monoid[a13], monoid14: Monoid[a14], monoid15: Monoid[a15], monoid16: Monoid[a16], monoid17: Monoid[a17], monoid18: Monoid[a18], monoid19: Monoid[a19], monoid20: Monoid[a20], monoid21: Monoid[a21], monoid22: Monoid[a22], monoid23: Monoid[a23], monoid24: Monoid[a24], monoid25: Monoid[a25], monoid26: Monoid[a26], monoid27: Monoid[a27], monoid28: Monoid[a28], monoid29: Monoid[a29], monoid30: Monoid[a30], monoid31: Monoid[a31], monoid32: Monoid[a32]) -> Monoid[Tuple32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]]:
+  monoid_from_semigroup(
+    Tuple32(empty_Monoid(monoid1), empty_Monoid(monoid2), empty_Monoid(monoid3), empty_Monoid(monoid4), empty_Monoid(monoid5), empty_Monoid(monoid6), empty_Monoid(monoid7), empty_Monoid(monoid8), empty_Monoid(monoid9), empty_Monoid(monoid10), empty_Monoid(monoid11), empty_Monoid(monoid12), empty_Monoid(monoid13), empty_Monoid(monoid14), empty_Monoid(monoid15), empty_Monoid(monoid16), empty_Monoid(monoid17), empty_Monoid(monoid18), empty_Monoid(monoid19), empty_Monoid(monoid20), empty_Monoid(monoid21), empty_Monoid(monoid22), empty_Monoid(monoid23), empty_Monoid(monoid24), empty_Monoid(monoid25), empty_Monoid(monoid26), empty_Monoid(monoid27), empty_Monoid(monoid28), empty_Monoid(monoid29), empty_Monoid(monoid30), empty_Monoid(monoid31), empty_Monoid(monoid32)),
+    semigroup_Tuple32(monoid_to_semigroup(monoid1), monoid_to_semigroup(monoid2), monoid_to_semigroup(monoid3), monoid_to_semigroup(monoid4), monoid_to_semigroup(monoid5), monoid_to_semigroup(monoid6), monoid_to_semigroup(monoid7), monoid_to_semigroup(monoid8), monoid_to_semigroup(monoid9), monoid_to_semigroup(monoid10), monoid_to_semigroup(monoid11), monoid_to_semigroup(monoid12), monoid_to_semigroup(monoid13), monoid_to_semigroup(monoid14), monoid_to_semigroup(monoid15), monoid_to_semigroup(monoid16), monoid_to_semigroup(monoid17), monoid_to_semigroup(monoid18), monoid_to_semigroup(monoid19), monoid_to_semigroup(monoid20), monoid_to_semigroup(monoid21), monoid_to_semigroup(monoid22), monoid_to_semigroup(monoid23), monoid_to_semigroup(monoid24), monoid_to_semigroup(monoid25), monoid_to_semigroup(monoid26), monoid_to_semigroup(monoid27), monoid_to_semigroup(monoid28), monoid_to_semigroup(monoid29), monoid_to_semigroup(monoid30), monoid_to_semigroup(monoid31), monoid_to_semigroup(monoid32)),
+  )
+
 def eq_Dict(eq_key: Eq[k], eq_value: Eq[v]) -> Eq[Dict[k, v]]:
   pair_eq = eq_Tuple2(eq_key, eq_value)
   eq_from_fn((left, right) -> eq_list(pair_eq, items(left), items(right)))
@@ -2785,7 +3069,7 @@ def hash_Dict(hash_key: Hash[k], hash_value: Hash[v]) -> Hash[Dict[k, v]]:
     eq_Dict(eq_key, eq_value),
   )
 
-tests = TestSuite("Predef Eq/Ord/Hash/Semigroup instances", [
+tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid instances", [
   Assertion(
     match combine_Semigroup(semigroup_Unit, (), ()):
       case ():
@@ -2828,6 +3112,45 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup instances", [
     expected32 = Tuple32(3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
     tuple32_eq = eq_Tuple32(eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int)
     Assertion(eq_Eq(tuple32_eq, combine_Semigroup(tuple32_sg, left32, right32), expected32), "semigroup_Tuple32")
+  ),
+  Assertion(
+    match combine_Monoid(monoid_Unit, (), ()):
+      case ():
+        True,
+    "monoid_Unit",
+  ),
+  Assertion(eq_Eq(eq_Int, combine_Monoid(monoid_Int_add, 1, 2), 3), "monoid_Int_add"),
+  Assertion(eq_Eq(eq_Int, combine_Monoid(monoid_Int_mul, 2, 4), 8), "monoid_Int_mul"),
+  Assertion(cmp_Float64(combine_Monoid(monoid_Float64_add, 1.25, 2.5), 3.75) matches EQ, "monoid_Float64_add"),
+  Assertion(cmp_Float64(combine_Monoid(monoid_Float64_mul, 1.5, 2.0), 3.0) matches EQ, "monoid_Float64_mul"),
+  Assertion(combine_Monoid(monoid_Bool_and, True, False) matches False, "monoid_Bool_and"),
+  Assertion(combine_Monoid(monoid_Bool_or, False, True), "monoid_Bool_or"),
+  Assertion(
+    eq_Eq(eq_String, combine_Monoid(monoid_String, "ab", "cd"), "abcd"),
+    "monoid_String",
+  ),
+  (
+    option_monoid = monoid_Option(semigroup_Int_add)
+    Assertion(combine_Monoid(option_monoid, None, Some(2)) matches Some(2), "monoid_Option keeps present side")
+  ),
+  Assertion(
+    combine_all_Monoid(monoid_List, [[], [1, 2], [3, 4]]) matches [1, 2, 3, 4],
+    "monoid_List combine_all",
+  ),
+  (
+    tuple2_monoid = monoid_Tuple2(monoid_Int_add, monoid_Bool_or)
+    Assertion(
+      combine_Monoid(tuple2_monoid, Tuple2(1, False), Tuple2(2, True)) matches Tuple2(3, True),
+      "monoid_Tuple2",
+    )
+  ),
+  (
+    tuple32_monoid = monoid_Tuple32(monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add, monoid_Int_add)
+    left32 = Tuple32(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+    right32 = Tuple32(2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
+    expected32 = Tuple32(3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
+    tuple32_eq = eq_Tuple32(eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int, eq_Int)
+    Assertion(eq_Eq(tuple32_eq, combine_Monoid(tuple32_monoid, left32, right32), expected32), "monoid_Tuple32")
   ),
   Assertion(eq_Eq(eq_Int, 1, 1), "eq_Int"),
   Assertion(cmp_Ord(ord_Int, 1, 2) matches LT, "ord_Int"),
