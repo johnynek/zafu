@@ -127,15 +127,17 @@ def distinct_to_List(items: DistinctList[a]) -> List[a]:
   DistinctList(_, rev_items) = items
   rev_items.reverse()
 
-def merge_expectations(left: List[Expectation], right: List[Expectation]) -> List[Expectation]:
-  seeded = left.foldl_List(distinct_empty(expectation_hash), distinct_add)
-  merged = right.foldl_List(seeded, distinct_add)
+def concat_distinct(hash_item: Hash[a], first: List[a], second: List[a]) -> List[a]:
+  seeded = first.foldl_List(distinct_empty(hash_item), distinct_add)
+  merged = second.foldl_List(seeded, distinct_add)
   distinct_to_List(merged)
 
+def merge_expectations(left: List[Expectation], right: List[Expectation]) -> List[Expectation]:
+  concat_distinct(expectation_hash, left, right)
+
 def merge_contexts(left: List[String], right: List[String]) -> List[String]:
-  seeded = left.foldl_List(distinct_empty(hash_String), distinct_add)
-  merged = right.foldl_List(seeded, distinct_add)
-  distinct_to_List(merged)
+  concat_distinct(hash_String, left, right)
+
 
 def merge_errors(left: Error, right: Error) -> Error:
   Error(input_left, failed_left, expected_left, contexts_left) = left

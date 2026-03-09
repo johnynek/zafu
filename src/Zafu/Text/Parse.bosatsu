@@ -25,6 +25,8 @@ from Zafu/Collection/HashSet import (
   contains as contains_HashSet,
 )
 
+from Zafu/Collection/List import exists as exists_List
+
 from Zafu/Collection/NonEmptyList import (
   NonEmptyList as NonEmpty,
   from_prepend as from_prepend_NonEmptyList,
@@ -188,12 +190,6 @@ def dispatch(state: ParseState, run: ParseState -> Step[a]) -> Step[a]:
 
 def char_eq(left: Char, right: Char) -> Bool:
   eq_Eq(eq_Char, left, right)
-
-def or_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    True
-  else:
-    right
 
 def and_Bool(left: Bool, right: Bool) -> Bool:
   if left:
@@ -562,7 +558,7 @@ def flat_map(parser: Parser[a], fn: a -> Parser[b]) -> Parser[b]:
 
 def one_of0(choices: List[Parser0[a]]) -> Parser0[a]:
   total_cost = choices.foldl_List(1, (acc, next) -> acc.add(parser0_cost(next)))
-  allows_epsilon = choices.foldl_List(False, (acc, next) -> or_Bool(acc, parser0_allows_epsilon(next)))
+  allows_epsilon = exists_List(choices, next -> parser0_allows_epsilon(next))
   mk_parser0(
     state -> dispatch(state, spent_state -> (
       def loop_choices(rem_choices: List[Parser0[a]], merged_failure: Option[ParseFailure]) -> Step[a]:
