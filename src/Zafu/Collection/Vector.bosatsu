@@ -114,12 +114,15 @@ def traversal_fuel(vec: Vector[a]) -> Int:
 
 def build_prefix(children: Array[Vector[a]]) -> Array[Int]:
   cnt = size_Array(children)
-  (_, _, rev_prefix) = int_loop(cnt, (0, 0, []), (rem, state) -> (
-    (idx, total, rev_prefix) = state
-    child = get_or_Array(children, idx, _ -> empty)
-    next_total = total.add(size(child))
-    (rem.sub(1), (idx.add(1), next_total, [next_total, *rev_prefix]))
-  ))
+  def go(rem: Int, idx: Int, total: Int, rev_prefix: List[Int]) -> List[Int]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        rev_prefix
+      case _:
+        child = get_or_Array(children, idx, _ -> empty)
+        next_total = total.add(size(child))
+        go(rem.sub(1), idx.add(1), next_total, [next_total, *rev_prefix])
+  rev_prefix = go(cnt, 0, 0, [])
   from_List_Array(rev_prefix.reverse())
 
 def make_branch(height: Int, children: Array[Vector[a]]) -> Vector[a]:
@@ -143,16 +146,19 @@ def collapse_nodes(nodes: Array[Vector[a]]) -> Option[Vector[a]]:
     get_Array(nodes, 0)
   else:
     child_height0 = get_or_Array(nodes, 0, _ -> empty).height()
-    (nodes_final, _) = int_loop(cnt0.add(64), (nodes, child_height0), (rem, state) -> (
-      (nodes, child_height) = state
-      cnt = size_Array(nodes)
-      if cnt.eq_Int(1):
-        (0, state)
-      else:
-        parent_height = child_height.add(1)
-        next_nodes = regroup_nodes(parent_height, nodes)
-        (rem.sub(1), (next_nodes, parent_height))
-    ))
+    def go(rem: Int, nodes: Array[Vector[a]], child_height: Int) -> (Array[Vector[a]], Int):
+      loop rem:
+        case _ if cmp_Int(rem, 0) matches LT | EQ:
+          (nodes, child_height)
+        case _:
+          cnt = size_Array(nodes)
+          if cnt.eq_Int(1):
+            (nodes, child_height)
+          else:
+            parent_height = child_height.add(1)
+            next_nodes = regroup_nodes(parent_height, nodes)
+            go(rem.sub(1), next_nodes, parent_height)
+    (nodes_final, _) = go(cnt0.add(64), nodes, child_height0)
     get_Array(nodes_final, 0)
 
 def from_Array(arr: Array[a]) -> Vector[a]:
@@ -171,22 +177,25 @@ def from_Array(arr: Array[a]) -> Vector[a]:
     if leaf_cnt.eq_Int(1):
       get_or_Array(leaves, 0, _ -> empty)
     else:
-      (nodes_final, _) = int_loop(leaf_cnt.add(64), (leaves, 0), (rem, state) -> (
-        (nodes, child_height) = state
-        cnt = size_Array(nodes)
-        if cnt.eq_Int(1):
-          (0, state)
-        else:
-          parent_height = child_height.add(1)
-          next_cnt = chunk_count(cnt)
-          next_nodes = tabulate_Array(next_cnt, idx -> (
-            start = idx.mul(chunk_width)
-            stop = min_Int(start.add(chunk_width), cnt)
-            child_slice = slice_Array(nodes, start, stop)
-            make_branch(parent_height, child_slice)
-          ))
-          (rem.sub(1), (next_nodes, parent_height))
-      ))
+      def go(rem: Int, nodes: Array[Vector[a]], child_height: Int) -> (Array[Vector[a]], Int):
+        loop rem:
+          case _ if cmp_Int(rem, 0) matches LT | EQ:
+            (nodes, child_height)
+          case _:
+            cnt = size_Array(nodes)
+            if cnt.eq_Int(1):
+              (nodes, child_height)
+            else:
+              parent_height = child_height.add(1)
+              next_cnt = chunk_count(cnt)
+              next_nodes = tabulate_Array(next_cnt, idx -> (
+                start = idx.mul(chunk_width)
+                stop = min_Int(start.add(chunk_width), cnt)
+                child_slice = slice_Array(nodes, start, stop)
+                make_branch(parent_height, child_slice)
+              ))
+              go(rem.sub(1), next_nodes, parent_height)
+      (nodes_final, _) = go(leaf_cnt.add(64), leaves, 0)
       get_or_Array(nodes_final, 0, _ -> empty)
 
 # Builds a vector from a list while preserving order.
@@ -202,17 +211,20 @@ def push_children_rtl(children: Array[Vector[a]], stack: List[Vector[a]]) -> Lis
 
 def to_Array(vec: Vector[a]) -> Array[a]:
   fuel = traversal_fuel(vec)
-  (_, rev_chunks) = int_loop(fuel, ([vec], []), (rem, state) -> (
-    (stack, rev_chunks) = state
-    match stack:
-      case []:
-        (0, state)
-      case [Leaf(_, items), *tail]:
-        (rem.sub(1), (tail, [items, *rev_chunks]))
-      case [Branch(_, _, _, children), *tail]:
-        next_stack = push_children_ltr(children, tail)
-        (rem.sub(1), (next_stack, rev_chunks))
-  ))
+  def go(rem: Int, stack: List[Vector[a]], rev_chunks: List[Array[a]]) -> List[Array[a]]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        rev_chunks
+      case _:
+        match stack:
+          case []:
+            rev_chunks
+          case [Leaf(_, items), *tail]:
+            go(rem.sub(1), tail, [items, *rev_chunks])
+          case [Branch(_, _, _, children), *tail]:
+            next_stack = push_children_ltr(children, tail)
+            go(rem.sub(1), next_stack, rev_chunks)
+  rev_chunks = go(fuel, [vec], [])
   concat_all_Array(rev_chunks.reverse())
 
 # Converts a vector to a list in element order.
@@ -313,19 +325,21 @@ def foldr_leaf(items: Array[a], init: b, fn: (a, b) -> b) -> b:
 # Right fold over all vector elements.
 def foldr(vec: Vector[a], init: b, fn: (a, b) -> b) -> b:
   fuel = traversal_fuel(vec)
-  (_, acc) = int_loop(fuel, ([vec], init), (rem, state) -> (
-    (stack, acc) = state
-    match stack:
-      case []:
-        (0, state)
-      case [Leaf(_, items), *tail]:
-        next_acc = foldr_leaf(items, acc, fn)
-        (rem.sub(1), (tail, next_acc))
-      case [Branch(_, _, _, children), *tail]:
-        next_stack = push_children_rtl(children, tail)
-        (rem.sub(1), (next_stack, acc))
-  ))
-  acc
+  def go(rem: Int, stack: List[Vector[a]], acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Leaf(_, items), *tail]:
+            next_acc = foldr_leaf(items, acc, fn)
+            go(rem.sub(1), tail, next_acc)
+          case [Branch(_, _, _, children), *tail]:
+            next_stack = push_children_rtl(children, tail)
+            go(rem.sub(1), next_stack, acc)
+  go(fuel, [vec], init)
 
 def map_with_fuel(vec: Vector[a], fn: a -> b, fuel: Int) -> Vector[b]:
   recur fuel:
@@ -388,40 +402,47 @@ def raise_to_height(vec: Vector[a], target_height: Int) -> Vector[a]:
   current_height = height(vec)
   if cmp_Int(current_height, target_height) matches LT:
     diff = target_height.sub(current_height)
-    int_loop(diff, vec, (rem, node) -> (
-      child_arr = from_List_Array([node])
-      (rem.sub(1), make_branch(height(node).add(1), child_arr))
-    ))
+    def go(rem: Int, node: Vector[a]) -> Vector[a]:
+      loop rem:
+        case _ if cmp_Int(rem, 0) matches LT | EQ:
+          node
+        case _:
+          child_arr = from_List_Array([node])
+          next_node = make_branch(height(node).add(1), child_arr)
+          go(rem.sub(1), next_node)
+    go(diff, vec)
   else:
     vec
 
 def descend_edges(left: Vector[a], right: Vector[a]) -> Option[(List[CatFrame[a]], Array[a], Array[a])]:
   fuel = height(left).add(height(right)).add(8)
-  (_, result) = int_loop(fuel, (Some((left, right, [])), None), (rem, state) -> (
-    (pending, _) = state
-    match pending:
-      case None:
-        (0, state)
-      case Some((left, right, frames)):
-        match (left, right):
-          case (Leaf(_, left_items), Leaf(_, right_items)):
-            (0, (None, Some((frames, left_items, right_items))))
-          case (Branch(h, _, _, left_children), Branch(_, _, _, right_children)):
-            match split_last_Array(left_children):
-              case None:
-                (0, (None, None))
-              case Some((left_prefix, left_last)):
-                match split_first_Array(right_children):
+  def go(rem: Int, pending: Option[(Vector[a], Vector[a], List[CatFrame[a]])]) -> Option[(List[CatFrame[a]], Array[a], Array[a])]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        None
+      case _:
+        match pending:
+          case None:
+            None
+          case Some((left, right, frames)):
+            match (left, right):
+              case (Leaf(_, left_items), Leaf(_, right_items)):
+                Some((frames, left_items, right_items))
+              case (Branch(h, _, _, left_children), Branch(_, _, _, right_children)):
+                match split_last_Array(left_children):
                   case None:
-                    (0, (None, None))
-                  case Some((right_first, right_suffix)):
-                    frame = CatFrame(h, left_prefix, right_suffix)
-                    next = Some((left_last, right_first, [frame, *frames]))
-                    (rem.sub(1), (next, None))
-          case _:
-            (0, (None, None))
-  ))
-  result
+                    None
+                  case Some((left_prefix, left_last)):
+                    match split_first_Array(right_children):
+                      case None:
+                        None
+                      case Some((right_first, right_suffix)):
+                        frame = CatFrame(h, left_prefix, right_suffix)
+                        next = Some((left_last, right_first, [frame, *frames]))
+                        go(rem.sub(1), next)
+              case _:
+                None
+  go(fuel, Some((left, right, [])))
 
 def ascend_frames(frames: List[CatFrame[a]], nodes: Array[Vector[a]]) -> Array[Vector[a]]:
   loop frames:
