@@ -73,6 +73,7 @@ export (
   from_List,
   to_List,
   size,
+  is_empty,
   get,
   get_or,
   any,
@@ -196,6 +197,9 @@ def append(chain: Chain[a], item: a) -> Chain[a]:
 # Number of elements in the chain.
 def size(chain: Chain[a]) -> Int:
   chain_size(chain)
+
+def is_empty(chain: Chain[a]) -> Bool:
+  chain matches Empty
 
 def traversal_fuel(chain: Chain[a]) -> Int:
   chain_nodes(chain).add(64)
@@ -511,7 +515,7 @@ foldable_Chain: Foldable[Chain] = foldable_specialized(
   foldr,
   foldl_iter,
   foldr_iter,
-  (chain) -> size(chain).eq_Int(0),
+  is_empty,
   size,
   to_List,
 )
@@ -816,6 +820,8 @@ chain_props: Prop = suite_Prop(
 
 tests = TestSuite("Chain tests", [
   Assertion(size(empty).eq_Int(0), "empty size"),
+  Assertion(is_empty(empty), "empty is_empty"),
+  Assertion(is_empty(singleton(1)) matches False, "singleton non-empty"),
   Assertion(from_Array(from_List_Array([1])).to_List() matches [1], "array singleton to singleton"),
   Assertion(to_List(empty) matches [], "empty to list"),
   Assertion(get(empty, 0) matches None, "empty get"),
