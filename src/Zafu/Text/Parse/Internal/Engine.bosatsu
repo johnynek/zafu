@@ -1,0 +1,63 @@
+package Zafu/Text/Parse/Internal/Engine
+
+from Zafu/Control/Result import (
+  Result,
+  Ok,
+  Err,
+)
+from Zafu/Text/Parse/Internal/Core import (
+  ParseState,
+  Parser0,
+  Parser,
+  Step,
+  Success,
+  Failure,
+  make_state,
+  run_parser0,
+  run_parser,
+  parser0_cost,
+  parser_cost,
+  failure_error,
+)
+from Zafu/Text/Parse/Error import Error
+
+export (
+  parser0_fuel,
+  parser_fuel,
+  parse0_with_state,
+  parse1_with_state,
+)
+
+def max_Int(left: Int, right: Int) -> Int:
+  if cmp_Int(left, right) matches LT:
+    right
+  else:
+    left
+
+def parser0_fuel(parser: Parser0[a], text: String) -> Int:
+  token_budget = length_String(text).add(1)
+  step_budget_per_token = max_Int(32, parser0_cost(parser).mul(4))
+  token_budget.mul(step_budget_per_token)
+
+def parser_fuel(parser: Parser[a], text: String) -> Int:
+  token_budget = length_String(text).add(1)
+  step_budget_per_token = max_Int(32, parser_cost(parser).mul(4))
+  token_budget.mul(step_budget_per_token)
+
+def parse0_with_state(parser: Parser0[a], text: String) -> Result[Error, (ParseState, a)]:
+  fuel = parser0_fuel(parser, text)
+  initial_state = make_state(text, fuel)
+  match run_parser0(parser, initial_state):
+    case Success(value, final_state):
+      Ok((final_state, value))
+    case Failure(failure):
+      Err(failure_error(failure))
+
+def parse1_with_state(parser: Parser[a], text: String) -> Result[Error, (ParseState, a)]:
+  fuel = parser_fuel(parser, text)
+  initial_state = make_state(text, fuel)
+  match run_parser(parser, initial_state):
+    case Success(value, final_state):
+      Ok((final_state, value))
+    case Failure(failure):
+      Err(failure_error(failure))
