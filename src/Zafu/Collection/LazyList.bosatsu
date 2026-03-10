@@ -390,20 +390,20 @@ def foldl(ll: LazyList[a], init: b, fn: (b, a) -> b) -> b:
         foldl_filtered(sz, source, acc, to_value, pred, fn)
   loop_fold(size, vll, init)
 
-def foldl_iter(ll: LazyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
+def foldl_iter(ll: LazyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
   LazyList(limit, _) = ll
-  def step(rem: Int, current: LazyList[a], acc: b) -> b:
+  def step(rem: Int, current: LazyList[a], acc: b) -> IterState[b, b]:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc
+        Continue(acc)
       case _:
         match uncons(current):
           case None:
-            acc
+            Continue(acc)
           case Some((head, tail)):
             match fn(acc, get_Lazy(head)):
               case Done(done_value):
-                done_value
+                Done(done_value)
               case Continue(next_acc):
                 step(rem.sub(1), tail, next_acc)
   step(limit, ll, init)

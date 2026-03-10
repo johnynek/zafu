@@ -65,8 +65,6 @@ from Zafu/Abstract/Monoid import (
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
-  foldl_iter_Array_state,
-  foldr_iter_Array_state,
   foldl as foldl_Foldable,
   foldl_iter as foldl_iter_Foldable,
   foldr_iter as foldr_iter_Foldable,
@@ -76,7 +74,8 @@ from Zafu/Abstract/Foldable import (
 from Zafu/Control/IterState import (
   done,
   continue,
-  value,
+  foldl_Array as foldl_state_Array,
+  foldr_Array as foldr_state_Array,
 )
 
 export (
@@ -660,8 +659,8 @@ def foldr_Array(items: Array[a], init: b, fn: (a, b) -> b) -> b:
 foldable_Array: Foldable[Array] = foldable_specialized(
   foldl_Array,
   foldr_Array,
-  (items, init, fn) -> value(foldl_iter_Array_state(items, init, fn)),
-  (items, init, fn) -> value(foldr_iter_Array_state(items, init, fn)),
+  foldl_state_Array,
+  foldr_state_Array,
   (items) -> cmp_Int(size_Array(items), 0) matches EQ,
   size_Array,
   to_List_Array,

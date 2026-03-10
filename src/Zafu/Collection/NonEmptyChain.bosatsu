@@ -73,8 +73,8 @@ from Zafu/Abstract/Instances/Predef import (
 )
 from Zafu/Control/IterState import (
   IterState,
-  Done,
-  Continue,
+  foldl_List as foldl_state_List,
+  foldr_List as foldr_state_List,
 )
 
 export (
@@ -286,27 +286,11 @@ def foldr(items: NonEmptyChain[a], init: b, fn: (a, b) -> b) -> b:
     case Append(init0, last0):
       foldr_Chain(init0, fn(last0, init), fn)
 
-def foldl_iter_List(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
-  def go(rem: List[a], acc: b) -> b:
-    loop rem:
-      case []:
-        acc
-      case [head, *tail]:
-        match fn(acc, head):
-          case Done(done_value):
-            done_value
-          case Continue(next_acc):
-            go(tail, next_acc)
-  go(items, init)
+def foldl_iter(items: NonEmptyChain[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  foldl_state_List(to_List(items), init, fn)
 
-def foldr_iter_List(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
-  foldl_iter_List(items.reverse(), init, (acc, item) -> fn(item, acc))
-
-def foldl_iter(items: NonEmptyChain[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
-  foldl_iter_List(to_List(items), init, fn)
-
-def foldr_iter(items: NonEmptyChain[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
-  foldr_iter_List(to_List(items), init, fn)
+def foldr_iter(items: NonEmptyChain[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  foldr_state_List(to_List(items), init, fn)
 
 foldable_NonEmptyChain: Foldable[NonEmptyChain] = foldable_specialized(
   foldl,

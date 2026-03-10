@@ -60,6 +60,10 @@ from Zafu/Control/IterState import (
   IterState,
   Done,
   Continue,
+  foldl_List as foldl_state_List,
+  foldl_Array as foldl_state_Array,
+  foldr_List as foldr_state_List,
+  foldr_Array as foldr_state_Array,
 )
 
 export (
@@ -247,118 +251,66 @@ def foldr(chain: Chain[a], init: b, fn: (a, b) -> b) -> b:
             loop_fold(rem.sub(1), [right, left, *tail], acc)
   loop_fold(traversal_fuel(chain), [chain], init)
 
-def foldl_iter_List(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
-  def go(rem: List[a], acc: b) -> IterState[b, b]:
-    loop rem:
-      case []:
-        Continue(acc)
-      case [head, *tail]:
-        match fn(acc, head):
-          case Done(done_value):
-            Done(done_value)
-          case Continue(next_acc):
-            go(tail, next_acc)
-  go(items, init)
-
-def foldl_iter_Array(items: Array[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
-  cnt = size_Array(items)
-  def go(rem: Int, idx: Int, acc: b) -> IterState[b, b]:
+def foldl_iter(chain: Chain[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> IterState[b, b]:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         Continue(acc)
-      case _:
-        match get_Array(items, idx):
-          case Some(item):
-            match fn(acc, item):
-              case Done(done_value):
-                Done(done_value)
-              case Continue(next_acc):
-                go(rem.sub(1), idx.add(1), next_acc)
-          case None:
-            Continue(acc)
-  go(cnt, 0, init)
-
-def foldr_iter_List(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
-  foldl_iter_List(items.reverse(), init, (acc, item) -> fn(item, acc))
-
-def foldr_iter_Array(items: Array[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
-  cnt = size_Array(items)
-  def go(rem: Int, idx: Int, acc: b) -> IterState[b, b]:
-    loop rem:
-      case _ if cmp_Int(rem, 0) matches LT | EQ:
-        Continue(acc)
-      case _:
-        match get_Array(items, idx):
-          case Some(item):
-            match fn(item, acc):
-              case Done(done_value):
-                Done(done_value)
-              case Continue(next_acc):
-                go(rem.sub(1), idx.sub(1), next_acc)
-          case None:
-            Continue(acc)
-  go(cnt, cnt.sub(1), init)
-
-def foldl_iter(chain: Chain[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
-  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> b:
-    loop rem:
-      case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc
       case _:
         match stack:
           case []:
-            acc
+            Continue(acc)
           case [Empty, *tail]:
             loop_fold(rem.sub(1), tail, acc)
           case [Singleton(item), *tail]:
             match fn(acc, item):
               case Done(done_value):
-                done_value
+                Done(done_value)
               case Continue(next_acc):
                 loop_fold(rem.sub(1), tail, next_acc)
           case [WrapArray(items), *tail]:
-            match foldl_iter_Array(items, acc, fn):
+            match foldl_state_Array(items, acc, fn):
               case Done(done_value):
-                done_value
+                Done(done_value)
               case Continue(next_acc):
                 loop_fold(rem.sub(1), tail, next_acc)
           case [WrapList(items), *tail]:
-            match foldl_iter_List(items, acc, fn):
+            match foldl_state_List(items, acc, fn):
               case Done(done_value):
-                done_value
+                Done(done_value)
               case Continue(next_acc):
                 loop_fold(rem.sub(1), tail, next_acc)
           case [Concat(_, left, right), *tail]:
             loop_fold(rem.sub(1), [left, right, *tail], acc)
   loop_fold(traversal_fuel(chain), [chain], init)
 
-def foldr_iter(chain: Chain[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
-  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> b:
+def foldr_iter(chain: Chain[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> IterState[b, b]:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc
+        Continue(acc)
       case _:
         match stack:
           case []:
-            acc
+            Continue(acc)
           case [Empty, *tail]:
             loop_fold(rem.sub(1), tail, acc)
           case [Singleton(item), *tail]:
             match fn(item, acc):
               case Done(done_value):
-                done_value
+                Done(done_value)
               case Continue(next_acc):
                 loop_fold(rem.sub(1), tail, next_acc)
           case [WrapArray(items), *tail]:
-            match foldr_iter_Array(items, acc, fn):
+            match foldr_state_Array(items, acc, fn):
               case Done(done_value):
-                done_value
+                Done(done_value)
               case Continue(next_acc):
                 loop_fold(rem.sub(1), tail, next_acc)
           case [WrapList(items), *tail]:
-            match foldr_iter_List(items, acc, fn):
+            match foldr_state_List(items, acc, fn):
               case Done(done_value):
-                done_value
+                Done(done_value)
               case Continue(next_acc):
                 loop_fold(rem.sub(1), tail, next_acc)
           case [Concat(_, left, right), *tail]:

@@ -58,6 +58,8 @@ from Zafu/Control/IterState import (
   IterState,
   Done,
   Continue,
+  foldl_List as foldl_state_List,
+  foldr_List as foldr_state_List,
 )
 
 export (
@@ -184,45 +186,21 @@ def foldl(items: NonEmptyList[a], init: b, fn: (b, a) -> b) -> b:
 def foldr(items: NonEmptyList[a], init: b, fn: (a, b) -> b) -> b:
   foldr_List(to_List(items), init, fn)
 
-def foldl_iter_List(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
-  def go(rem: List[a], acc: b) -> IterState[b, b]:
-    loop rem:
-      case []:
-        Continue(acc)
-      case [head, *tail]:
-        match fn(acc, head):
-          case Done(done_value):
-            Done(done_value)
-          case Continue(next_acc):
-            go(tail, next_acc)
-  go(items, init)
-
-def foldr_iter_List(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
-  foldl_iter_List(items.reverse(), init, (acc, item) -> fn(item, acc))
-
-def foldl_iter(items: NonEmptyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
+def foldl_iter(items: NonEmptyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
   NonEmptyList(head0, tail0) = items
   match fn(init, head0):
     case Done(done_value):
-      done_value
+      Done(done_value)
     case Continue(next_acc):
-      match foldl_iter_List(tail0, next_acc, fn):
-        case Done(done_value):
-          done_value
-        case Continue(total):
-          total
+      foldl_state_List(tail0, next_acc, fn)
 
-def foldr_iter(items: NonEmptyList[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
+def foldr_iter(items: NonEmptyList[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
   NonEmptyList(head0, tail0) = items
-  match foldr_iter_List(tail0, init, fn):
+  match foldr_state_List(tail0, init, fn):
     case Done(done_value):
-      done_value
+      Done(done_value)
     case Continue(tail_total):
-      match fn(head0, tail_total):
-        case Done(done_value):
-          done_value
-        case Continue(total):
-          total
+      fn(head0, tail_total)
 
 foldable_NonEmptyList: Foldable[NonEmptyList] = foldable_specialized(
   foldl,

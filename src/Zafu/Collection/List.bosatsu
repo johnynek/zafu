@@ -26,8 +26,8 @@ from Zafu/Abstract/Foldable import (
 from Zafu/Abstract/Instances/Predef import eq_List as eq_List_Eq
 from Zafu/Control/IterState import (
   IterState,
-  Done,
-  Continue,
+  foldl_List as foldl_state_List,
+  foldr_List as foldr_state_List,
 )
 
 export (
@@ -116,21 +116,11 @@ def foldr(items: List[a], init: b, fn: (a, b) -> b) -> b:
   # Reverse + foldl gives right-fold semantics with stack-safe traversal.
   items.reverse().foldl_List(init, (acc, item) -> fn(item, acc))
 
-def foldl_iter(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
-  def go(rem: List[a], acc: b) -> b:
-    loop rem:
-      case []:
-        acc
-      case [head, *tail]:
-        match fn(acc, head):
-          case Done(done_value):
-            done_value
-          case Continue(next_acc):
-            go(tail, next_acc)
-  go(items, init)
+def foldl_iter(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  foldl_state_List(items, init, fn)
 
-def foldr_iter(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
-  foldl_iter(items.reverse(), init, (acc, item) -> fn(item, acc))
+def foldr_iter(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  foldr_state_List(items, init, fn)
 
 def map(items: List[a], fn: a -> b) -> List[b]:
   items.map_List(fn)

@@ -38,14 +38,14 @@ from Bosatsu/Testing/Properties import (
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
-  foldl_iter_Array_state,
-  foldr_iter_Array_state,
 )
 from Zafu/Collection/List import size as size_List
 from Zafu/Control/IterState import (
   IterState,
   Done,
   Continue,
+  foldl_Array as foldl_state_Array,
+  foldr_Array as foldr_state_Array,
 )
 
 export (
@@ -353,19 +353,19 @@ def foldr(vec: Vector[a], init: b, fn: (a, b) -> b) -> b:
             go(rem.sub(1), next_stack, acc)
   go(fuel, [vec], init)
 
-def foldl_iter(vec: Vector[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
-  def go(rem: Int, stack: List[Vector[a]], acc: b) -> b:
+def foldl_iter(vec: Vector[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  def go(rem: Int, stack: List[Vector[a]], acc: b) -> IterState[b, b]:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc
+        Continue(acc)
       case _:
         match stack:
           case []:
-            acc
+            Continue(acc)
           case [Leaf(_, items), *tail]:
-            match foldl_iter_Array_state(items, acc, fn):
+            match foldl_state_Array(items, acc, fn):
               case Done(done_value):
-                done_value
+                Done(done_value)
               case Continue(next_acc):
                 go(rem.sub(1), tail, next_acc)
           case [Branch(_, _, _, children), *tail]:
@@ -373,19 +373,19 @@ def foldl_iter(vec: Vector[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
             go(rem.sub(1), next_stack, acc)
   go(traversal_fuel(vec), [vec], init)
 
-def foldr_iter(vec: Vector[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
-  def go(rem: Int, stack: List[Vector[a]], acc: b) -> b:
+def foldr_iter(vec: Vector[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  def go(rem: Int, stack: List[Vector[a]], acc: b) -> IterState[b, b]:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc
+        Continue(acc)
       case _:
         match stack:
           case []:
-            acc
+            Continue(acc)
           case [Leaf(_, items), *tail]:
-            match foldr_iter_Array_state(items, acc, fn):
+            match foldr_state_Array(items, acc, fn):
               case Done(done_value):
-                done_value
+                Done(done_value)
               case Continue(next_acc):
                 go(rem.sub(1), tail, next_acc)
           case [Branch(_, _, _, children), *tail]:

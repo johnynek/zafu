@@ -25,6 +25,8 @@ from Zafu/Control/IterState import (
   IterState,
   Done,
   Continue,
+  foldl_List as foldl_state_List,
+  foldr_List as foldr_state_List,
 )
 
 export (
@@ -166,51 +168,35 @@ def foldr(queue: Queue[a], init: b, fn: (a, b) -> b) -> b:
     back_acc = back_rev.foldl_List(init, (acc, item) -> fn(item, acc))
     front.reverse().foldl_List(back_acc, (acc, item) -> fn(item, acc))
 
-def foldl_iter_List(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
-  def go(rem: List[a], acc: b) -> IterState[b, b]:
-    loop rem:
-      case []:
-        Continue(acc)
-      case [head, *tail]:
-        match fn(acc, head):
+def foldl_iter(queue: Queue[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  Queue(size, front, back_rev) = normalize_queue(queue)
+  if size.eq_Int(0):
+    Continue(init)
+  else:
+    match foldl_state_List(front, init, fn):
+      case Done(done_value):
+        Done(done_value)
+      case Continue(front_acc):
+        match foldr_state_List(back_rev, front_acc, (item, acc) -> fn(acc, item)):
           case Done(done_value):
             Done(done_value)
-          case Continue(next_acc):
-            go(tail, next_acc)
-  go(items, init)
-
-def foldr_iter_List(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
-  foldl_iter_List(items.reverse(), init, (acc, item) -> fn(item, acc))
-
-def foldl_iter(queue: Queue[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
-  Queue(size, front, back_rev) = normalize_queue(queue)
-  if size.eq_Int(0):
-    init
-  else:
-    match foldl_iter_List(front, init, fn):
-      case Done(done_value):
-        done_value
-      case Continue(front_acc):
-        match foldr_iter_List(back_rev, front_acc, (item, acc) -> fn(acc, item)):
-          case Done(done_value):
-            done_value
           case Continue(total):
-            total
+            Continue(total)
 
-def foldr_iter(queue: Queue[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
+def foldr_iter(queue: Queue[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
   Queue(size, front, back_rev) = normalize_queue(queue)
   if size.eq_Int(0):
-    init
+    Continue(init)
   else:
-    match foldl_iter_List(back_rev, init, (acc, item) -> fn(item, acc)):
+    match foldl_state_List(back_rev, init, (acc, item) -> fn(item, acc)):
       case Done(done_value):
-        done_value
+        Done(done_value)
       case Continue(back_acc):
-        match foldr_iter_List(front, back_acc, fn):
+        match foldr_state_List(front, back_acc, fn):
           case Done(done_value):
-            done_value
+            Done(done_value)
           case Continue(total):
-            total
+            Continue(total)
 
 # Concatenates two deques in iteration order.
 def concat(left: Queue[a], right: Queue[a]) -> Queue[a]:
