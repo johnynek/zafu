@@ -93,21 +93,17 @@ export (
   document_Option,
 )
 
-enum VDoc:
+enum Doc:
   Empty
   Text(value: String)
   ZeroWidth(value: String)
   Line
-  FlatAlt(default: VDoc, when_flat: VDoc)
-  Concat(left: VDoc, right: VDoc)
-  Nest(indent: Int, doc: VDoc)
-  Align(doc: VDoc)
-  Union(flattened: VDoc, fallback: VDoc)
-  LazyDoc(thunk: Lazy[VDoc])
-
-# Opaque pretty-print document value.
-# Output: stores an internal `VDoc` tree used by layout/rendering operations.
-struct Doc(node: VDoc)
+  FlatAlt(default: Doc, when_flat: Doc)
+  Concat(left: Doc, right: Doc)
+  Nest(indent: Int, doc: Doc)
+  Align(doc: Doc)
+  Union(flattened: Doc, fallback: Doc)
+  LazyDoc(thunk: Lazy[Doc])
 
 # Typeclass-style dictionary for rendering `a` values into `Doc`.
 # Input: `to_doc_fn` converts one `a` value to a document.
@@ -139,24 +135,17 @@ def max_Int(a: Int, b: Int) -> Int:
     case EQ | GT:
       a
 
-def view(doc: Doc) -> VDoc:
-  Doc(node) = doc
-  node
-
-def mk(node: VDoc) -> Doc:
-  Doc(node)
-
 # Defensive cap for internal size estimation traversals.
 doc_size_fuel_limit: Int = 100000
 
-def force_v(node: VDoc) -> VDoc:
+def force_v(node: Doc) -> Doc:
   loop node:
     case LazyDoc(thunk):
       force_v(get_Lazy(thunk))
     case forced:
       forced
 
-def append_v(left: VDoc, right: VDoc) -> VDoc:
+def append_v(left: Doc, right: Doc) -> Doc:
   match (left, right):
     case (Empty, _):
       right
@@ -165,8 +154,8 @@ def append_v(left: VDoc, right: VDoc) -> VDoc:
     case _:
       Concat(left, right)
 
-def doc_size_v(doc: VDoc) -> Int:
-  def loop(fuel: Int, stack: List[VDoc], acc: Int) -> Int:
+def doc_size_v(doc: Doc) -> Int:
+  def loop(fuel: Int, stack: List[Doc], acc: Int) -> Int:
     recur fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         acc
@@ -195,7 +184,7 @@ def doc_size_v(doc: VDoc) -> Int:
   loop(doc_size_fuel_limit, [doc], 0)
 
 def traversal_fuel(doc: Doc, width_hint: Int) -> Int:
-  size = doc_size_v(view(doc))
+  size = doc_size_v(doc)
   size.mul(max_Int(width_hint, 0).add(32)).add(1024)
 
 def string_is_empty(value: String) -> Bool:
@@ -332,16 +321,16 @@ def trim_rendered(value: String) -> String:
 
 # The empty document.
 # Output: renders as the empty string and acts as append identity.
-empty: Doc = mk(Empty)
+empty: Doc = Empty
 
-def text_raw_v(value: String) -> VDoc:
+def text_raw_v(value: String) -> Doc:
   if string_is_empty(value):
     Empty
   else:
     Text(value)
 
 def text_raw(value: String) -> Doc:
-  mk(text_raw_v(value))
+  text_raw_v(value)
 
 # Single space text document.
 # Output: a one-character space `Doc`.
@@ -352,13 +341,13 @@ comma: Doc = text_raw(",")
 
 # Soft line break that becomes a space in flattened layouts.
 # Output: newline in broken mode, `" "` in flat mode.
-line: Doc = mk(FlatAlt(Line, text_raw_v(" ")))
+line: Doc = FlatAlt(Line, text_raw_v(" "))
 # Soft line break that disappears in flattened layouts.
 # Output: newline in broken mode, empty in flat mode.
-line_break: Doc = mk(FlatAlt(Line, Empty))
+line_break: Doc = FlatAlt(Line, Empty)
 # Mandatory line break.
 # Output: always renders as newline plus current indentation.
-hard_line: Doc = mk(Line)
+hard_line: Doc = Line
 
 
 def lines(value: String) -> List[String]:
@@ -376,19 +365,19 @@ def lines(value: String) -> List[String]:
   loop(length_String(value), value, [])
 
 def intercalate_docs(sep: Doc, docs: List[Doc]) -> Doc:
-  sep_v = view(sep)
+  sep_v = sep
   match docs.reverse():
     case []:
       empty
     case [head, *tail]:
-      def loop(rem: List[Doc], acc: VDoc) -> VDoc:
+      def loop(rem: List[Doc], acc: Doc) -> Doc:
         recur rem:
           case []:
             acc
           case [next, *rest]:
-            loop(rest, append_v(view(next), append_v(sep_v, acc)))
+            loop(rest, append_v(next, append_v(sep_v, acc)))
 
-      mk(loop(tail, view(head)))
+      loop(tail, head)
 
 #+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+
 # Exported constructors and combinators
@@ -448,7 +437,7 @@ def repeat(doc: Doc, count: Int) -> Doc:
   if cmp_Int(count, 0) matches LT | EQ:
     empty
   else:
-    def loop(rem: Int, chunk: VDoc, acc: VDoc) -> VDoc:
+    def loop(rem: Int, chunk: Doc, acc: Doc) -> Doc:
       recur rem:
         case _ if cmp_Int(rem, 0) matches LT | EQ:
           acc
@@ -461,7 +450,7 @@ def repeat(doc: Doc, count: Int) -> Doc:
               acc
           loop(half, append_v(chunk, chunk), next_acc)
 
-    mk(loop(count, view(doc), Empty))
+    loop(count, doc, Empty)
 
 # Creates a document containing `width` spaces.
 # Input: number of spaces to emit.
@@ -473,7 +462,7 @@ def spaces(width: Int) -> Doc:
 # Input: thunk returning a `Doc`.
 # Output: lazy document node.
 def defer(thunk: () -> Doc) -> Doc:
-  mk(LazyDoc(lazy(() -> view(thunk()))))
+  LazyDoc(lazy(thunk))
 
 # Inserts zero-width text into output.
 # Input: `value` bytes to emit without affecting layout width.
@@ -482,7 +471,7 @@ def zero_width(value: String) -> Doc:
   if string_is_empty(value):
     empty
   else:
-    mk(ZeroWidth(value))
+    ZeroWidth(value)
 
 # Builds ANSI escape output as zero-width control text.
 # Input: list of numeric ANSI codes.
@@ -495,7 +484,7 @@ def ansi_control(codes: List[Int]) -> Doc:
 # Input: left and right documents.
 # Output: combined document preserving both layouts.
 def append(left: Doc, right: Doc) -> Doc:
-  mk(append_v(view(left), view(right)))
+  append_v(left, right)
 
 # Prepends plain text before `doc`.
 # Input: string prefix and document suffix.
@@ -533,8 +522,8 @@ def append_space(left: Doc, right: Doc) -> Doc:
 def append_space_text(left: Doc, right: String) -> Doc:
   append_space(left, text(right))
 
-def flatten_boolean_v(root: VDoc) -> (VDoc, Bool):
-  def loop(fuel: Int, node: VDoc) -> (VDoc, Bool):
+def flatten_boolean_v(root: Doc) -> (Doc, Bool):
+  def loop(fuel: Int, node: Doc) -> (Doc, Bool):
     recur fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         (force_v(node), False)
@@ -565,8 +554,7 @@ def flatten_boolean_v(root: VDoc) -> (VDoc, Bool):
   loop(doc_size_v(root).mul(4).add(64), root)
 
 def flatten_boolean(doc: Doc) -> (Doc, Bool):
-  (flat_node, changed) = flatten_boolean_v(view(doc))
-  (mk(flat_node), changed)
+  flatten_boolean_v(doc)
 
 # Attempts to flatten `doc` and returns `None` when flattening is a no-op.
 # Input: any document.
@@ -589,24 +577,24 @@ def flatten(doc: Doc) -> Doc:
 # Input: a document with potential line breaks.
 # Output: `doc` wrapped in `Union(flatten(doc), doc)` when flattening changes it.
 def grouped(doc: Doc) -> Doc:
-  Doc(orig) = doc
+  orig = doc
   (flat, changed) = flatten_boolean_v(orig)
   if changed:
-    mk(Union(flat, orig))
+    Union(flat, orig)
   else:
-    mk(flat)
+    flat
 
 # Chooses between a real line break and flattened `doc`.
 # Input: fallback document used in flat mode.
 # Output: document that renders as newline or flattened fallback based on grouping.
 def line_or(doc: Doc) -> Doc:
   flat_doc = flatten(doc)
-  Doc(flat_node) = flat_doc
+  flat_node = flat_doc
   match flat_node:
     case Line:
       hard_line
     case _:
-      grouped(mk(FlatAlt(Line, flat_node)))
+      grouped(FlatAlt(Line, flat_node))
 
 # Line-or-space convenience value.
 # Output: newline in broken layouts, space in flat layouts.
@@ -631,18 +619,18 @@ def append_line_or_space_text(left: Doc, right: String) -> Doc:
 # Input: document and indent amount.
 # Output: a nested document with added indentation.
 def nested(doc: Doc, amount: Int) -> Doc:
-  Doc(node) = doc
+  node = doc
   match node:
     case Nest(indent, inner):
-      mk(Nest(indent.add(amount), inner))
+      Nest(indent.add(amount), inner)
     case _:
-      mk(Nest(amount, node))
+      Nest(amount, node)
 
 # Aligns `doc` to the current rendering column.
 # Input: any document.
 # Output: aligned document node.
 def aligned(doc: Doc) -> Doc:
-  mk(Align(view(doc)))
+  Align(doc)
 
 # Applies `nested` and then `aligned`.
 # Input: document and indent amount.
@@ -670,8 +658,8 @@ def tight_bracket_by(doc: Doc, left: Doc, right: Doc, amount: Int) -> Doc:
   middle = append(nested(append(line_break, doc), amount), append(line_break, right))
   append(left, grouped(middle))
 
-def unzero_v(doc: VDoc) -> VDoc:
-  def loop(fuel: Int, node: VDoc) -> VDoc:
+def unzero_v(doc: Doc) -> Doc:
+  def loop(fuel: Int, node: Doc) -> Doc:
     recur fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         force_v(node)
@@ -702,13 +690,13 @@ def unzero_v(doc: VDoc) -> VDoc:
 # Input: any document.
 # Output: document with `ZeroWidth` replaced by `empty`.
 def unzero(doc: Doc) -> Doc:
-  mk(unzero_v(view(doc)))
+  unzero_v(doc)
 
 # Checks whether `doc` has no visible output.
 # Input: any document.
 # Output: `True` only when rendering produces no text or line breaks.
 def is_empty(doc: Doc) -> Bool:
-  def loop(fuel: Int, stack: List[VDoc]) -> Bool:
+  def loop(fuel: Int, stack: List[Doc]) -> Bool:
     recur fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         False
@@ -748,7 +736,7 @@ def is_empty(doc: Doc) -> Bool:
               case LazyDoc(thunk):
                 loop(next_fuel, [get_Lazy(thunk), *tail])
 
-  root = view(doc)
+  root = doc
   loop(doc_size_v(root).mul(8).add(64), [root])
 
 # Negation of `is_empty`.
@@ -761,7 +749,7 @@ def non_empty(doc: Doc) -> Bool:
 # Input: any document.
 # Output: maximum column width reached across all lines.
 def max_width(doc: Doc) -> Int:
-  def loop(fuel: Int, pos: Int, stack: List[(Int, VDoc)], widest: Int) -> Int:
+  def loop(fuel: Int, pos: Int, stack: List[(Int, Doc)], widest: Int) -> Int:
     recur fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         max_Int(widest, pos)
@@ -793,11 +781,11 @@ def max_width(doc: Doc) -> Int:
               case LazyDoc(thunk):
                 loop(next_fuel, pos, [(indent, get_Lazy(thunk)), *tail], widest)
 
-  root = view(doc)
+  root = doc
   loop(traversal_fuel(doc, 0), 0, [(0, root)], 0)
 
 enum ReprItem:
-  ReprDoc(node: VDoc)
+  ReprDoc(node: Doc)
   ReprText(text: String)
 
 # Returns a structural debug representation of `doc`.
@@ -856,9 +844,9 @@ def representation(doc: Doc) -> Doc:
                   case LazyDoc(_):
                     loop(next_fuel, tail, ["LazyDoc(() -> ...)", *rev])
 
-  text_raw(loop(traversal_fuel(doc, 0), [ReprDoc(view(doc))], []))
+  text_raw(loop(traversal_fuel(doc, 0), [ReprDoc(doc)], []))
 
-def fits(fuel: Int, width: Int, pos: Int, stack: List[(Int, VDoc)]) -> Bool:
+def fits(fuel: Int, width: Int, pos: Int, stack: List[(Int, Doc)]) -> Bool:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       False
@@ -900,7 +888,7 @@ def render_stream_core(width: Int, doc: Doc, wide: Bool) -> List[String]:
   non_neg_width = max_Int(width, 0)
   base_fuel = traversal_fuel(doc, non_neg_width)
 
-  def loop(fuel: Int, pos: Int, stack: List[(Int, VDoc)], rev: List[String]) -> List[String]:
+  def loop(fuel: Int, pos: Int, stack: List[(Int, Doc)], rev: List[String]) -> List[String]:
     recur fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         rev.reverse()
@@ -940,7 +928,7 @@ def render_stream_core(width: Int, doc: Doc, wide: Bool) -> List[String]:
               case LazyDoc(thunk):
                 loop(next_fuel, pos, [(indent, get_Lazy(thunk)), *tail], rev)
 
-  loop(base_fuel, 0, [(0, view(doc))], [])
+  loop(base_fuel, 0, [(0, doc)], [])
 
 # Renders `doc` to a stream of chunks with bounded layout selection.
 # Input: document and target width.
@@ -1032,8 +1020,8 @@ def fill(sep: Doc, docs: List[Doc]) -> Doc:
         (next_orig, next_flat_head) = st
         current_flat = flatten(current)
         left_branch = append(current_flat, append(flat_sep, next_flat_head))
-        orig = mk(Union(view(left_branch), view(append(current, append(sep, next_orig)))))
-        flat_head = mk(Union(view(left_branch), view(append(current_flat, append(sep, next_orig)))))
+        orig = Union(left_branch, append(current, append(sep, next_orig)))
+        flat_head = Union(left_branch, append(current_flat, append(sep, next_orig)))
         (orig, flat_head)
       ))
       (result, _) = state
