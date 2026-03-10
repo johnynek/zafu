@@ -146,21 +146,15 @@ def view(doc: Doc) -> VDoc:
 def mk(node: VDoc) -> Doc:
   Doc(node)
 
-force_v_limit: Int = 100000
+# Defensive cap for internal size estimation traversals.
+doc_size_fuel_limit: Int = 100000
 
 def force_v(node: VDoc) -> VDoc:
-  def loop(rem: Int, current: VDoc) -> VDoc:
-    recur rem:
-      case _ if cmp_Int(rem, 0) matches LT | EQ:
-        current
-      case _:
-        match current:
-          case LazyDoc(thunk):
-            loop(rem.sub(1), get_Lazy(thunk))
-          case forced:
-            forced
-
-  loop(force_v_limit, node)
+  loop node:
+    case LazyDoc(thunk):
+      force_v(get_Lazy(thunk))
+    case forced:
+      forced
 
 def append_v(left: VDoc, right: VDoc) -> VDoc:
   match (left, right):
@@ -194,7 +188,7 @@ def doc_size_v(doc: VDoc) -> Int:
           case LazyDoc(_):
             1
 
-  loop(force_v_limit, doc)
+  loop(doc_size_fuel_limit, doc)
 
 def traversal_fuel(doc: Doc, width_hint: Int) -> Int:
   size = doc_size_v(view(doc))
