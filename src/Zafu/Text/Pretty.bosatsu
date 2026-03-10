@@ -166,29 +166,33 @@ def append_v(left: VDoc, right: VDoc) -> VDoc:
       Concat(left, right)
 
 def doc_size_v(doc: VDoc) -> Int:
-  def loop(fuel: Int, node: VDoc) -> Int:
+  def loop(fuel: Int, stack: List[VDoc], acc: Int) -> Int:
     recur fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
-        1
+        acc
       case _:
-        next_fuel = fuel.sub(1)
-        match force_v(node):
-          case Empty | Text(_) | ZeroWidth(_) | Line:
-            1
-          case FlatAlt(default, when_flat):
-            loop(next_fuel, default).add(loop(next_fuel, when_flat)).add(1)
-          case Concat(left, right):
-            loop(next_fuel, left).add(loop(next_fuel, right)).add(1)
-          case Nest(_, inner):
-            loop(next_fuel, inner).add(1)
-          case Align(inner):
-            loop(next_fuel, inner).add(1)
-          case Union(flattened, fallback):
-            loop(next_fuel, flattened).add(loop(next_fuel, fallback)).add(1)
-          case LazyDoc(_):
-            1
+        match stack:
+          case []:
+            acc
+          case [head, *tail]:
+            next_fuel = fuel.sub(1)
+            match force_v(head):
+              case Empty | Text(_) | ZeroWidth(_) | Line:
+                loop(next_fuel, tail, acc.add(1))
+              case FlatAlt(default, when_flat):
+                loop(next_fuel, [default, when_flat, *tail], acc.add(1))
+              case Concat(left, right):
+                loop(next_fuel, [left, right, *tail], acc.add(1))
+              case Nest(_, inner):
+                loop(next_fuel, [inner, *tail], acc.add(1))
+              case Align(inner):
+                loop(next_fuel, [inner, *tail], acc.add(1))
+              case Union(flattened, fallback):
+                loop(next_fuel, [flattened, fallback, *tail], acc.add(1))
+              case LazyDoc(thunk):
+                loop(next_fuel, [get_Lazy(thunk), *tail], acc)
 
-  loop(doc_size_fuel_limit, doc)
+  loop(doc_size_fuel_limit, [doc], 0)
 
 def traversal_fuel(doc: Doc, width_hint: Int) -> Int:
   size = doc_size_v(view(doc))
@@ -744,7 +748,8 @@ def is_empty(doc: Doc) -> Bool:
               case LazyDoc(thunk):
                 loop(next_fuel, [get_Lazy(thunk), *tail])
 
-  loop(doc_size_v(view(doc)).mul(8).add(64), [view(doc)])
+  root = view(doc)
+  loop(doc_size_v(root).mul(8).add(64), [root])
 
 # Negation of `is_empty`.
 # Input: any document.
@@ -788,7 +793,8 @@ def max_width(doc: Doc) -> Int:
               case LazyDoc(thunk):
                 loop(next_fuel, pos, [(indent, get_Lazy(thunk)), *tail], widest)
 
-  loop(traversal_fuel(doc, 0), 0, [(0, view(doc))], 0)
+  root = view(doc)
+  loop(traversal_fuel(doc, 0), 0, [(0, root)], 0)
 
 enum ReprItem:
   ReprDoc(node: VDoc)
