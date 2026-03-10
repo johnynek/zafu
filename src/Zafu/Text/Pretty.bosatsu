@@ -1,10 +1,5 @@
 package Zafu/Text/Pretty
 
-from Bosatsu/Lazy import (
-  Lazy,
-  lazy,
-  get_Lazy,
-)
 from Bosatsu/Num/Float64 import (
   float64_bits_to_Int,
   float64_to_String,
@@ -38,7 +33,6 @@ export (
   int,
   float,
   spaces,
-  defer,
   zero_width,
   ansi_control,
   append,
@@ -98,12 +92,11 @@ enum Doc:
   Text(value: String)
   ZeroWidth(value: String)
   Line
-  FlatAlt(default: Doc, when_flat: Doc)
-  Concat(left: Doc, right: Doc)
+  FlatAlt(node_size: Int, default: Doc, when_flat: Doc)
+  Concat(node_size: Int, left: Doc, right: Doc)
   Nest(indent: Int, doc: Doc)
   Align(doc: Doc)
-  Union(flattened: Doc, fallback: Doc)
-  LazyDoc(thunk: Lazy[Doc])
+  Union(node_size: Int, flattened: Doc, fallback: Doc)
 
 # Typeclass-style dictionary for rendering `a` values into `Doc`.
 # Input: `to_doc_fn` converts one `a` value to a document.
@@ -135,56 +128,35 @@ def max_Int(a: Int, b: Int) -> Int:
     case EQ | GT:
       a
 
-# Defensive cap for internal size estimation traversals.
-doc_size_fuel_limit: Int = 100000
+def doc_size(doc: Doc) -> Int:
+    def go(doc: Doc, acc: Int) -> Int:
+        loop doc:
+            case Empty | Text(_) | ZeroWidth(_) | Line:
+              acc
+            case Nest(_, inner) | Align(inner):
+              go(inner, acc.add(1))
+            case FlatAlt(size, _, _) | Concat(size, _, _) | Union(size, _, _):
+              acc.add(size)
 
-def force_v(node: Doc) -> Doc:
-  loop node:
-    case LazyDoc(thunk):
-      force_v(get_Lazy(thunk))
-    case forced:
-      forced
+    go(doc, 0)
 
-def append_v(left: Doc, right: Doc) -> Doc:
+def doc_branch_size(left: Doc, right: Doc) -> Int:
+  doc_size(left).add(doc_size(right)).add(1)
+
+# Concatenates two documents in O(1).
+# Input: left and right documents.
+# Output: combined document preserving both layouts.
+def append(left: Doc, right: Doc) -> Doc:
   match (left, right):
     case (Empty, _):
       right
     case (_, Empty):
       left
     case _:
-      Concat(left, right)
-
-def doc_size_v(doc: Doc) -> Int:
-  def loop(fuel: Int, stack: List[Doc], acc: Int) -> Int:
-    recur fuel:
-      case _ if cmp_Int(fuel, 0) matches LT | EQ:
-        acc
-      case _:
-        match stack:
-          case []:
-            acc
-          case [head, *tail]:
-            next_fuel = fuel.sub(1)
-            match force_v(head):
-              case Empty | Text(_) | ZeroWidth(_) | Line:
-                loop(next_fuel, tail, acc.add(1))
-              case FlatAlt(default, when_flat):
-                loop(next_fuel, [default, when_flat, *tail], acc.add(1))
-              case Concat(left, right):
-                loop(next_fuel, [left, right, *tail], acc.add(1))
-              case Nest(_, inner):
-                loop(next_fuel, [inner, *tail], acc.add(1))
-              case Align(inner):
-                loop(next_fuel, [inner, *tail], acc.add(1))
-              case Union(flattened, fallback):
-                loop(next_fuel, [flattened, fallback, *tail], acc.add(1))
-              case LazyDoc(thunk):
-                loop(next_fuel, [get_Lazy(thunk), *tail], acc)
-
-  loop(doc_size_fuel_limit, [doc], 0)
+      Concat(doc_branch_size(left, right), left, right)
 
 def traversal_fuel(doc: Doc, width_hint: Int) -> Int:
-  size = doc_size_v(doc)
+  size = doc_size(doc)
   size.mul(max_Int(width_hint, 0).add(32)).add(1024)
 
 def string_is_empty(value: String) -> Bool:
@@ -323,14 +295,11 @@ def trim_rendered(value: String) -> String:
 # Output: renders as the empty string and acts as append identity.
 empty: Doc = Empty
 
-def text_raw_v(value: String) -> Doc:
+def text_raw(value: String) -> Doc:
   if string_is_empty(value):
     Empty
   else:
     Text(value)
-
-def text_raw(value: String) -> Doc:
-  text_raw_v(value)
 
 # Single space text document.
 # Output: a one-character space `Doc`.
@@ -341,10 +310,10 @@ comma: Doc = text_raw(",")
 
 # Soft line break that becomes a space in flattened layouts.
 # Output: newline in broken mode, `" "` in flat mode.
-line: Doc = FlatAlt(Line, text_raw_v(" "))
+line: Doc = FlatAlt(doc_branch_size(Line, text_raw(" ")), Line, text_raw(" "))
 # Soft line break that disappears in flattened layouts.
 # Output: newline in broken mode, empty in flat mode.
-line_break: Doc = FlatAlt(Line, Empty)
+line_break: Doc = FlatAlt(doc_branch_size(Line, Empty), Line, Empty)
 # Mandatory line break.
 # Output: always renders as newline plus current indentation.
 hard_line: Doc = Line
@@ -375,7 +344,7 @@ def intercalate_docs(sep: Doc, docs: List[Doc]) -> Doc:
           case []:
             acc
           case [next, *rest]:
-            loop(rest, append_v(next, append_v(sep_v, acc)))
+            loop(rest, append(next, append(sep_v, acc)))
 
       loop(tail, head)
 
@@ -445,10 +414,10 @@ def repeat(doc: Doc, count: Int) -> Doc:
           half = rem.div(2)
           next_acc =
             if cmp_Int(rem, half.mul(2)) matches GT:
-              append_v(acc, chunk)
+              append(acc, chunk)
             else:
               acc
-          loop(half, append_v(chunk, chunk), next_acc)
+          loop(half, append(chunk, chunk), next_acc)
 
     loop(count, doc, Empty)
 
@@ -457,12 +426,6 @@ def repeat(doc: Doc, count: Int) -> Doc:
 # Output: `repeat(space, width)`.
 def spaces(width: Int) -> Doc:
   repeat(space, width)
-
-# Defers document construction until rendering/traversal forces it.
-# Input: thunk returning a `Doc`.
-# Output: lazy document node.
-def defer(thunk: () -> Doc) -> Doc:
-  LazyDoc(lazy(thunk))
 
 # Inserts zero-width text into output.
 # Input: `value` bytes to emit without affecting layout width.
@@ -479,12 +442,6 @@ def zero_width(value: String) -> Doc:
 def ansi_control(codes: List[Int]) -> Doc:
   codes_str = join_strings_with_sep(codes.map_List(int_to_String), ";")
   zero_width(concat_String(["\u001b[", codes_str, "m"]))
-
-# Concatenates two documents in O(1).
-# Input: left and right documents.
-# Output: combined document preserving both layouts.
-def append(left: Doc, right: Doc) -> Doc:
-  append_v(left, right)
 
 # Prepends plain text before `doc`.
 # Input: string prefix and document suffix.
@@ -522,39 +479,34 @@ def append_space(left: Doc, right: Doc) -> Doc:
 def append_space_text(left: Doc, right: String) -> Doc:
   append_space(left, text(right))
 
-def flatten_boolean_v(root: Doc) -> (Doc, Bool):
+def flatten_boolean(root: Doc) -> (Doc, Bool):
   def loop(fuel: Int, node: Doc) -> (Doc, Bool):
     recur fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
-        (force_v(node), False)
+        (node, False)
       case _:
         next_fuel = fuel.sub(1)
-        match force_v(node):
+        match node:
           case Empty | Text(_) | Line | ZeroWidth(_):
-            (force_v(node), False)
-          case FlatAlt(_, when_flat):
+            (node, False)
+          case FlatAlt(_, _, when_flat):
             (flat_doc, _) = loop(next_fuel, when_flat)
             (flat_doc, True)
-          case Concat(left, right):
+          case Concat(_, left, right):
             (left_flat, left_changed) = loop(next_fuel, left)
             (right_flat, right_changed) = loop(next_fuel, right)
-            (append_v(left_flat, right_flat), or_Bool(left_changed, right_changed))
+            (append(left_flat, right_flat), or_Bool(left_changed, right_changed))
           case Nest(indent, inner):
             (flat_doc, changed) = loop(next_fuel, inner)
             (Nest(indent, flat_doc), changed)
           case Align(inner):
             (flat_doc, changed) = loop(next_fuel, inner)
             (Align(flat_doc), changed)
-          case Union(flattened, _):
+          case Union(_, flattened, _):
             (flat_doc, _) = loop(next_fuel, flattened)
             (flat_doc, True)
-          case LazyDoc(thunk):
-            loop(next_fuel, get_Lazy(thunk))
 
-  loop(doc_size_v(root).mul(4).add(64), root)
-
-def flatten_boolean(doc: Doc) -> (Doc, Bool):
-  flatten_boolean_v(doc)
+  loop(doc_size(root).mul(4).add(64), root)
 
 # Attempts to flatten `doc` and returns `None` when flattening is a no-op.
 # Input: any document.
@@ -578,9 +530,9 @@ def flatten(doc: Doc) -> Doc:
 # Output: `doc` wrapped in `Union(flatten(doc), doc)` when flattening changes it.
 def grouped(doc: Doc) -> Doc:
   orig = doc
-  (flat, changed) = flatten_boolean_v(orig)
+  (flat, changed) = flatten_boolean(orig)
   if changed:
-    Union(flat, orig)
+    Union(doc_branch_size(flat, orig), flat, orig)
   else:
     flat
 
@@ -594,7 +546,7 @@ def line_or(doc: Doc) -> Doc:
     case Line:
       hard_line
     case _:
-      grouped(FlatAlt(Line, flat_node))
+      grouped(FlatAlt(doc_branch_size(Line, flat_node), Line, flat_node))
 
 # Line-or-space convenience value.
 # Output: newline in broken layouts, space in flat layouts.
@@ -658,39 +610,41 @@ def tight_bracket_by(doc: Doc, left: Doc, right: Doc, amount: Int) -> Doc:
   middle = append(nested(append(line_break, doc), amount), append(line_break, right))
   append(left, grouped(middle))
 
-def unzero_v(doc: Doc) -> Doc:
-  def loop(fuel: Int, node: Doc) -> Doc:
-    recur fuel:
-      case _ if cmp_Int(fuel, 0) matches LT | EQ:
-        force_v(node)
-      case _:
-        next_fuel = fuel.sub(1)
-        forced = force_v(node)
-        match forced:
-          case ZeroWidth(_):
-            Empty
-          case FlatAlt(default, when_flat):
-            FlatAlt(loop(next_fuel, default), loop(next_fuel, when_flat))
-          case Concat(left, right):
-            append_v(loop(next_fuel, left), loop(next_fuel, right))
-          case Nest(indent, inner):
-            Nest(indent, loop(next_fuel, inner))
-          case Align(inner):
-            Align(loop(next_fuel, inner))
-          case Union(flattened, fallback):
-            Union(loop(next_fuel, flattened), loop(next_fuel, fallback))
-          case LazyDoc(thunk):
-            LazyDoc(lazy(() -> loop(next_fuel, get_Lazy(thunk))))
-          case other:
-            other
-
-  loop(doc_size_v(doc).mul(4).add(64), doc)
-
 # Removes all zero-width nodes from `doc`.
 # Input: any document.
 # Output: document with `ZeroWidth` replaced by `empty`.
 def unzero(doc: Doc) -> Doc:
-  unzero_v(doc)
+  def loop(fuel: Int, node: Doc) -> Doc:
+    recur fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        node
+      case _:
+        next_fuel = fuel.sub(1)
+        match node:
+          case ZeroWidth(_):
+            Empty
+          case FlatAlt(_, default, when_flat):
+            (
+              new_default = loop(next_fuel, default)
+              new_when_flat = loop(next_fuel, when_flat)
+              FlatAlt(doc_branch_size(new_default, new_when_flat), new_default, new_when_flat)
+            )
+          case Concat(_, left, right):
+            append(loop(next_fuel, left), loop(next_fuel, right))
+          case Nest(indent, inner):
+            Nest(indent, loop(next_fuel, inner))
+          case Align(inner):
+            Align(loop(next_fuel, inner))
+          case Union(_, flattened, fallback):
+            (
+              new_flattened = loop(next_fuel, flattened)
+              new_fallback = loop(next_fuel, fallback)
+              Union(doc_branch_size(new_flattened, new_fallback), new_flattened, new_fallback)
+            )
+          case other:
+            other
+
+  loop(doc_size(doc).mul(4).add(64), doc)
 
 # Checks whether `doc` has no visible output.
 # Input: any document.
@@ -706,14 +660,14 @@ def is_empty(doc: Doc) -> Bool:
             True
           case [head, *tail]:
             next_fuel = fuel.sub(1)
-            match force_v(head):
+            match head:
               case Empty:
                 loop(next_fuel, tail)
-              case FlatAlt(default, when_flat):
+              case FlatAlt(_, default, when_flat):
                 loop(next_fuel, [default, when_flat, *tail])
-              case Concat(_, Line):
+              case Concat(_, _, Line):
                 False
-              case Concat(left, right):
+              case Concat(_, left, right):
                 loop(next_fuel, [left, right, *tail])
               case Nest(_, inner):
                 loop(next_fuel, [inner, *tail])
@@ -731,13 +685,11 @@ def is_empty(doc: Doc) -> Bool:
                   False
               case Line:
                 False
-              case Union(flattened, _):
+              case Union(_, flattened, _):
                 loop(next_fuel, [flattened, *tail])
-              case LazyDoc(thunk):
-                loop(next_fuel, [get_Lazy(thunk), *tail])
 
   root = doc
-  loop(doc_size_v(root).mul(8).add(64), [root])
+  loop(doc_size(root).mul(8).add(64), [root])
 
 # Negation of `is_empty`.
 # Input: any document.
@@ -759,12 +711,12 @@ def max_width(doc: Doc) -> Int:
             max_Int(widest, pos)
           case [(indent, next), *tail]:
             next_fuel = fuel.sub(1)
-            match force_v(next):
+            match next:
               case Empty:
                 loop(next_fuel, pos, tail, widest)
-              case FlatAlt(default, _):
+              case FlatAlt(_, default, _):
                 loop(next_fuel, pos, [(indent, default), *tail], widest)
-              case Concat(left, right):
+              case Concat(_, left, right):
                 loop(next_fuel, pos, [(indent, left), (indent, right), *tail], widest)
               case Nest(extra, inner):
                 loop(next_fuel, pos, [(indent.add(extra), inner), *tail], widest)
@@ -776,10 +728,8 @@ def max_width(doc: Doc) -> Int:
                 loop(next_fuel, pos, tail, widest)
               case Line:
                 loop(next_fuel, max_Int(indent, 0), tail, max_Int(widest, pos))
-              case Union(flattened, _):
+              case Union(_, flattened, _):
                 loop(next_fuel, pos, [(indent, flattened), *tail], widest)
-              case LazyDoc(thunk):
-                loop(next_fuel, pos, [(indent, get_Lazy(thunk)), *tail], widest)
 
   root = doc
   loop(traversal_fuel(doc, 0), 0, [(0, root)], 0)
@@ -815,13 +765,13 @@ def representation(doc: Doc) -> Doc:
                     loop(next_fuel, tail, [")", value, "ZeroWidth(", *rev])
                   case Line:
                     loop(next_fuel, tail, ["Line", *rev])
-                  case FlatAlt(default, when_flat):
+                  case FlatAlt(_, default, when_flat):
                     loop(
                       next_fuel,
                       [ReprText("FlatAlt("), ReprDoc(default), ReprText(", "), ReprDoc(when_flat), ReprText(")"), *tail],
                       rev
                     )
-                  case Concat(left, right):
+                  case Concat(_, left, right):
                     loop(
                       next_fuel,
                       [ReprText("Concat("), ReprDoc(left), ReprText(", "), ReprDoc(right), ReprText(")"), *tail],
@@ -835,14 +785,12 @@ def representation(doc: Doc) -> Doc:
                     )
                   case Align(inner):
                     loop(next_fuel, [ReprText("Align("), ReprDoc(inner), ReprText(")"), *tail], rev)
-                  case Union(flattened, fallback):
+                  case Union(_, flattened, fallback):
                     loop(
                       next_fuel,
                       [ReprText("Union("), ReprDoc(flattened), ReprText(", "), ReprDoc(fallback), ReprText(")"), *tail],
                       rev
                     )
-                  case LazyDoc(_):
-                    loop(next_fuel, tail, ["LazyDoc(() -> ...)", *rev])
 
   text_raw(loop(traversal_fuel(doc, 0), [ReprDoc(doc)], []))
 
@@ -858,12 +806,12 @@ def fits(fuel: Int, width: Int, pos: Int, stack: List[(Int, Doc)]) -> Bool:
           True
         case [(indent, next), *tail]:
           next_fuel = fuel.sub(1)
-          match force_v(next):
+          match next:
             case Empty:
               fits(next_fuel, width, pos, tail)
-            case FlatAlt(default, _):
+            case FlatAlt(_, default, _):
               fits(next_fuel, width, pos, [(indent, default), *tail])
-            case Concat(left, right):
+            case Concat(_, left, right):
               fits(next_fuel, width, pos, [(indent, left), (indent, right), *tail])
             case Nest(extra, inner):
               fits(next_fuel, width, pos, [(indent.add(extra), inner), *tail])
@@ -875,14 +823,12 @@ def fits(fuel: Int, width: Int, pos: Int, stack: List[(Int, Doc)]) -> Bool:
               fits(next_fuel, width, pos, tail)
             case Line:
               True
-            case Union(flattened, fallback):
+            case Union(_, flattened, fallback):
               first = [(indent, flattened), *tail]
               if fits(next_fuel, width, pos, first):
                 True
               else:
                 fits(next_fuel, width, pos, [(indent, fallback), *tail])
-            case LazyDoc(thunk):
-              fits(next_fuel, width, pos, [(indent, get_Lazy(thunk)), *tail])
 
 def render_stream_core(width: Int, doc: Doc, wide: Bool) -> List[String]:
   non_neg_width = max_Int(width, 0)
@@ -898,12 +844,12 @@ def render_stream_core(width: Int, doc: Doc, wide: Bool) -> List[String]:
             rev.reverse()
           case [(indent, next), *tail]:
             next_fuel = fuel.sub(1)
-            match force_v(next):
+            match next:
               case Empty:
                 loop(next_fuel, pos, tail, rev)
-              case FlatAlt(default, _):
+              case FlatAlt(_, default, _):
                 loop(next_fuel, pos, [(indent, default), *tail], rev)
-              case Concat(left, right):
+              case Concat(_, left, right):
                 loop(next_fuel, pos, [(indent, left), (indent, right), *tail], rev)
               case Nest(extra, inner):
                 loop(next_fuel, pos, [(indent.add(extra), inner), *tail], rev)
@@ -916,7 +862,7 @@ def render_stream_core(width: Int, doc: Doc, wide: Bool) -> List[String]:
               case Line:
                 line_text = line_to_string(indent)
                 loop(next_fuel, max_Int(indent, 0), tail, [line_text, *rev])
-              case Union(flattened, fallback):
+              case Union(_, flattened, fallback):
                 if wide:
                   loop(next_fuel, pos, [(indent, flattened), *tail], rev)
                 else:
@@ -925,8 +871,6 @@ def render_stream_core(width: Int, doc: Doc, wide: Bool) -> List[String]:
                     loop(next_fuel, pos, first, rev)
                   else:
                     loop(next_fuel, pos, [(indent, fallback), *tail], rev)
-              case LazyDoc(thunk):
-                loop(next_fuel, pos, [(indent, get_Lazy(thunk)), *tail], rev)
 
   loop(base_fuel, 0, [(0, doc)], [])
 
@@ -1020,9 +964,13 @@ def fill(sep: Doc, docs: List[Doc]) -> Doc:
         (next_orig, next_flat_head) = st
         current_flat = flatten(current)
         left_branch = append(current_flat, append(flat_sep, next_flat_head))
-        orig = Union(left_branch, append(current, append(sep, next_orig)))
-        flat_head = Union(left_branch, append(current_flat, append(sep, next_orig)))
-        (orig, flat_head)
+        (
+          orig_fallback = append(current, append(sep, next_orig))
+          flat_head_fallback = append(current_flat, append(sep, next_orig))
+          orig = Union(doc_branch_size(left_branch, orig_fallback), left_branch, orig_fallback)
+          flat_head = Union(doc_branch_size(left_branch, flat_head_fallback), left_branch, flat_head_fallback)
+          (orig, flat_head)
+        )
       ))
       (result, _) = state
       result
