@@ -1,0 +1,299 @@
+package Zafu/Benchmark/Vector
+
+from Bosatsu/Prog import (
+  Main,
+  Prog,
+  await,
+  pure,
+  recover,
+)
+from Bosatsu/IO/Core import (
+  duration_to_nanos,
+  now_mono,
+  stdout,
+  write_utf8,
+)
+from Bosatsu/IO/Error import (
+  IOError,
+  error_to_String,
+)
+from Bosatsu/Num/Float64 import (
+  divf,
+  float64_to_String,
+  int_to_Float64,
+)
+from Bosatsu/Predef import (
+  int_to_String,
+)
+from Zafu/Collection/Vector import (
+  Vector as ZVector,
+  append as append_Vector,
+  concat as concat_Vector,
+  foldl as foldl_Vector,
+  from_List as from_List_Vector,
+  get_or as get_or_Vector,
+  size as size_Vector,
+)
+
+export (
+  main,
+)
+
+struct BenchInput(
+  size: Int,
+  source_tail: List[Int],
+  source_vector: ZVector[Int],
+  left_vector: ZVector[Int],
+  right_vector: ZVector[Int],
+  read_indices: List[Int],
+  read_count: Int,
+)
+
+struct BenchCase(
+  name: String,
+  size: Int,
+  ops_per_iteration: Int,
+  run_once: Int -> Int,
+)
+
+struct TimedResult(
+  sink: Int,
+  elapsed_nanos: Int,
+)
+
+warmup_iterations = 3
+target_elapsed_nanos = 200000000
+min_measure_iterations = 1
+max_measure_iterations = 131072
+max_calibration_rounds = 24
+default_read_count = 4096
+
+lcg_multiplier = 1103515245
+lcg_increment = 12345
+lcg_modulus = 2147483647
+
+def min_Int(a: Int, b: Int) -> Int:
+  match cmp_Int(a, b):
+    case LT | EQ:
+      a
+    case GT:
+      b
+
+def max_Int(a: Int, b: Int) -> Int:
+  match cmp_Int(a, b):
+    case LT:
+      b
+    case GT | EQ:
+      a
+
+def advance_seed(seed: Int) -> Int:
+  raw = mod_Int(seed.mul(lcg_multiplier).add(lcg_increment), lcg_modulus)
+  if cmp_Int(raw, 0) matches LT | EQ:
+    raw.add(lcg_modulus)
+  else:
+    raw
+
+def build_range(count: Int, start: Int) -> List[Int]:
+  def go(rem: Int, next_value: Int, rev: List[Int]) -> List[Int]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        rev.reverse()
+      case _:
+        go(rem.sub(1), next_value.add(1), [next_value, *rev])
+  go(count, start, [])
+
+def build_indices(size: Int, count: Int) -> List[Int]:
+  if cmp_Int(size, 0) matches LT | EQ:
+    []
+  else:
+    def go(rem: Int, seed: Int, rev: List[Int]) -> List[Int]:
+      loop rem:
+        case _ if cmp_Int(rem, 0) matches LT | EQ:
+          rev.reverse()
+        case _:
+          next_seed = advance_seed(seed)
+          idx = mod_Int(next_seed, size)
+          go(rem.sub(1), next_seed, [idx, *rev])
+    go(count, size.add(17), [])
+
+def prepare_input(size: Int) -> BenchInput:
+  source_list = build_range(size, 0)
+  source_tail = match source_list:
+    case [_, *tail]:
+      tail
+    case []:
+      []
+
+  source_vector = from_List_Vector(source_list)
+  half = size.div(2)
+  left_vector = from_List_Vector(build_range(half, 0))
+  right_vector = from_List_Vector(build_range(half, half))
+  read_count = max_Int(1, min_Int(default_read_count, size))
+  read_indices = build_indices(size, read_count)
+  BenchInput(size, source_tail, source_vector, left_vector, right_vector, read_indices, read_count)
+
+def run_iterations(iterations: Int, seed0: Int, run_once: Int -> Int) -> Prog[IOError, Int]:
+  def go(rem: Int, seed: Int, sink: Int) -> Prog[IOError, Int]:
+    recur rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        pure(sink)
+      case _:
+        value = run_once(seed)
+        go(rem.sub(1), advance_seed(seed), sink.add(value))
+
+  go(iterations, seed0, 0)
+
+def time_iterations(iterations: Int, seed0: Int, run_once: Int -> Int) -> Prog[IOError, TimedResult]:
+  start <- now_mono.await()
+  sink <- run_iterations(iterations, seed0, run_once).await()
+  end <- now_mono.await()
+  start_nanos = duration_to_nanos(start)
+  end_nanos = duration_to_nanos(end)
+  elapsed_nanos = max_Int(1, end_nanos.sub(start_nanos))
+  pure(TimedResult(sink, elapsed_nanos))
+
+def calibrate_iterations(seed0: Int, run_once: Int -> Int) -> Prog[IOError, Int]:
+  def go(rounds_left: Int, iterations: Int) -> Prog[IOError, Int]:
+    recur rounds_left:
+      case _ if cmp_Int(rounds_left, 0) matches LT | EQ:
+        pure(max_Int(min_measure_iterations, min_Int(iterations, max_measure_iterations)))
+      case _:
+        timed <- time_iterations(iterations, seed0, run_once).await()
+        TimedResult(_, elapsed_nanos) = timed
+        if cmp_Int(elapsed_nanos, target_elapsed_nanos) matches GT | EQ:
+          pure(max_Int(min_measure_iterations, min_Int(iterations, max_measure_iterations)))
+        elif cmp_Int(iterations, max_measure_iterations) matches GT | EQ:
+          pure(max_measure_iterations)
+        else:
+          next_iterations = min_Int(max_measure_iterations, iterations.mul(2))
+          if next_iterations.eq_Int(iterations):
+            pure(iterations)
+          else:
+            go(rounds_left.sub(1), next_iterations)
+
+  go(max_calibration_rounds, min_measure_iterations)
+
+def format_row(
+  case_name: String,
+  size: Int,
+  iterations: Int,
+  total_ops: Int,
+  elapsed_us: Int,
+  ops_per_us: Float64,
+  sink: Int,
+) -> String:
+  "${case_name},${int_to_String(size)},${int_to_String(iterations)},${int_to_String(total_ops)},${int_to_String(elapsed_us)},${float64_to_String(ops_per_us)},${int_to_String(sink)}"
+
+def write_line(line: String) -> Prog[IOError, Unit]:
+  write_utf8(stdout, "${line}\n")
+
+def run_case(bench_case: BenchCase) -> Prog[IOError, Unit]:
+  BenchCase(case_name, size, ops_per_iteration, run_once) = bench_case
+
+  warmup_seed = size.add(11)
+  _ <- run_iterations(warmup_iterations, warmup_seed, run_once).await()
+
+  measure_iterations <- calibrate_iterations(warmup_seed.add(97), run_once).await()
+  timed <- time_iterations(measure_iterations, warmup_seed.add(193), run_once).await()
+  TimedResult(sink, elapsed_nanos) = timed
+
+  elapsed_us = max_Int(1, elapsed_nanos.div(1000))
+  total_ops = ops_per_iteration.mul(measure_iterations)
+  ops_per_us = divf(int_to_Float64(total_ops), int_to_Float64(elapsed_us))
+  row = format_row(case_name, size, measure_iterations, total_ops, elapsed_us, ops_per_us, sink)
+  write_line(row)
+
+def cases_for_size(size: Int) -> List[BenchCase]:
+  input = prepare_input(size)
+  BenchInput(prepared_size, source_tail, source_vector, left_vector, right_vector, read_indices, read_count) = input
+
+  build_from_list_case = BenchCase(
+    "build_from_list",
+    prepared_size,
+    prepared_size,
+    iter_seed -> (
+      seeded_head = mod_Int(iter_seed, prepared_size)
+      size_Vector(from_List_Vector([seeded_head, *source_tail]))
+    ),
+  )
+
+  random_read_case = BenchCase(
+    "random_read",
+    prepared_size,
+    read_count,
+    iter_seed -> (
+      offset = mod_Int(iter_seed, prepared_size)
+      read_indices.foldl_List(0, (acc, idx) -> (
+        pos = mod_Int(idx.add(offset), prepared_size)
+        next_item = get_or_Vector(source_vector, pos, _ -> 0)
+        acc.add(next_item)
+      ))
+    ),
+  )
+
+  foldl_sum_case = BenchCase(
+    "foldl_sum",
+    prepared_size,
+    prepared_size,
+    iter_seed -> (
+      init = mod_Int(iter_seed, 97)
+      foldl_Vector(source_vector, init, (acc, item) -> acc.add(item))
+    ),
+  )
+
+  append_one_case = BenchCase(
+    "append_one",
+    prepared_size,
+    1,
+    iter_seed -> size_Vector(append_Vector(source_vector, iter_seed)),
+  )
+
+  concat_pair_case = BenchCase(
+    "concat_pair",
+    prepared_size,
+    1,
+    iter_seed -> (
+      joined = (
+        if mod_Int(iter_seed, 2).eq_Int(0):
+          concat_Vector(left_vector, right_vector)
+        else:
+          concat_Vector(right_vector, left_vector)
+      )
+      size_Vector(joined)
+    ),
+  )
+
+  [
+    build_from_list_case,
+    random_read_case,
+    foldl_sum_case,
+    append_one_case,
+    concat_pair_case,
+  ]
+
+benchmark_cases = [
+  *cases_for_size(1000),
+  *cases_for_size(10000),
+  *cases_for_size(100000),
+]
+
+def run_all_cases(cases: List[BenchCase]) -> Prog[IOError, Unit]:
+  recur cases:
+    case []:
+      pure(Unit)
+    case [head, *tail]:
+      _ <- run_case(head).await()
+      run_all_cases(tail)
+
+def run_benchmark() -> Prog[IOError, Int]:
+  _ <- write_line("case,size,iterations,ops,elapsed_us,ops_per_us,sink").await()
+  _ <- run_all_cases(benchmark_cases).await()
+  pure(0)
+
+main: Main = Main(_ -> (
+  recover(run_benchmark(), err -> (
+    err_msg = "benchmark failed: ${error_to_String(err)}"
+    _ <- recover(write_line(err_msg), _ -> pure(Unit)).await()
+    pure(1)
+  ))
+))

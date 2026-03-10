@@ -20,6 +20,10 @@ from Bosatsu/Testing/Properties import (
   run_Prop,
 )
 from Zafu/Collection/List import size as size_List
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_specialized,
+)
 from Zafu/Abstract/Eq import (
   Eq,
   eq_from_fn,
@@ -38,6 +42,12 @@ from Zafu/Abstract/Instances/Predef import (
   eq_Comparison as eq_Comparison_inst,
   eq_Option,
 )
+from Zafu/Control/IterState import (
+  IterState,
+  Done,
+  Continue,
+  foldr_List as foldr_state_List,
+)
 
 export (
   Heap,
@@ -53,6 +63,7 @@ export (
   from_List,
   to_List,
   foldl,
+  foldable_Heap,
   eq,
   ord,
 )
@@ -252,6 +263,39 @@ def foldl(heap: Heap[a], init: b, fn: (b, a) -> b) -> b:
           case Some((item, next)):
             go(fuel.sub(1), next, fn(acc, item))
   go(size(heap).add(1), heap, init)
+
+def foldl_iter(heap: Heap[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  def go(fuel: Int, rem: Heap[a], acc: b) -> IterState[b, b]:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        Continue(acc)
+      case _:
+        match pop_min(rem):
+          case None:
+            Continue(acc)
+          case Some((item, next)):
+            match fn(acc, item):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                go(fuel.sub(1), next, next_acc)
+  go(size(heap).add(1), heap, init)
+
+def foldr(heap: Heap[a], init: b, fn: (a, b) -> b) -> b:
+  to_List(heap).reverse().foldl_List(init, (acc, item) -> fn(item, acc))
+
+def foldr_iter(heap: Heap[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  foldr_state_List(to_List(heap), init, fn)
+
+foldable_Heap: Foldable[Heap] = foldable_specialized(
+  foldl,
+  foldr,
+  foldl_iter,
+  foldr_iter,
+  is_empty,
+  size,
+  to_List,
+)
 
 def eq_fn(inst: Eq[a], left: Heap[a], right: Heap[a]) -> Bool:
   def go(fuel: Int, left_h: Heap[a], right_h: Heap[a]) -> Bool:
