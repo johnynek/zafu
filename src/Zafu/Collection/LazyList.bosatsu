@@ -33,8 +33,10 @@ from Zafu/Control/IterState import (
 )
 
 export (
-  LazyList,
+  LazyList(),
   empty_LazyList,
+  is_empty,
+  non_empty,
   concat,
   cons,
   lazy_singleton,
@@ -54,6 +56,12 @@ export (
 enum LazyList[a: +*]:
   Empty
   Cons(head: Lazy[a], tail: Lazy[LazyList[a]])
+
+def is_empty(ll: LazyList[a]) -> Bool:
+  ll matches Empty
+
+def non_empty(ll: LazyList[a]) -> Bool:
+  ll matches Cons(_, _)
 
 # The empty lazy list.
 empty_LazyList: forall a. LazyList[a] = Empty
@@ -96,7 +104,7 @@ def filter(ll: LazyList[a], pred: a -> Bool) -> LazyList[a]:
       item = get_Lazy(head)
       if pred(item):
         Cons(
-          lazy(() -> item),
+          head,
           lazy(() -> filter(get_Lazy(tail), pred))
         )
       else:
@@ -397,6 +405,10 @@ lazy_list_props: Prop = suite_Prop(
 
 tests = TestSuite("LazyList tests", [
   Assertion(uncons(from_List([])) matches None, "empty uncons"),
+  Assertion(is_empty(from_List([])), "is_empty true on empty"),
+  Assertion(is_empty(from_List([1])) matches False, "is_empty false on non-empty"),
+  Assertion(non_empty(from_List([1])), "non_empty true on non-empty"),
+  Assertion(non_empty(from_List([])) matches False, "non_empty false on empty"),
   Assertion(to_List(from_List([1, 2, 3])) matches [1, 2, 3], "from_List sanity"),
   Assertion(
     match uncons(concat(from_List([1, 2]), from_List([3, 4]))):
