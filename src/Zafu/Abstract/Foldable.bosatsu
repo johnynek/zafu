@@ -1,5 +1,10 @@
 package Zafu/Abstract/Foldable
 
+from Bosatsu/Collection/Array import (
+  Array,
+  size_Array,
+  get_Array,
+)
 from Zafu/Abstract/Eq import (
   Eq,
   eq as eq_Eq,
@@ -27,6 +32,7 @@ from Zafu/Control/IterState import (
   Continue,
   done,
   continue,
+  value,
 )
 
 export (
@@ -36,6 +42,8 @@ export (
   foldable_from_fold_iters,
   foldable_from_folds,
   foldable_specialized,
+  foldl_iter_Array_state,
+  foldr_iter_Array_state,
   foldl,
   foldr,
   foldl_iter,
@@ -124,6 +132,42 @@ def foldl_iter_List(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> b
 
 def foldr_iter_List(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
   foldl_iter_List(reverse_List(items), init, (acc, item) -> fn(item, acc))
+
+def foldl_iter_Array_state(items: Array[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  cnt = size_Array(items)
+  def go(rem: Int, idx: Int, acc: b) -> IterState[b, b]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        Continue(acc)
+      case _:
+        match get_Array(items, idx):
+          case Some(item):
+            match fn(acc, item):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                go(rem.sub(1), idx.add(1), next_acc)
+          case None:
+            Continue(acc)
+  go(cnt, 0, init)
+
+def foldr_iter_Array_state(items: Array[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  cnt = size_Array(items)
+  def go(rem: Int, idx: Int, acc: b) -> IterState[b, b]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        Continue(acc)
+      case _:
+        match get_Array(items, idx):
+          case Some(item):
+            match fn(item, acc):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                go(rem.sub(1), idx.sub(1), next_acc)
+          case None:
+            Continue(acc)
+  go(cnt, cnt.sub(1), init)
 
 def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
   match value:
@@ -218,30 +262,20 @@ def foldable_from_folds[f: * -> *](
   foldable_specialized(
     foldl_fn,
     foldr_fn,
-    (fa, init, fn) -> (
-      state = foldl_fn(fa, Continue(init), (state, item) -> (
-        match state:
-          case Done(done_value):
-            Done(done_value)
-          case Continue(acc):
-            fn(acc, item)
-      ))
+    (fa, init, fn) -> value(foldl_fn(fa, Continue(init), (state, item) -> (
       match state:
-        case Done(done_value) | Continue(done_value):
-          done_value
-    ),
-    (fa, init, fn) -> (
-      state = foldr_fn(fa, Continue(init), (item, state) -> (
-        match state:
-          case Done(done_value):
-            Done(done_value)
-          case Continue(acc):
-            fn(item, acc)
-      ))
+        case Done(done_value):
+          Done(done_value)
+        case Continue(acc):
+          fn(acc, item)
+    ))),
+    (fa, init, fn) -> value(foldr_fn(fa, Continue(init), (item, state) -> (
       match state:
-        case Done(done_value) | Continue(done_value):
-          done_value
-    ),
+        case Done(done_value):
+          Done(done_value)
+        case Continue(acc):
+          fn(item, acc)
+    ))),
     (fa) -> foldl_fn(fa, True, (_, _) -> False),
     (fa) -> foldl_fn(fa, 0, (acc, _) -> acc.add(1)),
     (fa) -> foldr_fn(fa, [], (item, acc) -> [item, *acc]),

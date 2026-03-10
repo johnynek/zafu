@@ -4,6 +4,7 @@ export (
   IterState(),
   done,
   continue,
+  value,
   map_continue,
   map_done,
 )
@@ -17,6 +18,10 @@ def done(value: d) -> IterState[d, c]:
 
 def continue(value: c) -> IterState[d, c]:
   Continue(value)
+
+def value(iter: IterState[a, a]) -> a:
+  Done(result) | Continue(result) = iter
+  result
 
 def map_continue(state: IterState[d, c], fn: c -> e) -> IterState[d, e]:
   match state:
@@ -35,6 +40,8 @@ def map_done(state: IterState[d, c], fn: d -> e) -> IterState[e, c]:
 tests = TestSuite("IterState tests", [
   Assertion(done(1) matches Done(1), "done helper"),
   Assertion(continue(2) matches Continue(2), "continue helper"),
+  Assertion(value(done(1)).eq_Int(1), "value Done"),
+  Assertion(value(continue(2)).eq_Int(2), "value Continue"),
   Assertion(map_continue(continue(2), x -> x.add(1)) matches Continue(3), "map_continue Continue"),
   Assertion(map_continue(done(2), x -> x.add(1)) matches Done(2), "map_continue Done"),
   Assertion(map_done(done(2), x -> x.add(1)) matches Done(3), "map_done Done"),

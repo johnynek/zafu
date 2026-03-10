@@ -65,6 +65,8 @@ from Zafu/Abstract/Monoid import (
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
+  foldl_iter_Array_state,
+  foldr_iter_Array_state,
   foldl as foldl_Foldable,
   foldl_iter as foldl_iter_Foldable,
   foldr_iter as foldr_iter_Foldable,
@@ -72,11 +74,9 @@ from Zafu/Abstract/Foldable import (
   size as size_Foldable,
 )
 from Zafu/Control/IterState import (
-  IterState,
-  Done,
-  Continue,
   done,
   continue,
+  value,
 )
 
 export (
@@ -657,47 +657,11 @@ def foldr_Array(items: Array[a], init: b, fn: (a, b) -> b) -> b:
             acc
   go(cnt, cnt.sub(1), init)
 
-def foldl_iter_Array(items: Array[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
-  cnt = size_Array(items)
-  def go(rem: Int, idx: Int, acc: b) -> b:
-    loop rem:
-      case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc
-      case _:
-        match get_Array(items, idx):
-          case Some(item):
-            match fn(acc, item):
-              case Done(done_value):
-                done_value
-              case Continue(next_acc):
-                go(rem.sub(1), idx.add(1), next_acc)
-          case None:
-            acc
-  go(cnt, 0, init)
-
-def foldr_iter_Array(items: Array[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
-  cnt = size_Array(items)
-  def go(rem: Int, idx: Int, acc: b) -> b:
-    loop rem:
-      case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc
-      case _:
-        match get_Array(items, idx):
-          case Some(item):
-            match fn(item, acc):
-              case Done(done_value):
-                done_value
-              case Continue(next_acc):
-                go(rem.sub(1), idx.sub(1), next_acc)
-          case None:
-            acc
-  go(cnt, cnt.sub(1), init)
-
 foldable_Array: Foldable[Array] = foldable_specialized(
   foldl_Array,
   foldr_Array,
-  foldl_iter_Array,
-  foldr_iter_Array,
+  (items, init, fn) -> value(foldl_iter_Array_state(items, init, fn)),
+  (items, init, fn) -> value(foldr_iter_Array_state(items, init, fn)),
   (items) -> cmp_Int(size_Array(items), 0) matches EQ,
   size_Array,
   to_List_Array,
