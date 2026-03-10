@@ -12,6 +12,13 @@ from Bosatsu/Num/Float64 import (
   is_infinite,
   is_nan,
 )
+from Zafu/Abstract/Hash import Hash
+from Zafu/Abstract/Instances/Predef import hash_Char
+from Zafu/Collection/HashSet import (
+  HashSet,
+  contains as contains_HashSet,
+  from_List as from_List_HashSet,
+)
 
 export (
   Doc,
@@ -98,8 +105,13 @@ enum VDoc:
   Union(flattened: VDoc, fallback: VDoc)
   LazyDoc(thunk: Lazy[VDoc])
 
+# Opaque pretty-print document value.
+# Output: stores an internal `VDoc` tree used by layout/rendering operations.
 struct Doc(node: VDoc)
 
+# Typeclass-style dictionary for rendering `a` values into `Doc`.
+# Input: `to_doc_fn` converts one `a` value to a document.
+# Output: a reusable renderer instance for type `a`.
 struct Document[a](to_doc_fn: a -> Doc)
 
 def and_Bool(left: Bool, right: Bool) -> Bool:
@@ -189,22 +201,33 @@ def traversal_fuel(doc: Doc, width_hint: Int) -> Int:
   size.mul(max_Int(width_hint, 0).add(32)).add(1024)
 
 def string_is_empty(value: String) -> Bool:
-  cmp_String(value, "") matches EQ
+  value matches ""
 
-space_char_opt: Option[Char] = int_to_Char(32)
+space_char: Char = .' '
+newline_char: Char = .'\n'
 
 def is_space_char(ch: Char) -> Bool:
-  char_to_Int(ch).eq_Int(32)
+  ch matches .' '
+
+def ascii_char(code: Int) -> Char:
+  match int_to_Char(code):
+    case Some(ch):
+      ch
+    case None:
+      # This branch is unreachable for the ASCII constants used below.
+      space_char
+
+whitespace_chars: HashSet[Char] = from_List_HashSet(hash_Char, [
+  space_char,
+  ascii_char(9),
+  newline_char,
+  ascii_char(11),
+  ascii_char(12),
+  ascii_char(13),
+])
 
 def is_whitespace_char(ch: Char) -> Bool:
-  code = char_to_Int(ch)
-  or_Bool(
-    is_space_char(ch),
-    or_Bool(
-      code.eq_Int(9),
-      or_Bool(code.eq_Int(10), or_Bool(code.eq_Int(11), or_Bool(code.eq_Int(12), code.eq_Int(13))))
-    )
-  )
+  contains_HashSet(whitespace_chars, ch)
 
 def small_spaces(rem: Int) -> String:
   match rem:
@@ -309,6 +332,8 @@ def trim_rendered(value: String) -> String:
 
   loop(length_String(value), value, [])
 
+# The empty document.
+# Output: renders as the empty string and acts as append identity.
 empty: Doc = mk(Empty)
 
 def text_raw_v(value: String) -> VDoc:
@@ -320,40 +345,81 @@ def text_raw_v(value: String) -> VDoc:
 def text_raw(value: String) -> Doc:
   mk(text_raw_v(value))
 
+# Single space text document.
+# Output: a one-character space `Doc`.
 space: Doc = text_raw(" ")
+# Comma text document.
+# Output: a one-character comma `Doc`.
 comma: Doc = text_raw(",")
 
+# Soft line break that becomes a space in flattened layouts.
+# Output: newline in broken mode, `" "` in flat mode.
 line: Doc = mk(FlatAlt(Line, text_raw_v(" ")))
+# Soft line break that disappears in flattened layouts.
+# Output: newline in broken mode, empty in flat mode.
 line_break: Doc = mk(FlatAlt(Line, Empty))
+# Mandatory line break.
+# Output: always renders as newline plus current indentation.
 hard_line: Doc = mk(Line)
 
 
-def text_with_line(value: String, line_doc: Doc) -> Doc:
-  line_v = view(line_doc)
-
-  def loop(fuel: Int, rem: String, suffix: VDoc) -> VDoc:
+def lines(value: String) -> List[String]:
+  def loop(fuel: Int, rem: String, rev_lines: List[String]) -> List[String]:
     recur fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
-        append_v(text_raw_v(rem), suffix)
+        [rem, *rev_lines].reverse()
       case _:
-        match rpartition_String(rem, "\n"):
+        match partition_String(rem, "\n"):
           case None:
-            append_v(text_raw_v(rem), suffix)
+            [rem, *rev_lines].reverse()
           case Some((before, after)):
-            next_suffix = append_v(line_v, append_v(text_raw_v(after), suffix))
-            loop(fuel.sub(1), before, next_suffix)
+            loop(fuel.sub(1), after, [before, *rev_lines])
 
-  mk(loop(length_String(value), value, Empty))
+  loop(length_String(value), value, [])
 
+def intercalate_docs(sep: Doc, docs: List[Doc]) -> Doc:
+  sep_v = view(sep)
+  match docs.reverse():
+    case []:
+      empty
+    case [head, *tail]:
+      def loop(rem: List[Doc], acc: VDoc) -> VDoc:
+        recur rem:
+          case []:
+            acc
+          case [next, *rest]:
+            loop(rest, append_v(view(next), append_v(sep_v, acc)))
+
+      mk(loop(tail, view(head)))
+
+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+
+# Exported constructors and combinators
+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+
+
+# Converts `value` into a `Doc`, replacing each `\n` with `line_doc`.
+# Input: `value` string and `line_doc` separator used between split lines.
+# Output: concatenated document preserving empty leading/trailing lines.
+def text_with_line(value: String, line_doc: Doc) -> Doc:
+  intercalate_docs(line_doc, lines(value).map_List(text_raw))
+
+# Converts `value` into a `Doc` where `\n` uses `line`.
+# Input: any string, including embedded newlines.
+# Output: a width-sensitive document equivalent to `text_with_line(value, line)`.
 def text(value: String) -> Doc:
   text_with_line(value, line)
 
+# Converts one character to a document.
+# Input: a character value.
+# Output: `line` when the character is newline, otherwise a single-character text doc.
 def char(value: Char) -> Doc:
-  if char_to_Int(value).eq_Int(10):
+  if value matches .'\n':
     line
   else:
     text_raw(char_to_String(value))
 
+# Renders an integer in canonical base-10 form.
+# Input: an `Int`.
+# Output: decimal text with optional leading `-`.
 def int(value: Int) -> Doc:
   text_raw(int_to_String(value))
 
@@ -363,6 +429,9 @@ def has_negative_sign(value: Float64) -> Bool:
   bits = float64_bits_to_Int(value)
   cmp_Int(bits, sign_bit_64) matches GT | EQ
 
+# Renders a float with deterministic parseable output.
+# Input: a `Float64`.
+# Output: `NaN`, `Infinity`, `-Infinity`, or the runtime shortest round-trippable decimal.
 def float(value: Float64) -> Doc:
   if is_nan(value):
     text_raw("NaN")
@@ -374,54 +443,95 @@ def float(value: Float64) -> Doc:
   else:
     text_raw(float64_to_String(value))
 
+# Repeats `doc` `count` times using a logarithmic doubling strategy.
+# Input: document `doc` and repeat count `count`.
+# Output: `empty` for non-positive counts, else left-associated repetition of `doc`.
 def repeat(doc: Doc, count: Int) -> Doc:
   if cmp_Int(count, 0) matches LT | EQ:
     empty
   else:
-    base = view(doc)
-    def loop(rem: Int, acc: VDoc) -> VDoc:
+    def loop(rem: Int, chunk: VDoc, acc: VDoc) -> VDoc:
       recur rem:
         case _ if cmp_Int(rem, 0) matches LT | EQ:
           acc
         case _:
-          loop(rem.sub(1), append_v(acc, base))
+          half = rem.div(2)
+          next_acc =
+            if cmp_Int(rem, half.mul(2)) matches GT:
+              append_v(acc, chunk)
+            else:
+              acc
+          loop(half, append_v(chunk, chunk), next_acc)
 
-    mk(loop(count, Empty))
+    mk(loop(count, view(doc), Empty))
 
+# Creates a document containing `width` spaces.
+# Input: number of spaces to emit.
+# Output: `repeat(space, width)`.
 def spaces(width: Int) -> Doc:
   repeat(space, width)
 
+# Defers document construction until rendering/traversal forces it.
+# Input: thunk returning a `Doc`.
+# Output: lazy document node.
 def defer(thunk: () -> Doc) -> Doc:
   mk(LazyDoc(lazy(() -> view(thunk()))))
 
+# Inserts zero-width text into output.
+# Input: `value` bytes to emit without affecting layout width.
+# Output: `empty` when `value` is empty, else a zero-width node.
 def zero_width(value: String) -> Doc:
   if string_is_empty(value):
     empty
   else:
     mk(ZeroWidth(value))
 
+# Builds ANSI escape output as zero-width control text.
+# Input: list of numeric ANSI codes.
+# Output: zero-width `\u001b[<codes>m` sequence.
 def ansi_control(codes: List[Int]) -> Doc:
   codes_str = join_strings_with_sep(codes.map_List(int_to_String), ";")
   zero_width(concat_String(["\u001b[", codes_str, "m"]))
 
+# Concatenates two documents in O(1).
+# Input: left and right documents.
+# Output: combined document preserving both layouts.
 def append(left: Doc, right: Doc) -> Doc:
   mk(append_v(view(left), view(right)))
 
+# Prepends plain text before `doc`.
+# Input: string prefix and document suffix.
+# Output: `text(value)` followed by `doc`.
 def prepend_text(value: String, doc: Doc) -> Doc:
   append(text(value), doc)
 
+# Appends plain text after `doc`.
+# Input: document prefix and string suffix.
+# Output: `doc` followed by `text(value)`.
 def append_text(doc: Doc, value: String) -> Doc:
   append(doc, text(value))
 
+# Concatenates with a soft line break between operands.
+# Input: left and right documents.
+# Output: `left + line + right`.
 def append_line(left: Doc, right: Doc) -> Doc:
   append(left, append(line, right))
 
+# Concatenates with a soft line break before text.
+# Input: left document and right string.
+# Output: `left + line + text(right)`.
 def append_line_text(left: Doc, right: String) -> Doc:
   append_line(left, text(right))
 
+# Concatenates with a space between operands.
+# Input: left and right documents.
+# Output: `left + space + right`.
 def append_space(left: Doc, right: Doc) -> Doc:
   append(left, append(space, right))
 
+# Concatenates with a space before text.
+# Input: left document and right string.
+# Output: `left + space + text(right)`.
 def append_space_text(left: Doc, right: String) -> Doc:
   append_space(left, text(right))
 
@@ -460,6 +570,9 @@ def flatten_boolean(doc: Doc) -> (Doc, Bool):
   (flat_node, changed) = flatten_boolean_v(view(doc))
   (mk(flat_node), changed)
 
+# Attempts to flatten `doc` and returns `None` when flattening is a no-op.
+# Input: any document.
+# Output: `Some(flat_doc)` if structure changes, else `None`.
 def flatten_option(doc: Doc) -> Option[Doc]:
   (flat_doc, changed) = flatten_boolean(doc)
   if changed:
@@ -467,10 +580,16 @@ def flatten_option(doc: Doc) -> Option[Doc]:
   else:
     None
 
+# Flattens all `FlatAlt`/`Union` behavior to single-line alternatives.
+# Input: any document.
+# Output: flattened document.
 def flatten(doc: Doc) -> Doc:
   (flat_doc, _) = flatten_boolean(doc)
   flat_doc
 
+# Adds an optimistic flat layout branch for `doc`.
+# Input: a document with potential line breaks.
+# Output: `doc` wrapped in `Union(flatten(doc), doc)` when flattening changes it.
 def grouped(doc: Doc) -> Doc:
   Doc(orig) = doc
   (flat, changed) = flatten_boolean_v(orig)
@@ -479,6 +598,9 @@ def grouped(doc: Doc) -> Doc:
   else:
     mk(flat)
 
+# Chooses between a real line break and flattened `doc`.
+# Input: fallback document used in flat mode.
+# Output: document that renders as newline or flattened fallback based on grouping.
 def line_or(doc: Doc) -> Doc:
   flat_doc = flatten(doc)
   Doc(flat_node) = flat_doc
@@ -488,15 +610,28 @@ def line_or(doc: Doc) -> Doc:
     case _:
       grouped(mk(FlatAlt(Line, flat_node)))
 
+# Line-or-space convenience value.
+# Output: newline in broken layouts, space in flat layouts.
 line_or_space: Doc = line_or(space)
+# Line-or-empty convenience value.
+# Output: newline in broken layouts, empty in flat layouts.
 line_or_empty: Doc = line_or(empty)
 
+# Concatenates with `line_or_space` between operands.
+# Input: left and right documents.
+# Output: `left + line_or_space + right`.
 def append_line_or_space(left: Doc, right: Doc) -> Doc:
   append(left, append(line_or_space, right))
 
+# Concatenates with `line_or_space` before text.
+# Input: left document and right string.
+# Output: `left + line_or_space + text(right)`.
 def append_line_or_space_text(left: Doc, right: String) -> Doc:
   append_line_or_space(left, text(right))
 
+# Increases indentation level for `doc`.
+# Input: document and indent amount.
+# Output: a nested document with added indentation.
 def nested(doc: Doc, amount: Int) -> Doc:
   Doc(node) = doc
   match node:
@@ -505,19 +640,34 @@ def nested(doc: Doc, amount: Int) -> Doc:
     case _:
       mk(Nest(amount, node))
 
+# Aligns `doc` to the current rendering column.
+# Input: any document.
+# Output: aligned document node.
 def aligned(doc: Doc) -> Doc:
   mk(Align(view(doc)))
 
+# Applies `nested` and then `aligned`.
+# Input: document and indent amount.
+# Output: hanging-indented document.
 def hang(doc: Doc, amount: Int) -> Doc:
   aligned(nested(doc, amount))
 
+# Prefixes `doc` with `amount` spaces and hangs subsequent lines.
+# Input: document and indent amount.
+# Output: indented document.
 def indent(doc: Doc, amount: Int) -> Doc:
   hang(append(spaces(amount), doc), amount)
 
+# Wraps `doc` between `left` and `right` with soft line spacing.
+# Input: body doc, left delimiter, right delimiter, and nesting amount.
+# Output: grouped bracketed document.
 def bracket_by(doc: Doc, left: Doc, right: Doc, amount: Int) -> Doc:
   middle = append(nested(append(line, doc), amount), append(line, right))
   append(left, grouped(middle))
 
+# Wraps `doc` between `left` and `right` without flat-mode interior spaces.
+# Input: body doc, left delimiter, right delimiter, and nesting amount.
+# Output: grouped tightly bracketed document.
 def tight_bracket_by(doc: Doc, left: Doc, right: Doc, amount: Int) -> Doc:
   middle = append(nested(append(line_break, doc), amount), append(line_break, right))
   append(left, grouped(middle))
@@ -550,9 +700,15 @@ def unzero_v(doc: VDoc) -> VDoc:
 
   loop(doc_size_v(doc).mul(4).add(64), doc)
 
+# Removes all zero-width nodes from `doc`.
+# Input: any document.
+# Output: document with `ZeroWidth` replaced by `empty`.
 def unzero(doc: Doc) -> Doc:
   mk(unzero_v(view(doc)))
 
+# Checks whether `doc` has no visible output.
+# Input: any document.
+# Output: `True` only when rendering produces no text or line breaks.
 def is_empty(doc: Doc) -> Bool:
   def loop(fuel: Int, stack: List[VDoc]) -> Bool:
     recur fuel:
@@ -596,9 +752,15 @@ def is_empty(doc: Doc) -> Bool:
 
   loop(doc_size_v(view(doc)).mul(8).add(64), [view(doc)])
 
+# Negation of `is_empty`.
+# Input: any document.
+# Output: `True` when `doc` has visible output.
 def non_empty(doc: Doc) -> Bool:
   not_Bool(is_empty(doc))
 
+# Computes the maximum rendered line width of `doc`.
+# Input: any document.
+# Output: maximum column width reached across all lines.
 def max_width(doc: Doc) -> Int:
   def loop(fuel: Int, pos: Int, stack: List[(Int, VDoc)], widest: Int) -> Int:
     recur fuel:
@@ -638,6 +800,9 @@ enum ReprItem:
   ReprDoc(node: VDoc)
   ReprText(text: String)
 
+# Returns a structural debug representation of `doc`.
+# Input: any document.
+# Output: text document describing internal node structure.
 def representation(doc: Doc) -> Doc:
   def loop(fuel: Int, stack: List[ReprItem], rev: List[String]) -> String:
     recur fuel:
@@ -777,21 +942,39 @@ def render_stream_core(width: Int, doc: Doc, wide: Bool) -> List[String]:
 
   loop(base_fuel, 0, [(0, view(doc))], [])
 
+# Renders `doc` to a stream of chunks with bounded layout selection.
+# Input: document and target width.
+# Output: chunk list whose concatenation is the rendered string.
 def render_stream(doc: Doc, width: Int) -> List[String]:
   render_stream_core(width, doc, False)
 
+# Renders `doc` at `width` and concatenates chunks.
+# Input: document and target width.
+# Output: fully rendered string.
 def render(doc: Doc, width: Int) -> String:
   concat_String(render_stream(doc, width))
 
+# Renders `doc` and trims trailing spaces on each line.
+# Input: document and target width.
+# Output: rendered string with right-trimmed lines.
 def render_trim(doc: Doc, width: Int) -> String:
   trim_rendered(render(doc, width))
 
+# Chunk-stream form of `render_trim`.
+# Input: document and target width.
+# Output: single-element list containing `render_trim` output.
 def render_stream_trim(doc: Doc, width: Int) -> List[String]:
   [render_trim(doc, width)]
 
+# Renders without bounded `fits` checks (always picks flattened union branch).
+# Input: document.
+# Output: chunk stream rendered in wide mode.
 def render_wide_stream(doc: Doc) -> List[String]:
   render_stream_core(0, doc, True)
 
+# Reduces `docs` from left to right using `fn`.
+# Input: list of docs and a binary combine function.
+# Output: reduced document, or `empty` for an empty list.
 def fold_docs(docs: List[Doc], fn: (Doc, Doc) -> Doc) -> Doc:
   match docs.reverse():
     case []:
@@ -806,21 +989,36 @@ def fold_docs(docs: List[Doc], fn: (Doc, Doc) -> Doc) -> Doc:
 
       loop(tail, head)
 
+# Inserts `sep` between each document in `docs`.
+# Input: separator doc and items.
+# Output: concatenated document with separator between neighbors.
 def intercalate(sep: Doc, docs: List[Doc]) -> Doc:
   if is_empty(sep):
     fold_docs(docs, (left, right) -> append(left, right))
   else:
     fold_docs(docs, (left, right) -> append(left, append(sep, right)))
 
+# Concatenates docs with no separator.
+# Input: list of docs.
+# Output: all docs appended in order.
 def cat(docs: List[Doc]) -> Doc:
   intercalate(empty, docs)
 
+# Concatenates docs separated by `space`.
+# Input: list of docs.
+# Output: space-separated document.
 def spread(docs: List[Doc]) -> Doc:
   intercalate(space, docs)
 
+# Concatenates docs separated by `line`.
+# Input: list of docs.
+# Output: line-separated document.
 def stack(docs: List[Doc]) -> Doc:
   intercalate(line, docs)
 
+# Width-sensitive separator folding like Paiges `fill`.
+# Input: separator doc and item docs.
+# Output: document that packs items onto lines when possible.
 def fill(sep: Doc, docs: List[Doc]) -> Doc:
   flat_sep = flatten(sep)
   match docs.reverse():
@@ -865,13 +1063,22 @@ def words_from_string(value: String) -> List[String]:
 
   loop(length_String(value), value, [], [])
 
+# Splits text into words and rejoins with `line_or_space`.
+# Input: source string with arbitrary whitespace.
+# Output: reflowable paragraph document.
 def split(value: String) -> Doc:
   docs = words_from_string(value).map_List(text)
   intercalate(line_or_space, docs)
 
+# Alias for `split`.
+# Input: source string paragraph.
+# Output: reflowable paragraph document.
 def paragraph(value: String) -> Doc:
   split(value)
 
+# Builds aligned key/value rows with configurable fill character and key suffix.
+# Input: key fill character, right-side separator text, and `(key, doc)` rows.
+# Output: multi-line aligned table document.
 def tabulate_with(fill_char: Char, right_sep: String, rows: List[(String, Doc)]) -> Doc:
   if rows matches []:
     empty
@@ -889,30 +1096,55 @@ def tabulate_with(fill_char: Char, right_sep: String, rows: List[(String, Doc)])
     ))
     intercalate(line, docs)
 
+# Convenience `tabulate_with` using space fill and empty key suffix.
+# Input: `(key, doc)` rows.
+# Output: aligned table document.
 def tabulate(rows: List[(String, Doc)]) -> Doc:
-  match space_char_opt:
-    case Some(space_char):
-      tabulate_with(space_char, "", rows)
-    case None:
-      empty
+  tabulate_with(space_char, "", rows)
 
+# Builds a `Document[a]` from a rendering function.
+# Input: function from `a` to `Doc`.
+# Output: `Document[a]` dictionary.
 def document_from_fn(fn: a -> Doc) -> Document[a]:
   Document(fn)
 
+# Applies a `Document[a]` renderer to one value.
+# Input: document dictionary and item value.
+# Output: rendered `Doc` for that value.
 def to_Doc(docu: Document[a], value: a) -> Doc:
   Document(to_doc_fn) = docu
   to_doc_fn(value)
 
+# Contramap/project combinator for `Document`.
+# Input: renderer for `b` and projection from `a` to `b`.
+# Output: renderer for `a`.
 def by(docu: Document[b], project: a -> b) -> Document[a]:
   document_from_fn(value -> to_Doc(docu, project(value)))
 
+# Built-in `Document` for `String`.
+# Output: uses `text`.
 document_String: Document[String] = document_from_fn(text)
+# Built-in `Document` for `Char`.
+# Output: uses `char`.
 document_Char: Document[Char] = document_from_fn(char)
+# Built-in `Document` for `Unit`.
+# Output: literal `()`.
 document_Unit: Document[Unit] = document_from_fn(_ -> text_raw("()"))
-document_Bool: Document[Bool] = document_from_fn(value -> text_raw("True") if value else text_raw("False"))
+true_Doc: Doc = text_raw("True")
+false_Doc: Doc = text_raw("False")
+# Built-in `Document` for `Bool`.
+# Output: `True` or `False`.
+document_Bool: Document[Bool] = document_from_fn(value -> true_Doc if value else false_Doc)
+# Built-in `Document` for `Int`.
+# Output: uses `int`.
 document_Int: Document[Int] = document_from_fn(int)
+# Built-in `Document` for `Float64`.
+# Output: uses `float`.
 document_Float64: Document[Float64] = document_from_fn(float)
 
+# Builds a `Document` instance for lists.
+# Input: item renderer.
+# Output: bracketed list document using `fill(comma + line, ...)`.
 def document_List(item_doc: Document[a]) -> Document[List[a]]:
   document_from_fn(items -> (
     item_docs = items.map_List(item -> to_Doc(item_doc, item))
@@ -920,6 +1152,9 @@ def document_List(item_doc: Document[a]) -> Document[List[a]]:
     tight_bracket_by(body, text_raw("["), text_raw("]"), 2)
   ))
 
+# Builds a `Document` instance for options.
+# Input: item renderer.
+# Output: `None` or grouped `Some(<item>)`.
 def document_Option(item_doc: Document[a]) -> Document[Option[a]]:
   document_from_fn(opt -> (
     match opt:
