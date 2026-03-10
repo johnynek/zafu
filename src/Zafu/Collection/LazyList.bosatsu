@@ -50,28 +50,20 @@ export (
 )
 
 
-enum VLazyList[a: +*]:
+enum LazyList[a: +*]:
   Empty
-  Cons(head: Lazy[a], tail: Lazy[VLazyList[a]])
+  Cons(head: Lazy[a], tail: Lazy[LazyList[a]])
   FromList(items: List[a])
-  Mapped[b](source: VLazyList[b], fn: b -> a)
-  Filtered[b](source: VLazyList[b], to_value: b -> a, pred: b -> Bool)
-
-# A lazy sequence.
-struct LazyList[a: +*](list: VLazyList[a]) 
+  Mapped[b](source: LazyList[b], fn: b -> a)
+  Filtered[b](source: LazyList[b], to_value: b -> a, pred: b -> Bool)
 
 # The empty lazy list.
-empty_LazyList: forall a. LazyList[a] = LazyList(Empty)
-lazy_empty_v = lazy(() -> Empty)
+empty_LazyList: forall a. LazyList[a] = Empty
+lazy_empty = lazy(() -> empty_LazyList)
 
 # Prepends `head` to `tail`.
 def cons(head: Lazy[a], tail: Lazy[LazyList[a]]) -> LazyList[a]:
-  LazyList(
-    Cons(head, lazy(() -> (
-      LazyList(tailv) = get_Lazy(tail)
-      tailv
-    )))
-  )
+  Cons(head, tail)
 
 # Builds a lazy list view over an existing strict list.
 def from_List(lst: List[a]) -> LazyList[a]:
@@ -79,27 +71,24 @@ def from_List(lst: List[a]) -> LazyList[a]:
     case []:
       empty_LazyList
     case _:
-      LazyList(FromList(lst))
+      FromList(lst)
 
 # Lazily maps elements with `fn`.
 # Nested maps are composed to avoid extra traversal layers.
 def map(ll: LazyList[a], fn: a -> b) -> LazyList[b]:
-  LazyList(vll) = ll
-  vll1 = match vll:
+  match ll:
     case Empty:
       Empty
     case Filtered(source, to_value, pred):
       Filtered(source, x -> fn(to_value(x)), pred)
-    case Mapped(mll, fn1):
-      Mapped(mll, x -> fn(fn1(x)))
+    case Mapped(source, fn1):
+      Mapped(source, x -> fn(fn1(x)))
     case notEmptyMapped:
       Mapped(notEmptyMapped, fn)
-  LazyList(vll1)
 
 # Lazily keeps elements where `pred` returns true.
 def filter(ll: LazyList[a], pred: a -> Bool) -> LazyList[a]:
-  LazyList(vll) = ll
-  vll1 = match vll:
+  match ll:
     case Empty:
       Empty
     case Mapped(source, fn):
@@ -108,34 +97,35 @@ def filter(ll: LazyList[a], pred: a -> Bool) -> LazyList[a]:
       Filtered(source, to_value, x -> pred1(x) if pred(to_value(x)) else False)
     case notEmptyFiltered:
       Filtered(notEmptyFiltered, x -> x, pred)
-  LazyList(vll1)
 
 # Consume one filtered element from a strict list.
 def uncons_filtered_list(items: List[b], to_value: b -> a, pred: b -> Bool) -> Option[(Lazy[a], List[b])]:
-  recur items:
-    case []:
-      None
-    case [head, *tail]:
-      if pred(head):
-        Some((lazy(() -> to_value(head)), tail))
-      else:
-        uncons_filtered_list(tail, to_value, pred)
+  def loop_items(rem_items: List[b]) -> Option[(Lazy[a], List[b])]:
+    loop rem_items:
+      case []:
+        None
+      case [head, *tail]:
+        if pred(head):
+          Some((lazy(() -> to_value(head)), tail))
+        else:
+          loop_items(tail)
+  loop_items(items)
 
 # Consume one filtered element.
-def uncons_filtered(source: VLazyList[b], to_value: b -> a, pred: b -> Bool) -> Option[(Lazy[a], LazyList[a])]:
+def uncons_filtered(source: LazyList[b], to_value: b -> a, pred: b -> Bool) -> Option[(Lazy[a], LazyList[a])]:
   recur source:
     case Empty:
       None
     case Cons(head, tail):
       item = get_Lazy(head)
       if pred(item):
-        Some((lazy(() -> to_value(item)), LazyList(Filtered(get_Lazy(tail), to_value, pred))))
+        Some((lazy(() -> to_value(item)), Filtered(get_Lazy(tail), to_value, pred)))
       else:
         uncons_filtered(get_Lazy(tail), to_value, pred)
     case FromList(items):
       match uncons_filtered_list(items, to_value, pred):
         case Some((head, tail)):
-          Some((head, LazyList(Filtered(FromList(tail), to_value, pred))))
+          Some((head, Filtered(FromList(tail), to_value, pred)))
         case None:
           None
     case Mapped(inner, map_fn):
@@ -148,27 +138,27 @@ def uncons_filtered(source: VLazyList[b], to_value: b -> a, pred: b -> Bool) -> 
       )
 
 # Consume one mapped element.
-def uncons_mapped(source: VLazyList[b], fn: b -> a) -> Option[(Lazy[a], LazyList[a])]:
+def uncons_mapped(source: LazyList[b], fn: b -> a) -> Option[(Lazy[a], LazyList[a])]:
   recur source:
     case Empty:
       None
     case Cons(head, tail):
       mapped_head = lazy(() -> fn(get_Lazy(head)))
-      mapped_tail = LazyList(Mapped(get_Lazy(tail), fn))
+      mapped_tail = Mapped(get_Lazy(tail), fn)
       Some((mapped_head, mapped_tail))
     case FromList(items):
       match items:
         case []:
           None
         case [head, *tail]:
-          Some((lazy(() -> fn(head)), LazyList(Mapped(FromList(tail), fn))))
+          Some((lazy(() -> fn(head)), Mapped(FromList(tail), fn)))
     case Mapped(inner, inner_fn):
       uncons_mapped(inner, x -> fn(inner_fn(x)))
     case Filtered(inner, to_value, pred):
       uncons_filtered(inner, x -> fn(to_value(x)), pred)
 
 # Consume one element from current.
-def uncons_no_pending(current: VLazyList[a]) -> Option[(Lazy[a], LazyList[a])]:
+def uncons_no_pending(current: LazyList[a]) -> Option[(Lazy[a], LazyList[a])]:
   match current:
     case Empty:
       None
@@ -177,9 +167,9 @@ def uncons_no_pending(current: VLazyList[a]) -> Option[(Lazy[a], LazyList[a])]:
         case []:
           None
         case [head, *tail]:
-          Some((lazy(() -> head), LazyList(FromList(tail))))
+          Some((lazy(() -> head), FromList(tail)))
     case Cons(head, tail):
-      Some((head, LazyList(get_Lazy(tail))))
+      Some((head, get_Lazy(tail)))
     case Mapped(source, fn):
       uncons_mapped(source, fn)
     case Filtered(source, to_value, pred):
@@ -187,8 +177,7 @@ def uncons_no_pending(current: VLazyList[a]) -> Option[(Lazy[a], LazyList[a])]:
 
 # Extracts the head and remaining tail if the list is non-empty.
 def uncons(ll: LazyList[a]) -> Option[(Lazy[a], LazyList[a])]:
-  LazyList(vll) = ll
-  uncons_no_pending(vll)
+  uncons_no_pending(ll)
 
 # Returns a prefix with at most `count` elements.
 # Negative counts return the empty list.
@@ -210,19 +199,17 @@ def cons_take(head: Lazy[a], tail: Lazy[LazyList[a]], size: Int) -> LazyList[a]:
   if cmp_Int(size, 0) matches LT | EQ:
     empty_LazyList
   elif size matches 1:
-    LazyList(Cons(head, lazy_empty_v))
+    Cons(head, lazy_empty)
   else:
     cons(head, lazy(() -> take(get_Lazy(tail), size.sub(1))))
 
 # Concatenates two lazy lists while preserving laziness.
 # Empty inputs are returned directly without rebuilding.
 def concat(first: LazyList[a], second: LazyList[a]) -> LazyList[a]:
-  LazyList(vsecond) = second
-
-  def concat_filtered_list(items: List[b], to_value: b -> a, pred: b -> Bool) -> VLazyList[a]:
+  def concat_filtered_list(items: List[b], to_value: b -> a, pred: b -> Bool) -> LazyList[a]:
     recur items:
       case []:
-        vsecond
+        second
       case [head, *tail]:
         if pred(head):
           mapped = to_value(head)
@@ -230,10 +217,10 @@ def concat(first: LazyList[a], second: LazyList[a]) -> LazyList[a]:
         else:
           concat_filtered_list(tail, to_value, pred)
 
-  def concat_filtered(source: VLazyList[b], to_value: b -> a, pred: b -> Bool) -> VLazyList[a]:
+  def concat_filtered(source: LazyList[b], to_value: b -> a, pred: b -> Bool) -> LazyList[a]:
     recur source:
       case Empty:
-        vsecond
+        second
       case Cons(head, tail):
         item = get_Lazy(head)
         if pred(item):
@@ -255,20 +242,20 @@ def concat(first: LazyList[a], second: LazyList[a]) -> LazyList[a]:
           x -> inner_pred(x) if pred(inner_to_value(x)) else False
         )
 
-  def concat_mapped_list(items: List[b], fn: b -> a) -> VLazyList[a]:
+  def concat_mapped_list(items: List[b], fn: b -> a) -> LazyList[a]:
     recur items:
       case []:
-        vsecond
+        second
       case [head, *tail]:
         Cons(
           lazy(() -> fn(head)),
           lazy(() -> concat_mapped_list(tail, fn))
         )
 
-  def concat_mapped(source: VLazyList[b], fn: b -> a) -> VLazyList[a]:
+  def concat_mapped(source: LazyList[b], fn: b -> a) -> LazyList[a]:
     recur source:
       case Empty:
-        vsecond
+        second
       case Cons(head, tail):
         Cons(
           lazy(() -> fn(get_Lazy(head))),
@@ -281,21 +268,20 @@ def concat(first: LazyList[a], second: LazyList[a]) -> LazyList[a]:
       case Filtered(inner, to_value, pred):
         concat_filtered(inner, x -> fn(to_value(x)), pred)
 
-  def concat_plain_list(items: List[a]) -> VLazyList[a]:
+  def concat_plain_list(items: List[a]) -> LazyList[a]:
     recur items:
       case []:
-        vsecond
+        second
       case [head, *tail]:
         Cons(
           lazy(() -> head),
           lazy(() -> concat_plain_list(tail))
         )
 
-  LazyList(vfirst) = first
-  def loop(current: VLazyList[a]) -> VLazyList[a]:
+  def loop(current: LazyList[a]) -> LazyList[a]:
     recur current:
       case Empty:
-        vsecond
+        second
       case Cons(head, tail):
         Cons(head, lazy(() -> loop(get_Lazy(tail))))
       case FromList(items):
@@ -304,27 +290,31 @@ def concat(first: LazyList[a], second: LazyList[a]) -> LazyList[a]:
         concat_mapped(source, fn)
       case Filtered(source, to_value, pred):
         concat_filtered(source, to_value, pred)
-  LazyList(loop(vfirst))
+  loop(first)
 
 # Strict left fold over values in iteration order.
 def foldl(ll: LazyList[a], init: b, fn: (b, a) -> b) -> b:
   def foldl_from_list(items: List[a], acc: b) -> b:
-    recur items:
-      case []:
-        acc
-      case [head, *tail]:
-        foldl_from_list(tail, fn(acc, head))
+    def loop_fold(rem_items: List[a], curr: b) -> b:
+      loop rem_items:
+        case []:
+          curr
+        case [head, *tail]:
+          loop_fold(tail, fn(curr, head))
+    loop_fold(items, acc)
 
   def foldl_filtered_list(items: List[c], acc: b, to_value: c -> a, pred: c -> Bool) -> b:
-    recur items:
-      case []:
-        acc
-      case [head, *tail]:
-        next_acc = fn(acc, to_value(head)) if pred(head) else acc
-        foldl_filtered_list(tail, next_acc, to_value, pred)
+    def loop_fold(rem_items: List[c], curr: b) -> b:
+      loop rem_items:
+        case []:
+          curr
+        case [head, *tail]:
+          next_acc = fn(curr, to_value(head)) if pred(head) else curr
+          loop_fold(tail, next_acc)
+    loop_fold(items, acc)
 
-  def foldl_filtered(source: VLazyList[c], acc: b, to_value: c -> a, pred: c -> Bool) -> b:
-    recur source:
+  def foldl_filtered(source: LazyList[c], acc: b, to_value: c -> a, pred: c -> Bool) -> b:
+    loop source:
       case Empty:
         acc
       case Cons(head, tail):
@@ -344,14 +334,16 @@ def foldl(ll: LazyList[a], init: b, fn: (b, a) -> b) -> b:
         )
 
   def foldl_mapped_list(items: List[c], acc: b, map_fn: c -> a) -> b:
-    recur items:
-      case []:
-        acc
-      case [head, *tail]:
-        foldl_mapped_list(tail, fn(acc, map_fn(head)), map_fn)
+    def loop_fold(rem_items: List[c], curr: b) -> b:
+      loop rem_items:
+        case []:
+          curr
+        case [head, *tail]:
+          loop_fold(tail, fn(curr, map_fn(head)))
+    loop_fold(items, acc)
 
-  def foldl_mapped(source: VLazyList[c], acc: b, map_fn: c -> a) -> b:
-    recur source:
+  def foldl_mapped(source: LazyList[c], acc: b, map_fn: c -> a) -> b:
+    loop source:
       case Empty:
         acc
       case Cons(head, tail):
@@ -364,8 +356,8 @@ def foldl(ll: LazyList[a], init: b, fn: (b, a) -> b) -> b:
       case Filtered(inner, to_value, pred):
         foldl_filtered(inner, acc, x -> map_fn(to_value(x)), pred)
 
-  def foldl_source(source: VLazyList[a], acc: b) -> b:
-    recur source:
+  def foldl_source(source: LazyList[a], acc: b) -> b:
+    loop source:
       case Empty:
         acc
       case Cons(head, tail):
@@ -377,12 +369,11 @@ def foldl(ll: LazyList[a], init: b, fn: (b, a) -> b) -> b:
       case Filtered(src, to_value, pred):
         foldl_filtered(src, acc, to_value, pred)
 
-  LazyList(vll) = ll
-  foldl_source(vll, init)
+  foldl_source(ll, init)
 
 def foldl_iter(ll: LazyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
   def foldl_iter_from_list(items: List[a], acc: b) -> IterState[b, b]:
-    recur items:
+    loop items:
       case []:
         Continue(acc)
       case [head, *tail]:
@@ -393,7 +384,7 @@ def foldl_iter(ll: LazyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterS
             foldl_iter_from_list(tail, next_acc)
 
   def foldl_iter_filtered_list(items: List[c], acc: b, to_value: c -> a, pred: c -> Bool) -> IterState[b, b]:
-    recur items:
+    loop items:
       case []:
         Continue(acc)
       case [head, *tail]:
@@ -406,8 +397,8 @@ def foldl_iter(ll: LazyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterS
         else:
           foldl_iter_filtered_list(tail, acc, to_value, pred)
 
-  def foldl_iter_filtered(source: VLazyList[c], acc: b, to_value: c -> a, pred: c -> Bool) -> IterState[b, b]:
-    recur source:
+  def foldl_iter_filtered(source: LazyList[c], acc: b, to_value: c -> a, pred: c -> Bool) -> IterState[b, b]:
+    loop source:
       case Empty:
         Continue(acc)
       case Cons(head, tail):
@@ -433,7 +424,7 @@ def foldl_iter(ll: LazyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterS
         )
 
   def foldl_iter_mapped_list(items: List[c], acc: b, map_fn: c -> a) -> IterState[b, b]:
-    recur items:
+    loop items:
       case []:
         Continue(acc)
       case [head, *tail]:
@@ -443,8 +434,8 @@ def foldl_iter(ll: LazyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterS
           case Continue(next_acc):
             foldl_iter_mapped_list(tail, next_acc, map_fn)
 
-  def foldl_iter_mapped(source: VLazyList[c], acc: b, map_fn: c -> a) -> IterState[b, b]:
-    recur source:
+  def foldl_iter_mapped(source: LazyList[c], acc: b, map_fn: c -> a) -> IterState[b, b]:
+    loop source:
       case Empty:
         Continue(acc)
       case Cons(head, tail):
@@ -460,8 +451,8 @@ def foldl_iter(ll: LazyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterS
       case Filtered(inner, to_value, pred):
         foldl_iter_filtered(inner, acc, x -> map_fn(to_value(x)), pred)
 
-  def foldl_iter_source(source: VLazyList[a], acc: b) -> IterState[b, b]:
-    recur source:
+  def foldl_iter_source(source: LazyList[a], acc: b) -> IterState[b, b]:
+    loop source:
       case Empty:
         Continue(acc)
       case Cons(head, tail):
@@ -477,8 +468,7 @@ def foldl_iter(ll: LazyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterS
       case Filtered(src, to_value, pred):
         foldl_iter_filtered(src, acc, to_value, pred)
 
-  LazyList(vll) = ll
-  foldl_iter_source(vll, init)
+  foldl_iter_source(ll, init)
 
 foldable_LazyList: Foldable[LazyList] = foldable_from_foldl_iter(foldl_iter)
 
@@ -498,7 +488,7 @@ def flat_map(ll: LazyList[a], fn: a -> LazyList[b]) -> LazyList[b]:
               lazy(() -> concat(mapped_tail, flat_map_from_list(tail, to_flat)))
             )
 
-  def flat_map_source(source: VLazyList[c], to_flat: c -> LazyList[b]) -> LazyList[b]:
+  def flat_map_source(source: LazyList[c], to_flat: c -> LazyList[b]) -> LazyList[b]:
     recur source:
       case Empty:
         empty_LazyList
@@ -518,8 +508,7 @@ def flat_map(ll: LazyList[a], fn: a -> LazyList[b]) -> LazyList[b]:
       case Filtered(inner, to_value, pred):
         flat_map_source(inner, x -> to_flat(to_value(x)) if pred(x) else empty_LazyList)
 
-  LazyList(vll) = ll
-  flat_map_source(vll, fn)
+  flat_map_source(ll, fn)
 
 
 ############################
@@ -563,7 +552,7 @@ def foldl_step(acc: Int, item: Int) -> Int:
   item.sub(acc)
 
 def singleton(item: a) -> LazyList[a]:
-    LazyList(Cons(lazy(() -> item), lazy_empty_v))
+    Cons(lazy(() -> item), lazy_empty)
 
 def deep_concat(size: Int) -> LazyList[Int]:
   def loop_deep(rem: Int, acc: LazyList[Int]) -> LazyList[Int]:
@@ -751,15 +740,15 @@ tests = TestSuite("LazyList tests", [
     "foldl sanity"
   ),
   Assertion(
-    map(from_List([1, 2]), i -> i.add(1)) matches LazyList(Mapped(_, _)),
+    map(from_List([1, 2]), i -> i.add(1)) matches Mapped(_, _),
     "map is deferred"
   ),
   Assertion(
     to_List(filter(take(from_List([1, 3, 2]), 2), i -> mod_Int(i, 2).eq_Int(0))) matches [],
-    "filter honors bound when prefix elements fail"
+    "filter honors take prefix when prefix elements fail"
   ),
   Assertion(
-    filter(from_List([1, 2]), i -> mod_Int(i, 2).eq_Int(0)) matches LazyList(Filtered(_, _, _)),
+    filter(from_List([1, 2]), i -> mod_Int(i, 2).eq_Int(0)) matches Filtered(_, _, _),
     "filter is deferred"
   ),
   Assertion(
