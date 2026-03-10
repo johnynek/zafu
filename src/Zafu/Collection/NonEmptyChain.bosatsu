@@ -42,6 +42,10 @@ from Zafu/Abstract/Eq import (
   eq_by,
   eq as eq_Eq,
 )
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_specialized,
+)
 from Zafu/Abstract/Ord import (
   Ord,
   ord_by,
@@ -66,6 +70,11 @@ from Zafu/Abstract/Instances/Predef import (
   eq_Int as eq_Int_inst,
   ord_Int as ord_Int_inst,
   hash_Int,
+)
+from Zafu/Control/IterState import (
+  IterState,
+  foldl_List as foldl_state_List,
+  foldr_List as foldr_state_List,
 )
 
 export (
@@ -110,6 +119,7 @@ export (
   eq_NonEmptyChain,
   ord_NonEmptyChain,
   hash_NonEmptyChain,
+  foldable_NonEmptyChain,
 )
 
 enum NonEmptyChain[a: +*]:
@@ -275,6 +285,22 @@ def foldr(items: NonEmptyChain[a], init: b, fn: (a, b) -> b) -> b:
       fn(head0, foldr_Chain(tail0, init, fn))
     case Append(init0, last0):
       foldr_Chain(init0, fn(last0, init), fn)
+
+def foldl_iter(items: NonEmptyChain[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  foldl_state_List(to_List(items), init, fn)
+
+def foldr_iter(items: NonEmptyChain[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  foldr_state_List(to_List(items), init, fn)
+
+foldable_NonEmptyChain: Foldable[NonEmptyChain] = foldable_specialized(
+  foldl,
+  foldr,
+  foldl_iter,
+  foldr_iter,
+  (_) -> False,
+  size,
+  to_List,
+)
 
 def sum(items: NonEmptyChain[Int]) -> Int:
   foldl(items, 0, add)

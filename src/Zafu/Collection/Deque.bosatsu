@@ -16,7 +16,18 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop,
 )
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_specialized,
+)
 from Zafu/Collection/List import size as size_List
+from Zafu/Control/IterState import (
+  IterState,
+  Done,
+  Continue,
+  foldl_List as foldl_state_List,
+  foldr_List as foldr_state_List,
+)
 
 export (
   Queue,
@@ -35,6 +46,7 @@ export (
   foldr,
   eq,
   cmp,
+  foldable_Queue,
 )
 
 # Banker's deque represented by a front list and a reversed back list.
@@ -156,9 +168,49 @@ def foldr(queue: Queue[a], init: b, fn: (a, b) -> b) -> b:
     back_acc = back_rev.foldl_List(init, (acc, item) -> fn(item, acc))
     front.reverse().foldl_List(back_acc, (acc, item) -> fn(item, acc))
 
+def foldl_iter(queue: Queue[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  Queue(size, front, back_rev) = normalize_queue(queue)
+  if size.eq_Int(0):
+    Continue(init)
+  else:
+    match foldl_state_List(front, init, fn):
+      case Done(done_value):
+        Done(done_value)
+      case Continue(front_acc):
+        match foldr_state_List(back_rev, front_acc, (item, acc) -> fn(acc, item)):
+          case Done(done_value):
+            Done(done_value)
+          case Continue(total):
+            Continue(total)
+
+def foldr_iter(queue: Queue[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  Queue(size, front, back_rev) = normalize_queue(queue)
+  if size.eq_Int(0):
+    Continue(init)
+  else:
+    match foldl_state_List(back_rev, init, (acc, item) -> fn(item, acc)):
+      case Done(done_value):
+        Done(done_value)
+      case Continue(back_acc):
+        match foldr_state_List(front, back_acc, fn):
+          case Done(done_value):
+            Done(done_value)
+          case Continue(total):
+            Continue(total)
+
 # Concatenates two deques in iteration order.
 def concat(left: Queue[a], right: Queue[a]) -> Queue[a]:
   foldl(right, normalize_queue(left), (acc, item) -> enqueue(acc, item))
+
+foldable_Queue: Foldable[Queue] = foldable_specialized(
+  foldl,
+  foldr,
+  foldl_iter,
+  foldr_iter,
+  is_empty,
+  size,
+  to_List,
+)
 
 def eq_list(fn: (a, b) -> Bool, left: List[a], right: List[b]) -> Bool:
   def go(left: List[a], right: List[b]) -> Bool:

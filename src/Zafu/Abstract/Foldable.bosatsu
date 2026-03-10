@@ -1,0 +1,692 @@
+package Zafu/Abstract/Foldable
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq as eq_Eq,
+  eq_from_fn,
+)
+from Zafu/Abstract/Ord import (
+  Ord,
+  ord_from_cmp,
+  cmp as cmp_Ord,
+)
+from Zafu/Abstract/Semigroup import (
+  Semigroup,
+  semigroup_from_combine,
+  combine as combine_Semigroup,
+)
+from Zafu/Abstract/Monoid import (
+  Monoid,
+  monoid_from_combine,
+  empty as empty_Monoid,
+  combine as combine_Monoid,
+)
+from Zafu/Control/IterState import (
+  IterState,
+  Done,
+  Continue,
+  done,
+  continue,
+  value,
+  foldl_List as foldl_state_List,
+  foldr_List as foldr_state_List,
+)
+
+export (
+  Foldable,
+  foldable_from_foldl_iter,
+  foldable_from_foldr_iter,
+  foldable_from_fold_iters,
+  foldable_from_folds,
+  foldable_specialized,
+  foldl,
+  foldr,
+  foldl_iter,
+  foldr_iter,
+  is_empty,
+  non_empty,
+  size,
+  to_List,
+  fold,
+  combine_all,
+  combine_all_option,
+  fold_map,
+  fold_map_option,
+  reduce_left_to_option,
+  reduce_right_to_option,
+  reduce_left_option,
+  reduce_right_option,
+  find,
+  exists,
+  for_all,
+  any,
+  all,
+  contains,
+  count,
+  get,
+  collect_first_some,
+  collect_fold_some,
+  minimum_option,
+  maximum_option,
+  minimum_by_option,
+  maximum_by_option,
+  minimum_list,
+  maximum_list,
+  minimum_by_list,
+  maximum_by_list,
+  intercalate,
+  filter_to_List,
+  take_while_to_List,
+  drop_while_to_List,
+  laws_Foldable,
+)
+
+struct Foldable[f: * -> *](
+  foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b,
+  foldr_fn: forall a, b. (f[a], b, (a, b) -> b) -> b,
+  foldl_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> IterState[b, b],
+  foldr_iter_fn: forall a, b. (f[a], b, (a, b) -> IterState[b, b]) -> IterState[b, b],
+  is_empty_fn: forall a. f[a] -> Bool,
+  size_fn: forall a. f[a] -> Int,
+  to_List_fn: forall a. f[a] -> List[a],
+)
+
+def not_Bool(value: Bool) -> Bool:
+  if value:
+    False
+  else:
+    True
+
+def eq_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    not_Bool(right)
+
+def reverse_List(items: List[a]) -> List[a]:
+  items.foldl_List([], (acc, item) -> [item, *acc])
+
+def foldr_List(items: List[a], init: b, fn: (a, b) -> b) -> b:
+  reverse_List(items).foldl_List(init, (acc, item) -> fn(item, acc))
+
+def size_List(items: List[a]) -> Int:
+  items.foldl_List(0, (acc, _) -> acc.add(1))
+
+def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
+  match value:
+    case Some(item):
+      Some(fn(item))
+    case None:
+      None
+
+def eq_Option(eq_item: Eq[a], left: Option[a], right: Option[a]) -> Bool:
+  match (left, right):
+    case (None, None):
+      True
+    case (Some(left_item), Some(right_item)):
+      eq_Eq(eq_item, left_item, right_item)
+    case _:
+      False
+
+def eq_List(eq_item: Eq[a], left: List[a], right: List[a]) -> Bool:
+  def go(left: List[a], right: List[a]) -> Bool:
+    loop (left, right):
+      case ([], []):
+        True
+      case ([left_h, *left_t], [right_h, *right_t]):
+        if eq_Eq(eq_item, left_h, right_h):
+          go(left_t, right_t)
+        else:
+          False
+      case _:
+        False
+  go(left, right)
+
+def foldable_specialized[f: * -> *](
+  foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b,
+  foldr_fn: forall a, b. (f[a], b, (a, b) -> b) -> b,
+  foldl_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> IterState[b, b],
+  foldr_iter_fn: forall a, b. (f[a], b, (a, b) -> IterState[b, b]) -> IterState[b, b],
+  is_empty_fn: forall a. f[a] -> Bool,
+  size_fn: forall a. f[a] -> Int,
+  to_List_fn: forall a. f[a] -> List[a],
+) -> Foldable[f]:
+  Foldable(foldl_fn, foldr_fn, foldl_iter_fn, foldr_iter_fn, is_empty_fn, size_fn, to_List_fn)
+
+def foldable_from_foldl_iter[f: * -> *](
+  foldl_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> IterState[b, b]
+) -> Foldable[f]:
+  to_List_fn = (fa) -> reverse_List(value(foldl_iter_fn(fa, [], (acc, item) -> continue([item, *acc]))))
+  foldable_specialized(
+    (fa, init, fn) -> value(foldl_iter_fn(fa, init, (acc, item) -> continue(fn(acc, item)))),
+    (fa, init, fn) -> foldr_List(to_List_fn(fa), init, fn),
+    foldl_iter_fn,
+    (fa, init, fn) -> foldr_state_List(to_List_fn(fa), init, fn),
+    (fa) -> value(foldl_iter_fn(fa, True, (_, _) -> done(False))),
+    (fa) -> value(foldl_iter_fn(fa, 0, (acc, _) -> continue(acc.add(1)))),
+    to_List_fn,
+  )
+
+def foldable_from_foldr_iter[f: * -> *](
+  foldr_iter_fn: forall a, b. (f[a], b, (a, b) -> IterState[b, b]) -> IterState[b, b]
+) -> Foldable[f]:
+  to_List_fn = (fa) -> value(foldr_iter_fn(fa, [], (item, acc) -> continue([item, *acc])))
+  foldable_specialized(
+    (fa, init, fn) -> to_List_fn(fa).foldl_List(init, fn),
+    (fa, init, fn) -> value(foldr_iter_fn(fa, init, (item, acc) -> continue(fn(item, acc)))),
+    (fa, init, fn) -> foldl_state_List(to_List_fn(fa), init, fn),
+    foldr_iter_fn,
+    (fa) -> value(foldr_iter_fn(fa, True, (_, _) -> done(False))),
+    (fa) -> value(foldr_iter_fn(fa, 0, (_, acc) -> continue(acc.add(1)))),
+    to_List_fn,
+  )
+
+def foldable_from_fold_iters[f: * -> *](
+  foldl_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> IterState[b, b],
+  foldr_iter_fn: forall a, b. (f[a], b, (a, b) -> IterState[b, b]) -> IterState[b, b],
+) -> Foldable[f]:
+  to_List_fn = (fa) -> value(foldr_iter_fn(fa, [], (item, acc) -> continue([item, *acc])))
+  foldable_specialized(
+    (fa, init, fn) -> value(foldl_iter_fn(fa, init, (acc, item) -> continue(fn(acc, item)))),
+    (fa, init, fn) -> value(foldr_iter_fn(fa, init, (item, acc) -> continue(fn(item, acc)))),
+    foldl_iter_fn,
+    foldr_iter_fn,
+    (fa) -> value(foldl_iter_fn(fa, True, (_, _) -> done(False))),
+    (fa) -> value(foldl_iter_fn(fa, 0, (acc, _) -> continue(acc.add(1)))),
+    to_List_fn,
+  )
+
+def foldable_from_folds[f: * -> *](
+  foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b,
+  foldr_fn: forall a, b. (f[a], b, (a, b) -> b) -> b,
+) -> Foldable[f]:
+  # Strict folds still traverse the full structure; keep Done sticky so
+  # iterative helper semantics remain correct even without early-stop speedups.
+  foldable_specialized(
+    foldl_fn,
+    foldr_fn,
+    (fa, init, fn) -> foldl_fn(fa, Continue(init), (state, item) -> (
+      match state:
+        case Done(done_value):
+          Done(done_value)
+        case Continue(acc):
+          fn(acc, item)
+    )),
+    (fa, init, fn) -> foldr_fn(fa, Continue(init), (item, state) -> (
+      match state:
+        case Done(done_value):
+          Done(done_value)
+        case Continue(acc):
+          fn(item, acc)
+    )),
+    (fa) -> foldl_fn(fa, True, (_, _) -> False),
+    (fa) -> foldl_fn(fa, 0, (acc, _) -> acc.add(1)),
+    (fa) -> foldr_fn(fa, [], (item, acc) -> [item, *acc]),
+  )
+
+def foldl[f: * -> *](inst: Foldable[f], fa: f[a], init: b, fn: (b, a) -> b) -> b:
+  Foldable { foldl_fn, ... } = inst
+  foldl_fn(fa, init, fn)
+
+def foldr[f: * -> *](inst: Foldable[f], fa: f[a], init: b, fn: (a, b) -> b) -> b:
+  Foldable { foldr_fn, ... } = inst
+  foldr_fn(fa, init, fn)
+
+def foldl_iter[f: * -> *](inst: Foldable[f], fa: f[a], init: b, fn: (b, a) -> IterState[b, b]) -> b:
+  Foldable { foldl_iter_fn, ... } = inst
+  value(foldl_iter_fn(fa, init, fn))
+
+def foldr_iter[f: * -> *](inst: Foldable[f], fa: f[a], init: b, fn: (a, b) -> IterState[b, b]) -> b:
+  Foldable { foldr_iter_fn, ... } = inst
+  value(foldr_iter_fn(fa, init, fn))
+
+def is_empty[f: * -> *](inst: Foldable[f], fa: f[a]) -> Bool:
+  Foldable { is_empty_fn, ... } = inst
+  is_empty_fn(fa)
+
+def non_empty[f: * -> *](inst: Foldable[f], fa: f[a]) -> Bool:
+  not_Bool(is_empty(inst, fa))
+
+def size[f: * -> *](inst: Foldable[f], fa: f[a]) -> Int:
+  Foldable { size_fn, ... } = inst
+  size_fn(fa)
+
+def to_List[f: * -> *](inst: Foldable[f], fa: f[a]) -> List[a]:
+  Foldable { to_List_fn, ... } = inst
+  to_List_fn(fa)
+
+def combine_all[f: * -> *](inst: Foldable[f], fa: f[a], monoid: Monoid[a]) -> a:
+  foldl(inst, fa, empty_Monoid(monoid), (acc, item) -> combine_Monoid(monoid, acc, item))
+
+def fold[f: * -> *](inst: Foldable[f], fa: f[a], monoid: Monoid[a]) -> a:
+  combine_all(inst, fa, monoid)
+
+def combine_all_option[f: * -> *](inst: Foldable[f], fa: f[a], semigroup: Semigroup[a]) -> Option[a]:
+  foldl(inst, fa, None, (state, item) -> (
+    match state:
+      case None:
+        Some(item)
+      case Some(acc):
+        Some(combine_Semigroup(semigroup, acc, item))
+  ))
+
+def fold_map[f: * -> *](inst: Foldable[f], fa: f[a], fn: a -> b, monoid: Monoid[b]) -> b:
+  foldl(inst, fa, empty_Monoid(monoid), (acc, item) -> combine_Monoid(monoid, acc, fn(item)))
+
+def fold_map_option[f: * -> *](inst: Foldable[f], fa: f[a], fn: a -> b, semigroup: Semigroup[b]) -> Option[b]:
+  foldl(inst, fa, None, (state, item) -> (
+    mapped = fn(item)
+    match state:
+      case None:
+        Some(mapped)
+      case Some(acc):
+        Some(combine_Semigroup(semigroup, acc, mapped))
+  ))
+
+def reduce_left_to_option[f: * -> *](
+  inst: Foldable[f],
+  fa: f[a],
+  first: a -> b,
+  combine: (b, a) -> b,
+) -> Option[b]:
+  foldl(inst, fa, None, (state, item) -> (
+    match state:
+      case None:
+        Some(first(item))
+      case Some(acc):
+        Some(combine(acc, item))
+  ))
+
+def reduce_right_to_option[f: * -> *](
+  inst: Foldable[f],
+  fa: f[a],
+  first: a -> b,
+  combine: (a, b) -> b,
+) -> Option[b]:
+  foldr(inst, fa, None, (item, state) -> (
+    match state:
+      case None:
+        Some(first(item))
+      case Some(acc):
+        Some(combine(item, acc))
+  ))
+
+def reduce_left_option[f: * -> *](inst: Foldable[f], fa: f[a], combine: (a, a) -> a) -> Option[a]:
+  reduce_left_to_option(inst, fa, item -> item, combine)
+
+def reduce_right_option[f: * -> *](inst: Foldable[f], fa: f[a], combine: (a, a) -> a) -> Option[a]:
+  reduce_right_to_option(inst, fa, item -> item, combine)
+
+def find[f: * -> *](inst: Foldable[f], fa: f[a], pred: a -> Bool) -> Option[a]:
+  foldl_iter(inst, fa, None, (_, item) -> (
+    if pred(item):
+      done(Some(item))
+    else:
+      continue(None)
+  ))
+
+def exists[f: * -> *](inst: Foldable[f], fa: f[a], pred: a -> Bool) -> Bool:
+  foldl_iter(inst, fa, False, (_, item) -> (
+    if pred(item):
+      done(True)
+    else:
+      continue(False)
+  ))
+
+def for_all[f: * -> *](inst: Foldable[f], fa: f[a], pred: a -> Bool) -> Bool:
+  foldl_iter(inst, fa, True, (_, item) -> (
+    if pred(item):
+      continue(True)
+    else:
+      done(False)
+  ))
+
+def any[f: * -> *](inst: Foldable[f], fa: f[Bool]) -> Bool:
+  exists(inst, fa, item -> item)
+
+def all[f: * -> *](inst: Foldable[f], fa: f[Bool]) -> Bool:
+  for_all(inst, fa, item -> item)
+
+def contains[f: * -> *](inst: Foldable[f], eq_inst: Eq[a], fa: f[a], target: a) -> Bool:
+  exists(inst, fa, item -> eq_Eq(eq_inst, item, target))
+
+def count[f: * -> *](inst: Foldable[f], fa: f[a], pred: a -> Bool) -> Int:
+  foldl(inst, fa, 0, (acc, item) -> acc.add(1) if pred(item) else acc)
+
+def get[f: * -> *](inst: Foldable[f], fa: f[a], idx: Int) -> Option[a]:
+  if cmp_Int(idx, 0) matches LT:
+    None
+  else:
+    state = foldl_iter(inst, fa, (0, None), (state, item) -> (
+      (next_idx, _) = state
+      if next_idx.eq_Int(idx):
+        done((next_idx, Some(item)))
+      else:
+        continue((next_idx.add(1), None))
+    ))
+    (_, result) = state
+    result
+
+def collect_first_some[f: * -> *](inst: Foldable[f], fa: f[a], fn: a -> Option[b]) -> Option[b]:
+  foldl_iter(inst, fa, None, (_, item) -> (
+    match fn(item):
+      case Some(value):
+        done(Some(value))
+      case None:
+        continue(None)
+  ))
+
+def collect_fold_some[f: * -> *](inst: Foldable[f], fa: f[a], fn: a -> Option[b], monoid: Monoid[b]) -> b:
+  foldl(inst, fa, empty_Monoid(monoid), (acc, item) -> (
+    match fn(item):
+      case Some(value):
+        combine_Monoid(monoid, acc, value)
+      case None:
+        acc
+  ))
+
+def minimum_option[f: * -> *](inst: Foldable[f], ord_inst: Ord[a], fa: f[a]) -> Option[a]:
+  reduce_left_option(inst, fa, (left, right) -> (
+    match cmp_Ord(ord_inst, left, right):
+      case GT:
+        right
+      case LT | EQ:
+        left
+  ))
+
+def maximum_option[f: * -> *](inst: Foldable[f], ord_inst: Ord[a], fa: f[a]) -> Option[a]:
+  reduce_left_option(inst, fa, (left, right) -> (
+    match cmp_Ord(ord_inst, left, right):
+      case LT:
+        right
+      case GT | EQ:
+        left
+  ))
+
+def minimum_by_option[f: * -> *](inst: Foldable[f], ord_b: Ord[b], fa: f[a], fn: a -> b) -> Option[a]:
+  state = reduce_left_to_option(
+    inst,
+    fa,
+    (item) -> (item, fn(item)),
+    (acc, item) -> (
+      (best_item, best_key) = acc
+      key = fn(item)
+      match cmp_Ord(ord_b, key, best_key):
+        case LT:
+          (item, key)
+        case EQ | GT:
+          (best_item, best_key)
+    ),
+  )
+  map_Option(state, (((best_item, _)) -> best_item))
+
+def maximum_by_option[f: * -> *](inst: Foldable[f], ord_b: Ord[b], fa: f[a], fn: a -> b) -> Option[a]:
+  state = reduce_left_to_option(
+    inst,
+    fa,
+    (item) -> (item, fn(item)),
+    (acc, item) -> (
+      (best_item, best_key) = acc
+      key = fn(item)
+      match cmp_Ord(ord_b, key, best_key):
+        case GT:
+          (item, key)
+        case LT | EQ:
+          (best_item, best_key)
+    ),
+  )
+  map_Option(state, (((best_item, _)) -> best_item))
+
+def minimum_by_list[f: * -> *](inst: Foldable[f], ord_b: Ord[b], fa: f[a], fn: a -> b) -> List[a]:
+  state = foldl(inst, fa, None, (state, item) -> (
+    key = fn(item)
+    match state:
+      case None:
+        Some((key, [item]))
+      case Some((best_key, best_rev)):
+        match cmp_Ord(ord_b, key, best_key):
+          case LT:
+            Some((key, [item]))
+          case EQ:
+            Some((best_key, [item, *best_rev]))
+          case GT:
+            Some((best_key, best_rev))
+  ))
+  match state:
+    case None:
+      []
+    case Some((_, best_rev)):
+      reverse_List(best_rev)
+
+def maximum_by_list[f: * -> *](inst: Foldable[f], ord_b: Ord[b], fa: f[a], fn: a -> b) -> List[a]:
+  state = foldl(inst, fa, None, (state, item) -> (
+    key = fn(item)
+    match state:
+      case None:
+        Some((key, [item]))
+      case Some((best_key, best_rev)):
+        match cmp_Ord(ord_b, key, best_key):
+          case GT:
+            Some((key, [item]))
+          case EQ:
+            Some((best_key, [item, *best_rev]))
+          case LT:
+            Some((best_key, best_rev))
+  ))
+  match state:
+    case None:
+      []
+    case Some((_, best_rev)):
+      reverse_List(best_rev)
+
+def minimum_list[f: * -> *](inst: Foldable[f], ord_inst: Ord[a], fa: f[a]) -> List[a]:
+  minimum_by_list(inst, ord_inst, fa, item -> item)
+
+def maximum_list[f: * -> *](inst: Foldable[f], ord_inst: Ord[a], fa: f[a]) -> List[a]:
+  maximum_by_list(inst, ord_inst, fa, item -> item)
+
+def intercalate[f: * -> *](inst: Foldable[f], fa: f[a], middle: a, monoid: Monoid[a]) -> a:
+  (_, total) = foldl(inst, fa, (False, empty_Monoid(monoid)), (state, item) -> (
+    (seen_any, acc) = state
+    if seen_any:
+      (True, combine_Monoid(monoid, combine_Monoid(monoid, acc, middle), item))
+    else:
+      (True, combine_Monoid(monoid, acc, item))
+  ))
+  total
+
+def filter_to_List[f: * -> *](inst: Foldable[f], fa: f[a], pred: a -> Bool) -> List[a]:
+  reverse_List(foldl(inst, fa, [], (acc, item) -> [item, *acc] if pred(item) else acc))
+
+def take_while_to_List[f: * -> *](inst: Foldable[f], fa: f[a], pred: a -> Bool) -> List[a]:
+  reverse_List(foldl_iter(inst, fa, [], (acc, item) -> (
+    if pred(item):
+      continue([item, *acc])
+    else:
+      done(acc)
+  )))
+
+def drop_while_to_List[f: * -> *](inst: Foldable[f], fa: f[a], pred: a -> Bool) -> List[a]:
+  (_, kept_rev) = foldl(inst, fa, (True, []), (state, item) -> (
+    (still_dropping, kept_rev) = state
+    if still_dropping:
+      if pred(item):
+        state
+      else:
+        (False, [item, *kept_rev])
+    else:
+      (False, [item, *kept_rev])
+  ))
+  reverse_List(kept_rev)
+
+def reduce_left_option_List(items: List[a], combine: (a, a) -> a) -> Option[a]:
+  match items:
+    case []:
+      None
+    case [head, *tail]:
+      Some(tail.foldl_List(head, combine))
+
+def reduce_right_option_List(items: List[a], combine: (a, a) -> a) -> Option[a]:
+  match reverse_List(items):
+    case []:
+      None
+    case [last, *init_rev]:
+      Some(init_rev.foldl_List(last, (acc, item) -> combine(item, acc)))
+
+def laws_Foldable[f: * -> *](inst: Foldable[f], eq_item: Eq[a], fa: f[a]) -> Test:
+  list_view = to_List(inst, fa)
+  left_reduced = reduce_left_option(inst, fa, (left, _) -> left)
+  right_reduced = reduce_right_option(inst, fa, (left, _) -> left)
+  left_model = reduce_left_option_List(list_view, (left, _) -> left)
+  right_model = reduce_right_option_List(list_view, (left, _) -> left)
+
+  size_law = Assertion(size(inst, fa).eq_Int(size_List(list_view)), "size equals to_List length")
+  is_empty_law = Assertion(eq_Bool(is_empty(inst, fa), size(inst, fa).eq_Int(0)), "is_empty from size")
+  non_empty_law = Assertion(eq_Bool(non_empty(inst, fa), not_Bool(is_empty(inst, fa))), "non_empty negates is_empty")
+  foldl_law = Assertion(
+    eq_List(eq_item, reverse_List(foldl(inst, fa, [], (acc, item) -> [item, *acc])), list_view),
+    "foldl order matches to_List",
+  )
+  foldr_law = Assertion(
+    eq_List(eq_item, foldr(inst, fa, [], (item, acc) -> [item, *acc]), list_view),
+    "foldr order matches to_List",
+  )
+  foldl_iter_law = Assertion(
+    eq_List(
+      eq_item,
+      foldl_iter(inst, fa, [], (acc, item) -> continue([item, *acc])),
+      foldl(inst, fa, [], (acc, item) -> [item, *acc]),
+    ),
+    "foldl_iter Continue agrees with foldl",
+  )
+  foldr_iter_law = Assertion(
+    eq_List(
+      eq_item,
+      foldr_iter(inst, fa, [], (item, acc) -> continue([item, *acc])),
+      foldr(inst, fa, [], (item, acc) -> [item, *acc]),
+    ),
+    "foldr_iter Continue agrees with foldr",
+  )
+  reduce_left_law = Assertion(eq_Option(eq_item, left_reduced, left_model), "reduce_left_option list model")
+  reduce_right_law = Assertion(eq_Option(eq_item, right_reduced, right_model), "reduce_right_option list model")
+  TestSuite("Foldable laws", [
+    size_law,
+    is_empty_law,
+    non_empty_law,
+    foldl_law,
+    foldr_law,
+    foldl_iter_law,
+    foldr_iter_law,
+    reduce_left_law,
+    reduce_right_law,
+  ])
+
+list_foldable: Foldable[List] = foldable_specialized(
+  (items, init, fn) -> items.foldl_List(init, fn),
+  (items, init, fn) -> foldr_List(items, init, fn),
+  foldl_state_List,
+  foldr_state_List,
+  (items) -> items matches [],
+  size_List,
+  (items) -> items,
+)
+
+tests = TestSuite("Foldable tests", [
+  (
+    eq_int = eq_from_fn(eq_Int)
+    laws_Foldable(list_foldable, eq_int, [])
+  ),
+  (
+    eq_int = eq_from_fn(eq_Int)
+    laws_Foldable(list_foldable, eq_int, [3, 1, 2, 1])
+  ),
+  (
+    int_monoid = monoid_from_combine(0, (left, right) -> left.add(right))
+    Assertion(fold(list_foldable, [1, 2, 3], int_monoid).eq_Int(6), "fold")
+  ),
+  (
+    int_semigroup = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(combine_all_option(list_foldable, [1, 2, 3], int_semigroup) matches Some(6), "combine_all_option")
+  ),
+  (
+    int_semigroup = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(combine_all_option(list_foldable, [], int_semigroup) matches None, "combine_all_option empty")
+  ),
+  (
+    int_monoid = monoid_from_combine(0, (left, right) -> left.add(right))
+    Assertion(fold_map(list_foldable, [1, 2, 3], x -> x.mul(2), int_monoid).eq_Int(12), "fold_map")
+  ),
+  (
+    int_semigroup = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(fold_map_option(list_foldable, [1, 2, 3], x -> x.mul(2), int_semigroup) matches Some(12), "fold_map_option")
+  ),
+  Assertion(reduce_left_option(list_foldable, [1, 2, 3], (left, right) -> left.sub(right)) matches Some(-4), "reduce_left_option"),
+  Assertion(reduce_right_option(list_foldable, [1, 2, 3], (left, right) -> left.sub(right)) matches Some(2), "reduce_right_option"),
+  Assertion(find(list_foldable, [1, 2, 3], x -> x.eq_Int(2)) matches Some(2), "find"),
+  Assertion(find(list_foldable, [1, 2, 3], x -> x.eq_Int(7)) matches None, "find miss"),
+  Assertion(exists(list_foldable, [1, 2, 3], x -> x.eq_Int(3)), "exists"),
+  Assertion(for_all(list_foldable, [2, 4, 6], x -> mod_Int(x, 2).eq_Int(0)), "for_all"),
+  Assertion(any(list_foldable, [False, True, False]), "any"),
+  Assertion(all(list_foldable, [True, True]), "all"),
+  (
+    eq_int = eq_from_fn(eq_Int)
+    Assertion(contains(list_foldable, eq_int, [1, 2, 3], 2), "contains")
+  ),
+  Assertion(count(list_foldable, [1, 2, 3, 4], x -> mod_Int(x, 2).eq_Int(0)).eq_Int(2), "count"),
+  Assertion(get(list_foldable, [1, 2, 3], 1) matches Some(2), "get"),
+  Assertion(get(list_foldable, [1, 2, 3], 10) matches None, "get out of bounds"),
+  Assertion(collect_first_some(list_foldable, [1, 2, 3], x -> Some(x) if x.eq_Int(2) else None) matches Some(2), "collect_first_some"),
+  (
+    int_monoid = monoid_from_combine(0, (left, right) -> left.add(right))
+    Assertion(
+      collect_fold_some(list_foldable, [1, 2, 3, 4], x -> Some(x) if mod_Int(x, 2).eq_Int(0) else None, int_monoid).eq_Int(6),
+      "collect_fold_some",
+    )
+  ),
+  (
+    ord_int = ord_from_cmp(cmp_Int)
+    Assertion(minimum_option(list_foldable, ord_int, [3, 1, 2]) matches Some(1), "minimum_option")
+  ),
+  (
+    ord_int = ord_from_cmp(cmp_Int)
+    Assertion(maximum_option(list_foldable, ord_int, [3, 1, 2]) matches Some(3), "maximum_option")
+  ),
+  (
+    ord_int = ord_from_cmp(cmp_Int)
+    Assertion(minimum_list(list_foldable, ord_int, [3, 1, 2, 1]) matches [1, 1], "minimum_list")
+  ),
+  (
+    ord_int = ord_from_cmp(cmp_Int)
+    Assertion(maximum_list(list_foldable, ord_int, [3, 1, 3, 2]) matches [3, 3], "maximum_list")
+  ),
+  (
+    ord_int = ord_from_cmp(cmp_Int)
+    Assertion(minimum_by_option(list_foldable, ord_int, [-2, 3, -1], x -> x.mul(x)) matches Some(-1), "minimum_by_option")
+  ),
+  (
+    ord_int = ord_from_cmp(cmp_Int)
+    Assertion(maximum_by_option(list_foldable, ord_int, [-2, 3, -1], x -> x.mul(x)) matches Some(3), "maximum_by_option")
+  ),
+  (
+    string_monoid = monoid_from_combine("", (left, right) -> concat_String([left, right]))
+    Assertion(intercalate(list_foldable, ["a", "b", "c"], ",", string_monoid) matches "a,b,c", "intercalate")
+  ),
+  Assertion(filter_to_List(list_foldable, [1, 2, 3, 4], x -> mod_Int(x, 2).eq_Int(0)) matches [2, 4], "filter_to_List"),
+  Assertion(take_while_to_List(list_foldable, [2, 4, 6, 7, 8], x -> mod_Int(x, 2).eq_Int(0)) matches [2, 4, 6], "take_while_to_List"),
+  Assertion(drop_while_to_List(list_foldable, [2, 4, 6, 7, 8], x -> mod_Int(x, 2).eq_Int(0)) matches [7, 8], "drop_while_to_List"),
+  (
+    from_foldl = foldable_from_foldl_iter((items, init, fn) -> foldl_state_List(items, init, fn))
+    Assertion(to_List(from_foldl, [1, 2, 3]) matches [1, 2, 3], "foldable_from_foldl_iter")
+  ),
+  (
+    from_foldr = foldable_from_foldr_iter((items, init, fn) -> foldr_state_List(items, init, fn))
+    Assertion(size(from_foldr, [1, 2, 3]).eq_Int(3), "foldable_from_foldr_iter")
+  ),
+  (
+    from_folds = foldable_from_folds(
+      (items, init, fn) -> items.foldl_List(init, fn),
+      (items, init, fn) -> foldr_List(items, init, fn),
+    )
+    Assertion(get(from_folds, [1, 2, 3], 1) matches Some(2), "foldable_from_folds iter wrapper")
+  ),
+])
