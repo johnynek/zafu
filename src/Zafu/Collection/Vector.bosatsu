@@ -35,6 +35,21 @@ from Bosatsu/Testing/Properties import (
   suite_Prop,
   run_Prop,
 )
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_by,
+  eq as eq_Eq,
+)
+from Zafu/Abstract/Ord import (
+  Ord,
+  ord_by,
+  cmp as cmp_Ord,
+)
+from Zafu/Abstract/Hash import (
+  Hash,
+  hash_by,
+  hash as hash_Hash,
+)
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
@@ -55,6 +70,12 @@ from Zafu/Abstract/Monoid import (
 )
 from Zafu/Abstract/Instances/Predef import (
   foldable_Array,
+  eq_List as eq_List_inst,
+  ord_List as ord_List_inst,
+  hash_List as hash_List_inst,
+  eq_Int as eq_Int_inst,
+  ord_Int as ord_Int_inst,
+  hash_Int,
 )
 from Zafu/Collection/List import size as size_List
 from Zafu/Control/IterState import (
@@ -91,6 +112,9 @@ export (
   combine_all_option,
   combine_all,
   zip,
+  eq_Vector,
+  ord_Vector,
+  hash_Vector,
   foldable_Vector,
 )
 
@@ -422,6 +446,15 @@ foldable_Vector: Foldable[Vector] = foldable_specialized(
   size,
   to_List,
 )
+
+def eq_Vector(eq_item: Eq[a]) -> Eq[Vector[a]]:
+  eq_by(eq_List_inst(eq_item), to_List)
+
+def ord_Vector(ord_item: Ord[a]) -> Ord[Vector[a]]:
+  ord_by(ord_List_inst(ord_item), to_List)
+
+def hash_Vector(hash_item: Hash[a]) -> Hash[Vector[a]]:
+  hash_by(hash_List_inst(hash_item), to_List)
 
 def map_with_fuel(vec: Vector[a], fn: a -> b, fuel: Int) -> Vector[b]:
   recur fuel:
@@ -1042,6 +1075,18 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
+def eq_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    if right:
+      False
+    else:
+      True
+
+def eq_Comparison(left: Comparison, right: Comparison) -> Bool:
+  (left, right) matches (LT, LT) | (EQ, EQ) | (GT, GT)
+
 def index_List_loop(list: List[a], idx: Int) -> Option[a]:
   loop list:
     case []:
@@ -1121,6 +1166,8 @@ rand_deep_list_int: Rand[List[Int]] = flat_map_Rand(
   rand_deep_len,
   len -> sequence_Rand(replicate_List(rand_int, len))
 )
+
+rand_list_pair: Rand[(List[Int], List[Int])] = prod_Rand(rand_list_int, rand_list_int)
 
 size_prop: Prop = forall_Prop(
   rand_list_int,
@@ -1291,6 +1338,69 @@ concat_deep_iso_prop: Prop = forall_Prop(
     Assertion(and_Bool(and_Bool(same_list, same_size), boundary_ok), "deep concat iso")
   ))
 
+eq_instance_prop: Prop = forall_Prop(
+  rand_list_pair,
+  "eq_Vector agrees with list Eq instance",
+  ((left, right)) -> (
+    vec_eq = eq_Vector(eq_Int_inst)
+    list_eq = eq_List_inst(eq_Int_inst)
+    actual = eq_Eq(vec_eq, from_List(left), from_List(right))
+    expected = eq_Eq(list_eq, left, right)
+    Assertion(eq_Bool(actual, expected), "eq instance law")
+  ))
+
+ord_instance_prop: Prop = forall_Prop(
+  rand_list_pair,
+  "ord_Vector agrees with list Ord instance",
+  ((left, right)) -> (
+    vec_ord = ord_Vector(ord_Int_inst)
+    list_ord = ord_List_inst(ord_Int_inst)
+    actual = cmp_Ord(vec_ord, from_List(left), from_List(right))
+    expected = cmp_Ord(list_ord, left, right)
+    Assertion(eq_Comparison(actual, expected), "ord instance law")
+  ))
+
+ord_eq_consistency_prop: Prop = forall_Prop(
+  rand_list_pair,
+  "ord_Vector EQ agrees with eq_Vector",
+  ((left, right)) -> (
+    vec_eq = eq_Vector(eq_Int_inst)
+    vec_ord = ord_Vector(ord_Int_inst)
+    left_vec = from_List(left)
+    right_vec = from_List(right)
+    eq_from_ord = cmp_Ord(vec_ord, left_vec, right_vec) matches EQ
+    eq_from_eq = eq_Eq(vec_eq, left_vec, right_vec)
+    Assertion(eq_Bool(eq_from_ord, eq_from_eq), "ord/eq consistency")
+  ))
+
+hash_instance_prop: Prop = forall_Prop(
+  rand_list_int,
+  "hash_Vector agrees with list Hash instance",
+  list -> (
+    vec_hash = hash_Vector(hash_Int)
+    list_hash = hash_List_inst(hash_Int)
+    actual = hash_Hash(vec_hash, from_List(list))
+    expected = hash_Hash(list_hash, list)
+    Assertion(actual.eq_Int(expected), "hash instance law")
+  ))
+
+hash_eq_coherent_prop: Prop = forall_Prop(
+  rand_list_pair,
+  "hash_Vector coherent with eq_Vector",
+  ((left, right)) -> (
+    vec_eq = eq_Vector(eq_Int_inst)
+    vec_hash = hash_Vector(hash_Int)
+    left_vec = from_List(left)
+    right_vec = from_List(right)
+    left_hash = hash_Hash(vec_hash, left_vec)
+    right_hash = hash_Hash(vec_hash, right_vec)
+    coherent = if eq_Eq(vec_eq, left_vec, right_vec):
+      left_hash.eq_Int(right_hash)
+    else:
+      True
+    Assertion(coherent, "hash coherence")
+  ))
+
 map_prop: Prop = forall_Prop(
   rand_list_int,
   "map agrees with list map",
@@ -1360,6 +1470,11 @@ vector_props: Prop = suite_Prop(
     split_at_take_drop_prop,
     zip_prop,
     concat_prop,
+    eq_instance_prop,
+    ord_instance_prop,
+    ord_eq_consistency_prop,
+    hash_instance_prop,
+    hash_eq_coherent_prop,
     combine_all_option_prop,
     combine_all_prop,
     map_prop,
@@ -1401,6 +1516,24 @@ tests = TestSuite("Vector tests", [
   Assertion(combine_all_option(from_List([1, 2, 3]), int_add_semigroup) matches Some(6), "combine_all_option sanity"),
   Assertion(combine_all(from_List([1, 2, 3]), int_add_monoid).eq_Int(6), "combine_all sanity"),
   Assertion(combine_all(empty, int_add_monoid).eq_Int(0), "combine_all empty"),
+  (
+    vec_eq = eq_Vector(eq_Int_inst)
+    left = concat(from_List([1]), from_List([2, 3]))
+    right = from_List([1, 2, 3])
+    Assertion(eq_Eq(vec_eq, left, right), "eq_Vector structure-insensitive")
+  ),
+  (
+    vec_ord = ord_Vector(ord_Int_inst)
+    left = concat(from_List([1]), from_List([2, 3]))
+    right = from_List([1, 2, 4])
+    Assertion(cmp_Ord(vec_ord, left, right) matches LT, "ord_Vector lexical")
+  ),
+  (
+    vec_hash = hash_Vector(hash_Int)
+    left = concat(from_List([1]), from_List([2, 3]))
+    right = from_List([1, 2, 3])
+    Assertion(hash_Hash(vec_hash, left).eq_Int(hash_Hash(vec_hash, right)), "hash_Vector coherence sample")
+  ),
   Assertion(foldl(from_List([1, 2, 3]), 0, add).eq_Int(6), "foldl sanity"),
   Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
   run_Prop(vector_props, 200, 4242),
