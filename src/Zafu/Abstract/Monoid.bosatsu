@@ -70,15 +70,11 @@ def combine(inst: Monoid[a], left: a, right: a) -> a:
   combine_Semigroup(monoid_to_semigroup(inst), left, right)
 
 def combine_n(inst: Monoid[a], value: a, n: Int) -> a:
-  if cmp_Int(n, 0) matches GT:
     match combine_n_Semigroup(monoid_to_semigroup(inst), value, n):
       case Some(combined):
         combined
       case None:
-        # Defensive fallback for malformed semigroups; n > 0 should yield Some.
         empty(inst)
-  else:
-    empty(inst)
 
 def combine_all(inst: Monoid[a], items: List[a]) -> a:
   match items:

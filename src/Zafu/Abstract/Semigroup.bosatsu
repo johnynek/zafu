@@ -6,13 +6,18 @@ from Zafu/Abstract/Eq import (
   eq_from_fn,
 )
 
+from Zafu/Collection/List import split_at
+
 export (
   Semigroup,
   semigroup_from_combine,
   semigroup_specialized,
   combine,
-  combine_n,
   combine_all_option,
+  combine_tree_option,
+  combine_fn,
+  combine_n,
+  combine_n_positive_from_combine,
   maybe_combine_left,
   maybe_combine_right,
   reverse,
@@ -76,6 +81,10 @@ def combine(inst: Semigroup[a], left: a, right: a) -> a:
   Semigroup(combine_fn, _, _) = inst
   combine_fn(left, right)
 
+def combine_fn(inst: Semigroup[a]) -> (a, a) -> a:
+  Semigroup(fn, _, _) = inst
+  fn
+
 def combine_n(inst: Semigroup[a], value: a, n: Int) -> Option[a]:
   if cmp_Int(n, 0) matches GT:
     Semigroup(_, combine_n_positive_fn, _) = inst
@@ -86,6 +95,29 @@ def combine_n(inst: Semigroup[a], value: a, n: Int) -> Option[a]:
 def combine_all_option(inst: Semigroup[a], items: List[a]) -> Option[a]:
   Semigroup(_, _, combine_all_option_fn) = inst
   combine_all_option_fn(items)
+
+# combine this list by forming a balanced tree. Useful for combine operations
+# that don't decrease size
+def combine_tree_option(combine: (a, a) -> a, items: List[a]) -> Option[a]:
+    def go(head: a, items: List[a], cnt: Int) -> a:
+        recur (cnt, items):
+            case _ if cmp_Int(cnt, 1) matches LT | EQ: head
+            case (_, rest):
+                half = cnt.div(2)
+                left_size = cnt.sub(half)
+                right_size = cnt.sub(left_size)
+                (left, right) = split_at(rest, half)
+                left_op = go(head, left, left_size)
+                match right:
+                    case []: left_op
+                    case [rh, *rt]:
+                        right_op = go(rh, rt, right_size)
+                        combine(left_op, right_op)
+    match items:
+        case []: None
+        case [h, *t]:
+            size = t.foldl_List(1, (cnt, _) -> add(cnt, 1))
+            Some(go(h, t, size))
 
 def maybe_combine_left(inst: Semigroup[a], left_opt: Option[a], right: a) -> a:
   match left_opt:

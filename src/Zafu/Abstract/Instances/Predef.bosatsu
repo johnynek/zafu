@@ -20,6 +20,14 @@ from Bosatsu/Num/Float64 import (
   int_bits_to_Float64,
   is_nan,
 )
+from Zafu/Collection/List import (
+  size as size_List,
+  is_empty as is_empty_List,
+  foldl as foldl_List,
+  foldr as foldr_List,
+  eq_List as eq_List_Collection,
+  ord_List as ord_List_Collection,
+)
 
 from Zafu/Abstract/Eq import (
   Eq,
@@ -51,6 +59,7 @@ from Zafu/Abstract/Semigroup import (
   semigroup_specialized,
   combine as combine_Semigroup,
   combine_n as combine_n_Semigroup,
+  combine_n_positive_from_combine,
   combine_all_option as combine_all_option_Semigroup,
 )
 
@@ -76,6 +85,9 @@ from Zafu/Control/IterState import (
   continue,
   foldl_Array as foldl_state_Array,
   foldr_Array as foldr_state_Array,
+  IterState,
+  foldl_List as foldl_state_List,
+  foldr_List as foldr_state_List,
 )
 
 export (
@@ -164,6 +176,7 @@ export (
   monoid_Tuple31,
   monoid_Tuple32,
   foldable_Array,
+  foldable_List,
   eq_Unit,
   ord_Unit,
   hash_Unit,
@@ -331,37 +344,6 @@ def rank_Comparison(value: Comparison) -> Int:
 def cmp_Comparison(left: Comparison, right: Comparison) -> Comparison:
   cmp_Int(rank_Comparison(left), rank_Comparison(right))
 
-def eq_list(eq_item: Eq[a], left: List[a], right: List[a]) -> Bool:
-  def go(left: List[a], right: List[a]) -> Bool:
-    loop (left, right):
-      case ([], []):
-        True
-      case ([left_h, *left_t], [right_h, *right_t]):
-        if eq_Eq(eq_item, left_h, right_h):
-          go(left_t, right_t)
-        else:
-          False
-      case _:
-        False
-  go(left, right)
-
-def cmp_list(ord_item: Ord[a], left: List[a], right: List[a]) -> Comparison:
-  def go(left: List[a], right: List[a]) -> Comparison:
-    loop (left, right):
-      case ([], []):
-        EQ
-      case ([], [_, *_]):
-        LT
-      case ([_, *_], []):
-        GT
-      case ([left_h, *left_t], [right_h, *right_t]):
-        head_cmp = cmp_Ord(ord_item, left_h, right_h)
-        if head_cmp matches EQ:
-          go(left_t, right_t)
-        else:
-          head_cmp
-  go(left, right)
-
 hash_tag_unit: Int = 1009
 hash_tag_bool_false: Int = 1013
 hash_tag_bool_true: Int = 1019
@@ -524,7 +506,18 @@ semigroup_Float64_mul: Semigroup[Float64] = semigroup_from_combine(timesf)
 monoid_Float64_add: Monoid[Float64] = monoid_from_semigroup(0.0, semigroup_Float64_add)
 monoid_Float64_mul: Monoid[Float64] = monoid_from_semigroup(1.0, semigroup_Float64_mul)
 
-semigroup_String: Semigroup[String] = semigroup_from_combine((left, right) -> concat_String([left, right]))
+semigroup_String: Semigroup[String] = (
+    combine = (l, r) -> concat_String([l, r])
+    semigroup_specialized(
+        combine,
+        (str, n) -> combine_n_positive_from_combine(combine, str, n),
+        (strs) -> (
+            match strs:
+                case []: None
+                case not_empty: Some(concat_String(not_empty))
+        )
+    )
+)
 monoid_String: Monoid[String] = monoid_from_semigroup("", semigroup_String)
 
 def eq_Option(eq_item: Eq[a]) -> Eq[Option[a]]:
@@ -609,10 +602,10 @@ def monoid_Option(semigroup_item: Semigroup[a]) -> Monoid[Option[a]]:
   monoid_from_semigroup(None, semigroup_Option(semigroup_item))
 
 def eq_List(eq_item: Eq[a]) -> Eq[List[a]]:
-  eq_from_fn((left, right) -> eq_list(eq_item, left, right))
+  eq_List_Collection(eq_item)
 
 def ord_List(ord_item: Ord[a]) -> Ord[List[a]]:
-  ord_from_cmp((left, right) -> cmp_list(ord_item, left, right))
+  ord_List_Collection(ord_item)
 
 def hash_List(hash_item: Hash[a]) -> Hash[List[a]]:
   eq_item = hash_to_Eq(hash_item)
@@ -664,6 +657,22 @@ foldable_Array: Foldable[Array] = foldable_specialized(
   (items) -> cmp_Int(size_Array(items), 0) matches EQ,
   size_Array,
   to_List_Array,
+)
+
+def foldl_iter(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  foldl_state_List(items, init, fn)
+
+def foldr_iter(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  foldr_state_List(items, init, fn)
+
+foldable_List: Foldable[List] = foldable_specialized(
+  foldl_List,
+  foldr_List,
+  foldl_iter,
+  foldr_iter,
+  is_empty_List,
+  size_List,
+  items -> items,
 )
 
 def eq_Tuple1(eq1: Eq[a1]) -> Eq[Tuple1[a1]]:
@@ -3100,11 +3109,11 @@ def monoid_Tuple32(monoid1: Monoid[a1], monoid2: Monoid[a2], monoid3: Monoid[a3]
 
 def eq_Dict(eq_key: Eq[k], eq_value: Eq[v]) -> Eq[Dict[k, v]]:
   pair_eq = eq_Tuple2(eq_key, eq_value)
-  eq_from_fn((left, right) -> eq_list(pair_eq, items(left), items(right)))
+  eq_from_fn((left, right) -> eq_Eq(eq_List(pair_eq), items(left), items(right)))
 
 def ord_Dict(ord_key: Ord[k], ord_value: Ord[v]) -> Ord[Dict[k, v]]:
   pair_ord = ord_Tuple2(ord_key, ord_value)
-  ord_from_cmp((left, right) -> cmp_list(pair_ord, items(left), items(right)))
+  ord_from_cmp((left, right) -> cmp_Ord(ord_List(pair_ord), items(left), items(right)))
 
 def hash_Dict(hash_key: Hash[k], hash_value: Hash[v]) -> Hash[Dict[k, v]]:
   pair_hash = hash_Tuple2(hash_key, hash_value)
