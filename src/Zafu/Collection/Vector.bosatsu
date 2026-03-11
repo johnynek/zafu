@@ -951,22 +951,29 @@ def drop(vec: Vector[a], count: Int) -> Vector[a]:
 def split_at(vec: Vector[a], count: Int) -> (Vector[a], Vector[a]):
   total = size(vec)
   safe_count = clamp_Int(count, 0, total)
-  (take(vec, safe_count), drop(vec, safe_count))
+  if safe_count.eq_Int(0):
+    (empty, vec)
+  elif safe_count.eq_Int(total):
+    (vec, empty)
+  else:
+    fuel = height(vec).add(8)
+    (
+      take_with_fuel(vec, safe_count, fuel),
+      drop_with_fuel(vec, safe_count, fuel)
+    )
 
 # Backward-compatible alias for split_at.
 def split(vec: Vector[a], count: Int) -> (Vector[a], Vector[a]):
   split_at(vec, count)
 
 def combine_left_option(semi: Semigroup[a], state: Option[a], next: Option[a]) -> Option[a]:
-  match next:
-    case None:
+  match (state, next):
+    case (_, None):
       state
-    case Some(value):
-      match state:
-        case None:
-          Some(value)
-        case Some(total):
-          Some(combine_Semigroup(semi, total, value))
+    case (None, _):
+      next
+    case (Some(total), Some(value)):
+      Some(combine_Semigroup(semi, total, value))
 
 def combine_all_option_with_fuel(vec: Vector[a], semi: Semigroup[a], fuel: Int) -> Option[a]:
   recur fuel:
