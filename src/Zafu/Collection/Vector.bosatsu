@@ -37,18 +37,21 @@ from Bosatsu/Testing/Properties import (
 )
 from Zafu/Abstract/Eq import (
   Eq,
-  eq_by,
+  eq_from_fn,
   eq as eq_Eq,
 )
 from Zafu/Abstract/Ord import (
   Ord,
-  ord_by,
+  ord_from_cmp,
   cmp as cmp_Ord,
 )
 from Zafu/Abstract/Hash import (
   Hash,
-  hash_by,
+  hash_specialized,
+  hash_to_Eq,
   hash as hash_Hash,
+  mix_61,
+  finish_61,
 )
 from Zafu/Abstract/Foldable import (
   Foldable,
@@ -119,6 +122,8 @@ export (
 )
 
 chunk_width = 32
+hash_seed_vector: Int = 1123
+hash_tag_vector: Int = 1129
 
 # Persistent vector backed by an RRB-style tree.
 enum Vector:
@@ -446,15 +451,6 @@ foldable_Vector: Foldable[Vector] = foldable_specialized(
   size,
   to_List,
 )
-
-def eq_Vector(eq_item: Eq[a]) -> Eq[Vector[a]]:
-  eq_by(eq_List_inst(eq_item), to_List)
-
-def ord_Vector(ord_item: Ord[a]) -> Ord[Vector[a]]:
-  ord_by(ord_List_inst(ord_item), to_List)
-
-def hash_Vector(hash_item: Hash[a]) -> Hash[Vector[a]]:
-  hash_by(hash_List_inst(hash_item), to_List)
 
 def map_with_fuel(vec: Vector[a], fn: a -> b, fuel: Int) -> Vector[b]:
   recur fuel:
@@ -839,6 +835,213 @@ def next_leaf(stack: List[Vector[a]], fuel: Int) -> Option[(Array[a], List[Vecto
         case [Branch(_, _, _, children), *tail]:
           next_leaf(push_children_ltr(children, tail), fuel.sub(1))
 
+def ready_leaf(stack: List[Vector[a]], current: Option[(Array[a], Int)], fuel: Int) -> Option[((Array[a], Int), List[Vector[a]])]:
+  match current:
+    case Some(curr):
+      Some((curr, stack))
+    case None:
+      match next_leaf(stack, fuel):
+        case Some((items, next_stack)):
+          Some(((items, 0), next_stack))
+        case None:
+          None
+
+def eq_chunk(eq_item: Eq[a], left_items: Array[a], left_idx: Int, right_items: Array[a], right_idx: Int, rem: Int) -> Bool:
+  recur rem:
+    case _ if cmp_Int(rem, 0) matches LT | EQ:
+      True
+    case _:
+      match get_Array(left_items, left_idx):
+        case Some(left_item):
+          match get_Array(right_items, right_idx):
+            case Some(right_item):
+              if eq_Eq(eq_item, left_item, right_item):
+                eq_chunk(eq_item, left_items, left_idx.add(1), right_items, right_idx.add(1), rem.sub(1))
+              else:
+                False
+            case None:
+              False
+        case None:
+          False
+
+def cmp_chunk(ord_item: Ord[a], left_items: Array[a], left_idx: Int, right_items: Array[a], right_idx: Int, rem: Int) -> Comparison:
+  recur rem:
+    case _ if cmp_Int(rem, 0) matches LT | EQ:
+      EQ
+    case _:
+      match get_Array(left_items, left_idx):
+        case Some(left_item):
+          match get_Array(right_items, right_idx):
+            case Some(right_item):
+              head_cmp = cmp_Ord(ord_item, left_item, right_item)
+              if head_cmp matches EQ:
+                cmp_chunk(ord_item, left_items, left_idx.add(1), right_items, right_idx.add(1), rem.sub(1))
+              else:
+                head_cmp
+            case None:
+              EQ
+        case None:
+          EQ
+
+def hash_chunk(hash_item: Hash[a], items: Array[a], idx: Int, rem: Int, acc: Int) -> Int:
+  recur rem:
+    case _ if cmp_Int(rem, 0) matches LT | EQ:
+      acc
+    case _:
+      match get_Array(items, idx):
+        case Some(item):
+          next_acc = mix_61(acc, hash_Hash(hash_item, item))
+          hash_chunk(hash_item, items, idx.add(1), rem.sub(1), next_acc)
+        case None:
+          acc
+
+def eq_Vector_items(eq_item: Eq[a], left: Vector[a], right: Vector[a]) -> Bool:
+  left_size = size(left)
+  right_size = size(right)
+  if left_size.eq_Int(right_size):
+    if left_size.eq_Int(0):
+      True
+    else:
+      left_leaf_fuel = height(left).add(8)
+      right_leaf_fuel = height(right).add(8)
+      def go(
+        rem: Int,
+        left_stack: List[Vector[a]],
+        right_stack: List[Vector[a]],
+        left_curr: Option[(Array[a], Int)],
+        right_curr: Option[(Array[a], Int)]
+      ) -> Bool:
+        loop rem:
+          case _ if cmp_Int(rem, 0) matches LT | EQ:
+            True
+          case _:
+            left_ready = ready_leaf(left_stack, left_curr, left_leaf_fuel)
+            right_ready = ready_leaf(right_stack, right_curr, right_leaf_fuel)
+            match (left_ready, right_ready):
+              case (Some(((left_items, left_idx), next_left_stack)), Some(((right_items, right_idx), next_right_stack))):
+                left_avail = size_Array(left_items).sub(left_idx)
+                right_avail = size_Array(right_items).sub(right_idx)
+                step = min_Int(rem, min_Int(left_avail, right_avail))
+                if cmp_Int(step, 0) matches LT | EQ:
+                  False
+                else:
+                  if eq_chunk(eq_item, left_items, left_idx, right_items, right_idx, step):
+                    next_left_idx = left_idx.add(step)
+                    next_right_idx = right_idx.add(step)
+                    next_left_curr = if next_left_idx.eq_Int(size_Array(left_items)):
+                      None
+                    else:
+                      Some((left_items, next_left_idx))
+                    next_right_curr = if next_right_idx.eq_Int(size_Array(right_items)):
+                      None
+                    else:
+                      Some((right_items, next_right_idx))
+                    go(rem.sub(step), next_left_stack, next_right_stack, next_left_curr, next_right_curr)
+                  else:
+                    False
+              case _:
+                False
+      go(left_size, [left], [right], None, None)
+  else:
+    False
+
+def cmp_Vector_items(ord_item: Ord[a], left: Vector[a], right: Vector[a]) -> Comparison:
+  left_size = size(left)
+  right_size = size(right)
+  shared = min_Int(left_size, right_size)
+  if shared.eq_Int(0):
+    cmp_Int(left_size, right_size)
+  else:
+    left_leaf_fuel = height(left).add(8)
+    right_leaf_fuel = height(right).add(8)
+    def go(
+      rem: Int,
+      left_stack: List[Vector[a]],
+      right_stack: List[Vector[a]],
+      left_curr: Option[(Array[a], Int)],
+      right_curr: Option[(Array[a], Int)]
+    ) -> Comparison:
+      loop rem:
+        case _ if cmp_Int(rem, 0) matches LT | EQ:
+          EQ
+        case _:
+          left_ready = ready_leaf(left_stack, left_curr, left_leaf_fuel)
+          right_ready = ready_leaf(right_stack, right_curr, right_leaf_fuel)
+          match (left_ready, right_ready):
+            case (Some(((left_items, left_idx), next_left_stack)), Some(((right_items, right_idx), next_right_stack))):
+              left_avail = size_Array(left_items).sub(left_idx)
+              right_avail = size_Array(right_items).sub(right_idx)
+              step = min_Int(rem, min_Int(left_avail, right_avail))
+              if cmp_Int(step, 0) matches LT | EQ:
+                EQ
+              else:
+                head_cmp = cmp_chunk(ord_item, left_items, left_idx, right_items, right_idx, step)
+                if head_cmp matches EQ:
+                  next_left_idx = left_idx.add(step)
+                  next_right_idx = right_idx.add(step)
+                  next_left_curr = if next_left_idx.eq_Int(size_Array(left_items)):
+                    None
+                  else:
+                    Some((left_items, next_left_idx))
+                  next_right_curr = if next_right_idx.eq_Int(size_Array(right_items)):
+                    None
+                  else:
+                    Some((right_items, next_right_idx))
+                  go(rem.sub(step), next_left_stack, next_right_stack, next_left_curr, next_right_curr)
+                else:
+                  head_cmp
+            case _:
+              EQ
+    prefix_cmp = go(shared, [left], [right], None, None)
+    if prefix_cmp matches EQ:
+      cmp_Int(left_size, right_size)
+    else:
+      prefix_cmp
+
+def hash_Vector_items(hash_item: Hash[a], vec: Vector[a]) -> Int:
+  total = size(vec)
+  leaf_fuel = height(vec).add(8)
+  def go(
+    rem: Int,
+    processed: Int,
+    stack: List[Vector[a]],
+    current: Option[(Array[a], Int)],
+    acc: Int
+  ) -> Int:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        finish_61(acc, processed, hash_tag_vector)
+      case _:
+        match ready_leaf(stack, current, leaf_fuel):
+          case None:
+            finish_61(acc, processed, hash_tag_vector)
+          case Some(((items, idx), next_stack)):
+            avail = size_Array(items).sub(idx)
+            step = min_Int(rem, avail)
+            if cmp_Int(step, 0) matches LT | EQ:
+              finish_61(acc, processed, hash_tag_vector)
+            else:
+              next_acc = hash_chunk(hash_item, items, idx, step, acc)
+              next_idx = idx.add(step)
+              next_curr = if next_idx.eq_Int(size_Array(items)):
+                None
+              else:
+                Some((items, next_idx))
+              go(rem.sub(step), processed.add(step), next_stack, next_curr, next_acc)
+  go(total, 0, [vec], None, hash_seed_vector)
+
+def eq_Vector(eq_item: Eq[a]) -> Eq[Vector[a]]:
+  eq_from_fn((left, right) -> eq_Vector_items(eq_item, left, right))
+
+def ord_Vector(ord_item: Ord[a]) -> Ord[Vector[a]]:
+  ord_from_cmp((left, right) -> cmp_Vector_items(ord_item, left, right))
+
+def hash_Vector(hash_item: Hash[a]) -> Hash[Vector[a]]:
+  hash_specialized(
+    (vec) -> hash_Vector_items(hash_item, vec),
+    eq_Vector(hash_to_Eq(hash_item)),
+  )
+
 def zip_chunk_with_fuel(left_items: Array[a], left_idx: Int, right_items: Array[b], right_idx: Int, rem: Int, rev_pairs: List[(a, b)]) -> (Int, Int, List[(a, b)]):
   recur rem:
     case _ if cmp_Int(rem, 0) matches LT | EQ:
@@ -1076,13 +1279,7 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
     False
 
 def eq_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    if right:
-      False
-    else:
-      True
+  (left, right) matches (True, True) | (False, False)
 
 def eq_Comparison(left: Comparison, right: Comparison) -> Bool:
   (left, right) matches (LT, LT) | (EQ, EQ) | (GT, GT)
