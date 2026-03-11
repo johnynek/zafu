@@ -15,6 +15,20 @@ from Bosatsu/List import (
 from Bosatsu/Num/Float64 import (
   addf,
 )
+from Bosatsu/Rand import (
+  Rand,
+  int_range,
+  geometric_Int,
+  map_Rand,
+  flat_map_Rand,
+  sequence_Rand,
+)
+from Bosatsu/Testing/Properties import (
+  Prop,
+  forall_Prop,
+  suite_Prop,
+  run_Prop,
+)
 from Zafu/Abstract/Eq import (
   Eq,
   eq_from_fn,
@@ -195,6 +209,63 @@ def ord_List(ord_item: Ord[a]) -> Ord[List[a]]:
 
 eq_List_Int = eq_List(eq_from_fn(eq_Int))
 
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
+
+rand_list_int: Rand[List[Int]] = flat_map_Rand(
+  geometric_Int,
+  len -> sequence_Rand(replicate_List(rand_int, len))
+)
+
+rand_list_with_count: Rand[(List[Int], Int)] = flat_map_Rand(rand_list_int, list -> (
+  upper = size(list).add(8)
+  map_Rand(int_range(upper), i -> (list, i.sub(4)))
+))
+
+rand_list_with_non_negative_count: Rand[(List[Int], Int)] = flat_map_Rand(rand_list_int, list -> (
+  upper = size(list).add(8)
+  map_Rand(int_range(upper), i -> (list, i))
+))
+
+split_at_concat_prop: Prop = forall_Prop(
+  rand_list_with_count,
+  "split_at partitions without loss",
+  ((list, count)) -> (
+    (front, back) = split_at(list, count)
+    Assertion(eq_Eq(eq_List_Int, list, [*front, *back]), "split_at concat law")
+  ))
+
+split_at_take_drop_prop: Prop = forall_Prop(
+  rand_list_with_count,
+  "split_at agrees with take and drop",
+  ((list, count)) -> (
+    (front, back) = split_at(list, count)
+    same_take = eq_Eq(eq_List_Int, front, take(list, count))
+    same_drop = eq_Eq(eq_List_Int, back, drop(list, count))
+    Assertion(and_Bool(same_take, same_drop), "split_at take/drop law")
+  ))
+
+take_size_bound_prop: Prop = forall_Prop(
+  rand_list_with_non_negative_count,
+  "size(take(list, count)) <= count for non-negative count",
+  ((list, count)) -> (
+    taken_size = size(take(list, count))
+    Assertion(cmp_Int(taken_size, count) matches LT | EQ, "take size bound")
+  ))
+
+list_props: Prop = suite_Prop(
+  "List properties",
+  [
+    split_at_concat_prop,
+    split_at_take_drop_prop,
+    take_size_bound_prop,
+  ])
+
 tests = TestSuite("Zafu/Collection/List tests", [
   Assertion(any([False, True, False]), "any has true"),
   Assertion(any([False, False]) matches False, "any all false"),
@@ -236,4 +307,5 @@ tests = TestSuite("Zafu/Collection/List tests", [
   Assertion(flat_map([1, 2], i -> [i, i.add(1)]) matches [1, 2, 2, 3], "flat_map"),
   Assertion(filter([1, 2, 3, 4, 5], i -> mod_Int(i, 2).eq_Int(0)) matches [2, 4], "filter preserves order"),
   Assertion(concat_all([[1, 2], [], [3], [4, 5]]) matches [1, 2, 3, 4, 5], "concat_all"),
+  run_Prop(list_props, 200, 20260311),
 ])
