@@ -14,17 +14,12 @@ from Zafu/Abstract/Ord import (
 
 from Zafu/Abstract/Hash import (
   Hash,
+  hash_from_fn,
   hash_specialized,
   hash as hash_Hash,
   hash_to_Eq,
   mix_61,
   finish_61,
-)
-
-from Zafu/Abstract/Instances/Predef import (
-  eq_Int as eq_Int_inst,
-  ord_Int as ord_Int_inst,
-  hash_Int as hash_Int_inst,
 )
 
 export (
@@ -179,6 +174,10 @@ def hash(hash_err: Hash[e], hash_ok: Hash[a]) -> Hash[Result[e, a]]:
       case Ok(ok_value):
         finish_61(mix_61(hash_seed_ok, hash_Hash(hash_ok, ok_value)), 1, hash_tag_ok)
   ), eq(eq_err, eq_ok))
+
+eq_Int_inst: Eq[Int] = eq_from_fn(eq_Int)
+ord_Int_inst: Ord[Int] = ord_from_cmp(cmp_Int)
+hash_Int_inst: Hash[Int] = hash_from_fn(value -> value, eq_Int_inst)
 
 tests = TestSuite("Result tests", [
   Assertion(is_err(Err(1)), "is_err Err"),
