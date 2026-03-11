@@ -38,6 +38,23 @@ from Bosatsu/Testing/Properties import (
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
+  combine_all_option as combine_all_option_Foldable,
+)
+from Zafu/Abstract/Semigroup import (
+  Semigroup,
+  combine as combine_Semigroup,
+  combine_all_option as combine_all_option_Semigroup,
+  semigroup_from_combine,
+)
+from Zafu/Abstract/Monoid import (
+  Monoid,
+  empty as empty_Monoid,
+  combine_all as combine_all_Monoid,
+  monoid_from_combine,
+  monoid_to_semigroup,
+)
+from Zafu/Abstract/Instances/Predef import (
+  foldable_Array,
 )
 from Zafu/Collection/List import size as size_List
 from Zafu/Control/IterState import (
@@ -69,7 +86,10 @@ export (
   slice,
   take,
   drop,
+  split_at,
   split,
+  combine_all_option,
+  combine_all,
   zip,
   foldable_Vector,
 )
@@ -928,10 +948,49 @@ def drop(vec: Vector[a], count: Int) -> Vector[a]:
     drop_with_fuel(vec, safe_count, height(vec).add(8))
 
 # Splits at count into (take count, drop count).
-def split(vec: Vector[a], count: Int) -> (Vector[a], Vector[a]):
+def split_at(vec: Vector[a], count: Int) -> (Vector[a], Vector[a]):
   total = size(vec)
   safe_count = clamp_Int(count, 0, total)
   (take(vec, safe_count), drop(vec, safe_count))
+
+# Backward-compatible alias for split_at.
+def split(vec: Vector[a], count: Int) -> (Vector[a], Vector[a]):
+  split_at(vec, count)
+
+def combine_left_option(semi: Semigroup[a], state: Option[a], next: Option[a]) -> Option[a]:
+  match next:
+    case None:
+      state
+    case Some(value):
+      match state:
+        case None:
+          Some(value)
+        case Some(total):
+          Some(combine_Semigroup(semi, total, value))
+
+def combine_all_option_with_fuel(vec: Vector[a], semi: Semigroup[a], fuel: Int) -> Option[a]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      None
+    case _:
+      match vec:
+        case Leaf(_, items):
+          combine_all_option_Foldable(foldable_Array, items, semi)
+        case Branch(_, _, _, children):
+          foldl_Array(children, None, (state, child) -> (
+            child_total = combine_all_option_with_fuel(child, semi, fuel.sub(1))
+            combine_left_option(semi, state, child_total)
+          ))
+
+def combine_all_option(vec: Vector[a], semi: Semigroup[a]) -> Option[a]:
+  combine_all_option_with_fuel(vec, semi, height(vec).add(8))
+
+def combine_all(vec: Vector[a], monoid: Monoid[a]) -> a:
+  match combine_all_option(vec, monoid_to_semigroup(monoid)):
+    case Some(total):
+      total
+    case None:
+      empty_Monoid(monoid)
 
 # Returns a slice in the half-open interval [start, end).
 def slice(vec: Vector[a], start: Int, end: Int) -> Vector[a]:
@@ -1019,6 +1078,9 @@ def split_list_model(list: List[Int], count: Int) -> (List[Int], List[Int]):
 def updated_list_model(list: List[Int], idx: Int, item: Int) -> List[Int]:
   arr = from_List_Array(list)
   to_List_Array(set_or_self_Array(arr, idx, item))
+
+int_add_semigroup = semigroup_from_combine(add)
+int_add_monoid = monoid_from_combine(0, add)
 
 rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
 
@@ -1131,18 +1193,59 @@ drop_prop: Prop = forall_Prop(
     Assertion(eq_List(eq_Int)(actual, expected), "drop ${int_to_String(count)}")
   ))
 
-split_prop: Prop = forall_Prop(
+split_at_prop: Prop = forall_Prop(
   rand_list_with_index,
-  "split agrees with take/drop model",
+  "split_at agrees with take/drop model",
   ((list, count)) -> (
     vec = from_List(list)
     (expected_left, expected_right) = split_list_model(list, count)
-    (actual_left_vec, actual_right_vec) = split(vec, count)
+    (actual_left_vec, actual_right_vec) = split_at(vec, count)
     actual_left = to_List(actual_left_vec)
     actual_right = to_List(actual_right_vec)
     same_left = eq_List(eq_Int)(actual_left, expected_left)
     same_right = eq_List(eq_Int)(actual_right, expected_right)
-    Assertion(and_Bool(same_left, same_right), "split ${int_to_String(count)}")
+    Assertion(and_Bool(same_left, same_right), "split_at ${int_to_String(count)}")
+  ))
+
+split_at_concat_prop: Prop = forall_Prop(
+  rand_list_with_index,
+  "split_at partitions without loss",
+  ((list, count)) -> (
+    vec = from_List(list)
+    (front, back) = split_at(vec, count)
+    actual = [*to_List(front), *to_List(back)]
+    Assertion(eq_List(eq_Int)(actual, list), "split_at concat law")
+  ))
+
+split_at_take_drop_prop: Prop = forall_Prop(
+  rand_list_with_index,
+  "split_at agrees with take and drop",
+  ((list, count)) -> (
+    vec = from_List(list)
+    (front, back) = split_at(vec, count)
+    same_take = eq_List(eq_Int)(to_List(front), to_List(take(vec, count)))
+    same_drop = eq_List(eq_Int)(to_List(back), to_List(drop(vec, count)))
+    Assertion(and_Bool(same_take, same_drop), "split_at take/drop law")
+  ))
+
+combine_all_option_prop: Prop = forall_Prop(
+  rand_list_int,
+  "combine_all_option agrees with list semigroup combine_all_option",
+  list -> (
+    vec = from_List(list)
+    expected = combine_all_option_Semigroup(int_add_semigroup, list)
+    actual = combine_all_option(vec, int_add_semigroup)
+    Assertion(eq_Option(eq_Int)(actual, expected), "combine_all_option law")
+  ))
+
+combine_all_prop: Prop = forall_Prop(
+  rand_list_int,
+  "combine_all agrees with list monoid combine_all",
+  list -> (
+    vec = from_List(list)
+    expected = combine_all_Monoid(int_add_monoid, list)
+    actual = combine_all(vec, int_add_monoid)
+    Assertion(actual.eq_Int(expected), "combine_all law")
   ))
 
 zip_prop: Prop = forall_Prop(
@@ -1245,9 +1348,13 @@ vector_props: Prop = suite_Prop(
     slice_prop,
     take_prop,
     drop_prop,
-    split_prop,
+    split_at_prop,
+    split_at_concat_prop,
+    split_at_take_drop_prop,
     zip_prop,
     concat_prop,
+    combine_all_option_prop,
+    combine_all_prop,
     map_prop,
     filter_prop,
     flat_map_prop,
@@ -1278,6 +1385,15 @@ tests = TestSuite("Vector tests", [
       from_List([4, 5]),
     ]).to_List() matches [1, 2, 3, 4, 5],
     "concat_all sanity"),
+  Assertion(
+    (
+      (front, back) = split_at(from_List([1, 2, 3]), 2)
+      and_Bool(eq_List(eq_Int)(to_List(front), [1, 2]), eq_List(eq_Int)(to_List(back), [3]))
+    ),
+    "split_at sanity"),
+  Assertion(combine_all_option(from_List([1, 2, 3]), int_add_semigroup) matches Some(6), "combine_all_option sanity"),
+  Assertion(combine_all(from_List([1, 2, 3]), int_add_monoid).eq_Int(6), "combine_all sanity"),
+  Assertion(combine_all(empty, int_add_monoid).eq_Int(0), "combine_all empty"),
   Assertion(foldl(from_List([1, 2, 3]), 0, add).eq_Int(6), "foldl sanity"),
   Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
   run_Prop(vector_props, 200, 4242),
