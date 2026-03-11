@@ -14,17 +14,18 @@ from Zafu/Abstract/Ord import (
 
 from Zafu/Abstract/Hash import (
   Hash,
+  hash_from_fn,
   hash_specialized,
   hash as hash_Hash,
   hash_to_Eq,
   mix_61,
   finish_61,
 )
-
-from Zafu/Abstract/Instances/Predef import (
-  eq_Int as eq_Int_inst,
-  ord_Int as ord_Int_inst,
-  hash_Int as hash_Int_inst,
+from Zafu/Abstract/Applicative import (
+  Applicative,
+  applicative_from_pure_map_map2,
+  map2 as map2_Applicative,
+  laws_Applicative,
 )
 
 export (
@@ -44,6 +45,7 @@ export (
   unwrap_or_else,
   unwrap,
   from_Option,
+  applicative,
   eq,
   ord,
   hash,
@@ -139,6 +141,23 @@ def from_Option(value: Option[a], on_none: () -> e) -> Result[e, a]:
     case Some(item):
       Ok(item)
 
+def map2_result(left: Result[e, a], right: Result[e, b], fn: (a, b) -> c) -> Result[e, c]:
+  match left:
+    case Err(err_value):
+      Err(err_value)
+    case Ok(left_value):
+      match right:
+        case Err(err_value):
+          Err(err_value)
+        case Ok(right_value):
+          Ok(fn(left_value, right_value))
+
+applicative: forall e. Applicative[Result[e]] = applicative_from_pure_map_map2(
+  Ok,
+  map,
+  map2_result,
+)
+
 def eq(eq_err: Eq[e], eq_ok: Eq[a]) -> Eq[Result[e, a]]:
   eq_from_fn((left, right) -> (
     match (left, right):
@@ -180,6 +199,10 @@ def hash(hash_err: Hash[e], hash_ok: Hash[a]) -> Hash[Result[e, a]]:
         finish_61(mix_61(hash_seed_ok, hash_Hash(hash_ok, ok_value)), 1, hash_tag_ok)
   ), eq(eq_err, eq_ok))
 
+eq_Int_inst: Eq[Int] = eq_from_fn(eq_Int)
+ord_Int_inst: Ord[Int] = ord_from_cmp(cmp_Int)
+hash_Int_inst: Hash[Int] = hash_from_fn(value -> value, eq_Int_inst)
+
 tests = TestSuite("Result tests", [
   Assertion(is_err(Err(1)), "is_err Err"),
   Assertion(
@@ -205,6 +228,8 @@ tests = TestSuite("Result tests", [
   Assertion(to_Option(Err(1)) matches None, "to_Option Err"),
   Assertion(map(Ok(1), x -> x.add(1)) matches Ok(2), "map Ok"),
   Assertion(map(Err(1), x -> x.add(1)) matches Err(1), "map Err"),
+  Assertion(map2_Applicative(applicative, Ok(1), Ok(2), add) matches Ok(3), "applicative map2 Ok"),
+  Assertion(map2_Applicative(applicative, Ok(1), Err(2), add) matches Err(2), "applicative map2 Err"),
   Assertion(map_err(Err(1), x -> x.add(1)) matches Err(2), "map_err Err"),
   Assertion(map_err(Ok(1), x -> x.add(1)) matches Ok(1), "map_err Ok"),
   Assertion(and_then(Ok(2), x -> Ok(x.mul(2))) matches Ok(4), "and_then Ok"),
@@ -222,6 +247,34 @@ tests = TestSuite("Result tests", [
   Assertion(unwrap(Ok(3)).eq_Int(3), "unwrap polymorphic Ok"),
   Assertion(from_Option(Some(2), () -> 0) matches Ok(2), "from_Option Some"),
   Assertion(from_Option(None, () -> 0) matches Err(0), "from_Option None"),
+  (
+    eq_inst = eq(eq_Int_inst, eq_Int_inst)
+    laws_Applicative(
+      applicative,
+      eq_inst,
+      eq_inst,
+      eq_inst,
+      Ok(2),
+      Ok(value -> value.add(1)),
+      Ok(value -> value.mul(2)),
+      value -> value.add(3),
+      7,
+    )
+  ),
+  (
+    eq_inst = eq(eq_Int_inst, eq_Int_inst)
+    laws_Applicative(
+      applicative,
+      eq_inst,
+      eq_inst,
+      eq_inst,
+      Err(1),
+      Ok(value -> value.add(1)),
+      Err(2),
+      value -> value.add(3),
+      7,
+    )
+  ),
   (
     inst = eq(eq_Int_inst, eq_Int_inst)
     left = Ok(2)

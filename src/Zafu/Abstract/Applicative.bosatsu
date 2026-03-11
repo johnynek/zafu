@@ -1,0 +1,241 @@
+package Zafu/Abstract/Applicative
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq as eq_Eq,
+  eq_from_fn,
+)
+
+export (
+  Applicative,
+  applicative_specialized,
+  applicative_from_pure_map_map2,
+  pure,
+  map,
+  map2,
+  ap,
+  product_left,
+  product_right,
+  void,
+  product2,
+  product3,
+  product4,
+  product5,
+  laws_Applicative,
+)
+
+struct Applicative[f: * -> *](
+  pure_fn: forall a. a -> f[a],
+  map_fn: forall a, b. (f[a], a -> b) -> f[b],
+  map2_fn: forall a, b, c. (f[a], f[b], (a, b) -> c) -> f[c],
+  product_left_fn: forall a, b. (f[a], f[b]) -> f[a],
+  product_right_fn: forall a, b. (f[a], f[b]) -> f[b],
+  void_fn: forall a. f[a] -> f[Unit],
+)
+
+# Constructor for fully specialized implementations.
+def applicative_specialized[f: * -> *](
+  pure_fn: forall a. a -> f[a],
+  map_fn: forall a, b. (f[a], a -> b) -> f[b],
+  map2_fn: forall a, b, c. (f[a], f[b], (a, b) -> c) -> f[c],
+  product_left_fn: forall a, b. (f[a], f[b]) -> f[a],
+  product_right_fn: forall a, b. (f[a], f[b]) -> f[b],
+  void_fn: forall a. f[a] -> f[Unit],
+) -> Applicative[f]:
+  Applicative(pure_fn, map_fn, map2_fn, product_left_fn, product_right_fn, void_fn)
+
+# Minimal constructor. product_left/product_right/void are derived.
+def applicative_from_pure_map_map2[f: * -> *](
+  pure_fn: forall a. a -> f[a],
+  map_fn: forall a, b. (f[a], a -> b) -> f[b],
+  map2_fn: forall a, b, c. (f[a], f[b], (a, b) -> c) -> f[c],
+) -> Applicative[f]:
+  applicative_specialized(
+    pure_fn,
+    map_fn,
+    map2_fn,
+    (left, right) -> map2_fn(left, right, (left_value, _) -> left_value),
+    (left, right) -> map2_fn(left, right, (_, right_value) -> right_value),
+    (fa) -> map_fn(fa, _ -> ()),
+  )
+
+def pure[f: * -> *, a](inst: Applicative[f], value: a) -> f[a]:
+  Applicative { pure_fn, ... } = inst
+  pure_fn(value)
+
+def map[f: * -> *, a, b](inst: Applicative[f], fa: f[a], fn: a -> b) -> f[b]:
+  Applicative { map_fn, ... } = inst
+  map_fn(fa, fn)
+
+def map2[f: * -> *, a, b, c](inst: Applicative[f], left: f[a], right: f[b], fn: (a, b) -> c) -> f[c]:
+  Applicative { map2_fn, ... } = inst
+  map2_fn(left, right, fn)
+
+def ap[f: * -> *, a, b](inst: Applicative[f], ff: f[a -> b], fa: f[a]) -> f[b]:
+  map2(inst, ff, fa, (fn, value) -> fn(value))
+
+def product_left[f: * -> *, a, b](inst: Applicative[f], left: f[a], right: f[b]) -> f[a]:
+  Applicative { product_left_fn, ... } = inst
+  product_left_fn(left, right)
+
+def product_right[f: * -> *, a, b](inst: Applicative[f], left: f[a], right: f[b]) -> f[b]:
+  Applicative { product_right_fn, ... } = inst
+  product_right_fn(left, right)
+
+def void[f: * -> *, a](inst: Applicative[f], fa: f[a]) -> f[Unit]:
+  Applicative { void_fn, ... } = inst
+  void_fn(fa)
+
+def product2[f: * -> *, a, b](inst: Applicative[f], fa: f[a], fb: f[b]) -> f[(a, b)]:
+  map2(inst, fa, fb, (left, right) -> (left, right))
+
+def product3[f: * -> *, a, b, c](inst: Applicative[f], fa: f[a], fb: f[b], fc: f[c]) -> f[(a, b, c)]:
+  map2(inst, product2(inst, fa, fb), fc, (pair_ab, value_c) -> (
+    match pair_ab:
+      case (value_a, value_b):
+        (value_a, value_b, value_c)
+  ))
+
+def product4[f: * -> *, a, b, c, d](inst: Applicative[f], fa: f[a], fb: f[b], fc: f[c], fd: f[d]) -> f[(a, b, c, d)]:
+  map2(inst, product2(inst, fa, fb), product2(inst, fc, fd), (pair_ab, pair_cd) -> (
+    match (pair_ab, pair_cd):
+      case ((value_a, value_b), (value_c, value_d)):
+        (value_a, value_b, value_c, value_d)
+  ))
+
+def product5[f: * -> *, a, b, c, d, e](inst: Applicative[f], fa: f[a], fb: f[b], fc: f[c], fd: f[d], fe: f[e]) -> f[(a, b, c, d, e)]:
+  map2(
+    inst,
+    map2(inst, product2(inst, fa, fb), product2(inst, fc, fd), (pair_ab, pair_cd) -> (
+      match (pair_ab, pair_cd):
+        case ((value_a, value_b), (value_c, value_d)):
+          (value_a, value_b, value_c, value_d)
+    )),
+    fe,
+    (tuple4_abcd, value_e) -> (
+      match tuple4_abcd:
+        case (value_a, value_b, value_c, value_d):
+          (value_a, value_b, value_c, value_d, value_e)
+    ),
+  )
+
+def laws_Applicative[f: * -> *, a, b, c](
+  inst: Applicative[f],
+  eq_fa: Eq[f[a]],
+  eq_fb: Eq[f[b]],
+  eq_fc: Eq[f[c]],
+  fa: f[a],
+  ff_ab: f[a -> b],
+  ff_bc: f[b -> c],
+  fn_ab: a -> b,
+  x: a,
+) -> Test:
+  identity = Assertion(
+    eq_Eq(eq_fa, ap(inst, pure(inst, value -> value), fa), fa),
+    "identity",
+  )
+  composition = Assertion(
+    eq_Eq(
+      eq_fc,
+      ap(
+        inst,
+        map2(inst, ff_bc, ff_ab, (left_fn, right_fn) -> (value -> left_fn(right_fn(value)))),
+        fa,
+      ),
+      ap(inst, ff_bc, ap(inst, ff_ab, fa)),
+    ),
+    "composition",
+  )
+  homomorphism = Assertion(
+    eq_Eq(
+      eq_fb,
+      ap(inst, pure(inst, fn_ab), pure(inst, x)),
+      pure(inst, fn_ab(x)),
+    ),
+    "homomorphism",
+  )
+  interchange = Assertion(
+    eq_Eq(
+      eq_fb,
+      ap(inst, ff_ab, pure(inst, x)),
+      ap(inst, pure(inst, fn -> fn(x)), ff_ab),
+    ),
+    "interchange",
+  )
+  map_via_ap = Assertion(
+    eq_Eq(eq_fb, map(inst, fa, fn_ab), ap(inst, pure(inst, fn_ab), fa)),
+    "map via ap",
+  )
+  TestSuite("Applicative laws", [identity, composition, homomorphism, interchange, map_via_ap])
+
+def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
+  match value:
+    case Some(item):
+      Some(fn(item))
+    case None:
+      None
+
+def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]:
+  match (left, right):
+    case (Some(left_value), Some(right_value)):
+      Some(fn(left_value, right_value))
+    case _:
+      None
+
+option_applicative: Applicative[Option] = applicative_from_pure_map_map2(
+  Some,
+  map_Option,
+  map2_Option,
+)
+
+def eq_Option(eq_item: Eq[a], left: Option[a], right: Option[a]) -> Bool:
+  match (left, right):
+    case (None, None):
+      True
+    case (Some(left_value), Some(right_value)):
+      eq_Eq(eq_item, left_value, right_value)
+    case _:
+      False
+
+tests = TestSuite("Applicative tests", [
+  Assertion(pure(option_applicative, 1) matches Some(1), "pure"),
+  Assertion(map(option_applicative, Some(1), value -> value.add(2)) matches Some(3), "map"),
+  Assertion(map2(option_applicative, Some(1), Some(2), add) matches Some(3), "map2"),
+  Assertion(product2(option_applicative, Some(1), Some("a")) matches Some((1, "a")), "product2"),
+  Assertion(product3(option_applicative, Some(1), Some(2), Some(3)) matches Some((1, 2, 3)), "product3"),
+  Assertion(product4(option_applicative, Some(1), Some(2), Some(3), Some(4)) matches Some((1, 2, 3, 4)), "product4"),
+  Assertion(product5(option_applicative, Some(1), Some(2), Some(3), Some(4), Some(5)) matches Some((1, 2, 3, 4, 5)), "product5"),
+  Assertion(product_left(option_applicative, Some(1), Some("x")) matches Some(1), "product_left"),
+  Assertion(product_right(option_applicative, Some(1), Some("x")) matches Some("x"), "product_right"),
+  Assertion(void(option_applicative, Some(1)) matches Some(()), "void"),
+  (
+    eq_int = eq_from_fn(eq_Int)
+    eq_opt_int = eq_from_fn((left, right) -> eq_Option(eq_int, left, right))
+    laws_Applicative(
+      option_applicative,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_int,
+      Some(3),
+      Some(value -> value.add(1)),
+      Some(value -> value.mul(2)),
+      value -> value.add(5),
+      7,
+    )
+  ),
+  (
+    eq_int = eq_from_fn(eq_Int)
+    eq_opt_int = eq_from_fn((left, right) -> eq_Option(eq_int, left, right))
+    laws_Applicative(
+      option_applicative,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_int,
+      None,
+      Some(value -> value.add(1)),
+      None,
+      value -> value.add(5),
+      7,
+    )
+  ),
+])
