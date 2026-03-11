@@ -1,5 +1,9 @@
 package Zafu/Text/Pretty
 
+from Bosatsu/Lazy import (
+  get_Lazy,
+  lazy,
+)
 from Bosatsu/Num/Float64 import (
   float64_bits_to_Int,
   float64_to_String,
@@ -15,6 +19,14 @@ from Zafu/Collection/HashSet import (
   HashSet,
   contains as contains_HashSet,
   from_List as from_List_HashSet,
+)
+from Zafu/Collection/LazyList import (
+  LazyList,
+  Empty as Empty_LazyList,
+  Cons as Cons_LazyList,
+  cons,
+  empty_LazyList,
+  foldl as foldl_LazyList,
 )
 
 export (
@@ -256,42 +268,6 @@ def join_strings_with_sep(parts: List[String], sep: String) -> String:
             loop(rest, [next, sep, *rev])
 
       loop(tail, [head])
-
-def trim_right_spaces(value: String) -> String:
-  def loop(fuel: Int, rem: String, pending_spaces: Int, rev_parts: List[String]) -> String:
-    recur fuel:
-      case _ if cmp_Int(fuel, 0) matches LT | EQ:
-        concat_String(rev_parts.reverse())
-      case _:
-        match uncons_String(rem):
-          case None:
-            concat_String(rev_parts.reverse())
-          case Some((ch, tail)):
-            if is_space_char(ch):
-              loop(fuel.sub(1), tail, pending_spaces.add(1), rev_parts)
-            else:
-              with_pending =
-                if cmp_Int(pending_spaces, 0) matches GT:
-                  [spaces_string(pending_spaces), *rev_parts]
-                else:
-                  rev_parts
-              loop(fuel.sub(1), tail, 0, [char_to_String(ch), *with_pending])
-
-  loop(length_String(value), value, 0, [])
-
-def trim_rendered(value: String) -> String:
-  def loop(fuel: Int, rem: String, rev_lines: List[String]) -> String:
-    recur fuel:
-      case _ if cmp_Int(fuel, 0) matches LT | EQ:
-        join_strings_with_sep([trim_right_spaces(rem), *rev_lines].reverse(), "\n")
-      case _:
-        match partition_String(rem, "\n"):
-          case None:
-            join_strings_with_sep([trim_right_spaces(rem), *rev_lines].reverse(), "\n")
-          case Some((before, after)):
-            loop(fuel.sub(1), after, [trim_right_spaces(before), *rev_lines])
-
-  loop(length_String(value), value, [])
 
 # The empty document.
 # Output: renders as the empty string and acts as append identity.
@@ -840,78 +816,136 @@ def fits(fuel: Int, width: Int, pos: Int, stack: List[(Int, Doc)]) -> Bool:
               else:
                 fits(next_fuel, width, pos, [(indent, fallback), *tail])
 
-def render_stream_core(width: Int, doc: Doc, wide: Bool) -> List[String]:
+def render_stream_core(width: Int, doc: Doc, wide: Bool) -> LazyList[String]:
   non_neg_width = max_Int(width, 0)
   base_fuel = traversal_fuel(doc, non_neg_width)
 
-  def loop(fuel: Int, pos: Int, stack: List[(Int, Doc)], rev: List[String]) -> List[String]:
+  def loop_stream(fuel: Int, pos: Int, stack: List[(Int, Doc)]) -> LazyList[String]:
     recur fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
-        rev.reverse()
+        empty_LazyList
       case _:
         match stack:
           case []:
-            rev.reverse()
+            empty_LazyList
           case [(indent, next), *tail]:
             next_fuel = fuel.sub(1)
             match next:
               case Empty:
-                loop(next_fuel, pos, tail, rev)
+                loop_stream(next_fuel, pos, tail)
               case FlatAlt(_, default, _):
-                loop(next_fuel, pos, [(indent, default), *tail], rev)
+                loop_stream(next_fuel, pos, [(indent, default), *tail])
               case Concat(_, left, right):
-                loop(next_fuel, pos, [(indent, left), (indent, right), *tail], rev)
+                loop_stream(next_fuel, pos, [(indent, left), (indent, right), *tail])
               case Nest(extra, inner):
-                loop(next_fuel, pos, [(indent.add(extra), inner), *tail], rev)
+                loop_stream(next_fuel, pos, [(indent.add(extra), inner), *tail])
               case Align(inner):
-                loop(next_fuel, pos, [(pos, inner), *tail], rev)
+                loop_stream(next_fuel, pos, [(pos, inner), *tail])
               case Text(value):
-                loop(next_fuel, pos.add(length_String(value)), tail, [value, *rev])
+                cons(
+                  lazy(() -> value),
+                  lazy(() -> loop_stream(next_fuel, pos.add(length_String(value)), tail))
+                )
               case ZeroWidth(value):
-                loop(next_fuel, pos, tail, [value, *rev])
+                cons(
+                  lazy(() -> value),
+                  lazy(() -> loop_stream(next_fuel, pos, tail))
+                )
               case Line:
-                line_text = line_to_string(indent)
-                loop(next_fuel, max_Int(indent, 0), tail, [line_text, *rev])
+                cons(
+                  lazy(() -> line_to_string(indent)),
+                  lazy(() -> loop_stream(next_fuel, max_Int(indent, 0), tail))
+                )
               case Union(_, flattened, fallback):
                 if wide:
-                  loop(next_fuel, pos, [(indent, flattened), *tail], rev)
+                  loop_stream(next_fuel, pos, [(indent, flattened), *tail])
                 else:
                   first = [(indent, flattened), *tail]
                   if fits(base_fuel, non_neg_width, pos, first):
-                    loop(next_fuel, pos, first, rev)
+                    loop_stream(next_fuel, pos, first)
                   else:
-                    loop(next_fuel, pos, [(indent, fallback), *tail], rev)
+                    loop_stream(next_fuel, pos, [(indent, fallback), *tail])
 
-  loop(base_fuel, 0, [(0, doc)], [])
+  loop_stream(base_fuel, 0, [(0, doc)])
+
+def prepend_stream_parts(parts: List[String], rest_fn: () -> LazyList[String]) -> LazyList[String]:
+  recur parts:
+    case []:
+      rest_fn()
+    case [head, *tail]:
+      cons(
+        lazy(() -> head),
+        lazy(() -> prepend_stream_parts(tail, rest_fn))
+      )
+
+def trim_chunk(chunk: String, pending_spaces: Int) -> (Int, List[String]):
+  def loop_chunk(fuel: Int, rem: String, pending: Int, rev: List[String]) -> (Int, List[String]):
+    recur fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        (pending, rev.reverse())
+      case _:
+        match uncons_String(rem):
+          case None:
+            (pending, rev.reverse())
+          case Some((ch, tail)):
+            if is_space_char(ch):
+              loop_chunk(fuel.sub(1), tail, pending.add(1), rev)
+            elif ch matches .'\n':
+              loop_chunk(fuel.sub(1), tail, 0, ["\n", *rev])
+            else:
+              prefix =
+                if cmp_Int(pending, 0) matches GT:
+                  spaces_string(pending)
+                else:
+                  ""
+              piece =
+                if string_is_empty(prefix):
+                  char_to_String(ch)
+                else:
+                  concat_String([prefix, char_to_String(ch)])
+              loop_chunk(fuel.sub(1), tail, 0, [piece, *rev])
+
+  loop_chunk(length_String(chunk), chunk, pending_spaces, [])
+
+def trim_stream(chunks: LazyList[String]) -> LazyList[String]:
+  def loop_stream(source: LazyList[String], pending_spaces: Int) -> LazyList[String]:
+    recur source:
+      case Empty_LazyList:
+        empty_LazyList
+      case Cons_LazyList(head, tail):
+        (next_pending_spaces, parts) = trim_chunk(get_Lazy(head), pending_spaces)
+        prepend_stream_parts(parts, () -> loop_stream(get_Lazy(tail), next_pending_spaces))
+
+  loop_stream(chunks, 0)
 
 # Renders `doc` to a stream of chunks with bounded layout selection.
 # Input: document and target width.
-# Output: chunk list whose concatenation is the rendered string.
-def render_stream(doc: Doc, width: Int) -> List[String]:
+# Output: lazy chunk stream whose concatenation is the rendered text.
+def render_stream(doc: Doc, width: Int) -> LazyList[String]:
   render_stream_core(width, doc, False)
 
-# Renders `doc` at `width` and concatenates chunks.
+# Renders `doc` at `width`.
 # Input: document and target width.
-# Output: fully rendered string.
-def render(doc: Doc, width: Int) -> String:
-  concat_String(render_stream(doc, width))
+# Output: lazy chunk stream in rendering order.
+def render(doc: Doc, width: Int) -> LazyList[String]:
+  render_stream(doc, width)
 
 # Renders `doc` and trims trailing spaces on each line.
 # Input: document and target width.
-# Output: rendered string with right-trimmed lines.
-def render_trim(doc: Doc, width: Int) -> String:
-  trim_rendered(render(doc, width))
+# Output: lazy chunk stream with right-trimmed lines.
+def render_trim(doc: Doc, width: Int) -> LazyList[String]:
+  trim_stream(render(doc, width))
 
 # Chunk-stream form of `render_trim`.
 # Input: document and target width.
-# Output: single-element list containing `render_trim` output.
-def render_stream_trim(doc: Doc, width: Int) -> List[String]:
-  [render_trim(doc, width)]
+# Output: lazy chunk stream containing trimmed rendering output.
+def render_stream_trim(doc: Doc, width: Int) -> LazyList[String]:
+  render_trim(doc, width)
 
 # Renders without bounded `fits` checks (always picks flattened union branch).
 # Input: document.
-# Output: chunk stream rendered in wide mode.
-def render_wide_stream(doc: Doc) -> List[String]:
+# Output: lazy chunk stream rendered in wide mode.
+def render_wide_stream(doc: Doc) -> LazyList[String]:
   render_stream_core(0, doc, True)
 
 # Reduces `docs` from left to right using `fn`.
@@ -1114,6 +1148,13 @@ def document_Option(item_doc: Document[a]) -> Document[Option[a]]:
 def eq_String(left: String, right: String) -> Bool:
   cmp_String(left, right) matches EQ
 
+def rendered_to_string(chunks: LazyList[String]) -> String:
+  rev = foldl_LazyList(chunks, [], (acc, chunk) -> [chunk, *acc])
+  concat_String(rev.reverse())
+
+def eq_rendered(actual: LazyList[String], expected: String) -> Bool:
+  eq_String(rendered_to_string(actual), expected)
+
 def deep_doc(size: Int) -> Doc:
   def loop(rem: Int, acc: Doc) -> Doc:
     loop rem:
@@ -1125,9 +1166,9 @@ def deep_doc(size: Int) -> Doc:
   loop(size, empty)
 
 tests = TestSuite("Pretty tests", [
-  Assertion(eq_String(render(append(text("hello"), text("world")), 80), "helloworld"), "append text"),
+  Assertion(eq_rendered(render(append(text("hello"), text("world")), 80), "helloworld"), "append text"),
   Assertion(
-    eq_String(
+    eq_rendered(
       render(
         grouped(append_line(grouped(append_line(grouped(append_line(text("hello"), text("a"))), text("b"))), text("c"))),
         5
@@ -1137,7 +1178,7 @@ tests = TestSuite("Pretty tests", [
     "paper example narrow"
   ),
   Assertion(
-    eq_String(
+    eq_rendered(
       render(
         grouped(append_line(grouped(append_line(grouped(append_line(text("hello"), text("a"))), text("b"))), text("c"))),
         11
@@ -1147,26 +1188,26 @@ tests = TestSuite("Pretty tests", [
     "paper example wide"
   ),
   Assertion(
-    eq_String(
+    eq_rendered(
       render(split("This  is      some crazy\n text that should       look normal"), 10),
       "This is\nsome crazy\ntext that\nshould\nlook\nnormal"
     ),
     "split paragraph wraps"
   ),
   Assertion(
-    eq_String(render(fill(append(comma, line), [text("1"), text("2"), text("3")]), 0), "1,\n2,\n3"),
+    eq_rendered(render(fill(append(comma, line), [text("1"), text("2"), text("3")]), 0), "1,\n2,\n3"),
     "fill narrow"
   ),
   Assertion(
-    eq_String(render(fill(append(comma, line), [text("1"), text("2"), text("3")]), 6), "1, 2,\n3"),
+    eq_rendered(render(fill(append(comma, line), [text("1"), text("2"), text("3")]), 6), "1, 2,\n3"),
     "fill medium"
   ),
   Assertion(
-    eq_String(render(fill(append(comma, line), [text("1"), text("2"), text("3")]), 10), "1, 2, 3"),
+    eq_rendered(render(fill(append(comma, line), [text("1"), text("2"), text("3")]), 10), "1, 2, 3"),
     "fill wide"
   ),
   Assertion(
-    eq_String(
+    eq_rendered(
       render(
         bracket_by(
           fill(append(comma, line), [text("0"), text("1"), text("2"), text("3")]),
@@ -1181,7 +1222,7 @@ tests = TestSuite("Pretty tests", [
     "bracket_by wide"
   ),
   Assertion(
-    eq_String(
+    eq_rendered(
       render(
         tight_bracket_by(
           fill(append(comma, line), [text("0"), text("1"), text("2"), text("3")]),
@@ -1196,7 +1237,7 @@ tests = TestSuite("Pretty tests", [
     "tight_bracket_by wide"
   ),
   Assertion(
-    eq_String(
+    eq_rendered(
       render(
         append(text("("), intercalate(grouped(append(comma, line_break)), [int(1), int(2), int(3), int(4)])),
         80
@@ -1206,39 +1247,39 @@ tests = TestSuite("Pretty tests", [
     "line_break flatten"
   ),
   Assertion(
-    eq_String(
+    eq_rendered(
       render_trim(nested(stack([empty, text("a"), empty, empty, text("b")]), 2), 100),
       "\n  a\n\n\n  b"
     ),
     "render_trim dangling spaces"
   ),
-  Assertion(eq_String(render(float(0.0), 80), "0.0"), "float zero"),
-  Assertion(eq_String(render(float(int_bits_to_Float64(9223372036854775808)), 80), "-0.0"), "float negative zero"),
-  Assertion(eq_String(render(float(int_bits_to_Float64(9221120237041090561)), 80), "NaN"), "float nan"),
-  Assertion(eq_String(render(float(int_bits_to_Float64(9218868437227405312)), 80), "Infinity"), "float infinity"),
-  Assertion(eq_String(render(float(int_bits_to_Float64(18442240474082181120)), 80), "-Infinity"), "float neg infinity"),
+  Assertion(eq_rendered(render(float(0.0), 80), "0.0"), "float zero"),
+  Assertion(eq_rendered(render(float(int_bits_to_Float64(9223372036854775808)), 80), "-0.0"), "float negative zero"),
+  Assertion(eq_rendered(render(float(int_bits_to_Float64(9221120237041090561)), 80), "NaN"), "float nan"),
+  Assertion(eq_rendered(render(float(int_bits_to_Float64(9218868437227405312)), 80), "Infinity"), "float infinity"),
+  Assertion(eq_rendered(render(float(int_bits_to_Float64(18442240474082181120)), 80), "-Infinity"), "float neg infinity"),
   (
     docu = by(document_Int, ((Tuple2(a, _)) -> a))
-    Assertion(eq_String(render(to_Doc(docu, Tuple2(7, "x")), 80), "7"), "Document.by")
+    Assertion(eq_rendered(render(to_Doc(docu, Tuple2(7, "x")), 80), "7"), "Document.by")
   ),
   (
     docu = document_List(document_Int)
     rendered = render(to_Doc(docu, [1, 2, 3, 4]), 80)
-    Assertion(eq_String(rendered, "[1, 2, 3, 4]"), "document_List wide")
+    Assertion(eq_rendered(rendered, "[1, 2, 3, 4]"), "document_List wide")
   ),
   (
     docu = document_Option(document_Int)
     Assertion(
       and_Bool(
-        eq_String(render(to_Doc(docu, None), 80), "None"),
-        eq_String(render(to_Doc(docu, Some(9)), 80), "Some(9)")
+        eq_rendered(render(to_Doc(docu, None), 80), "None"),
+        eq_rendered(render(to_Doc(docu, Some(9)), 80), "Some(9)")
       ),
       "document_Option"
     )
   ),
   (
     deep = deep_doc(20000)
-    wide_text = concat_String(render_wide_stream(deep))
+    wide_text = rendered_to_string(render_wide_stream(deep))
     Assertion(
       and_Bool(
         cmp_Int(max_width(deep), 0) matches GT | EQ,
