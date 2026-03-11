@@ -852,9 +852,8 @@ def render_stream_core(width: Int, doc: Doc, wide: Bool) -> LazyList[String]:
                   lazy(() -> loop_stream(next_fuel, pos, tail))
                 )
               case Line:
-                line_text = line_to_string(indent)
                 cons(
-                  lazy(() -> line_text),
+                  lazy(() -> line_to_string(indent)),
                   lazy(() -> loop_stream(next_fuel, max_Int(indent, 0), tail))
                 )
               case Union(_, flattened, fallback):
