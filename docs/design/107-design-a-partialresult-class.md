@@ -116,16 +116,17 @@ Proposed exports:
 15. `fold`
 16. `unwrap_or`
 17. `unwrap_or_else`
-18. `from_Option`
-19. `from_Result`
-20. `to_Result_fail_fast`
-21. `combine_product`
-22. `combine_map2`
-23. `combine_product_l`
-24. `combine_product_r`
-25. `eq`
-26. `ord`
-27. `hash`
+18. `unwrap`
+19. `from_Option`
+20. `from_Result`
+21. `to_Result_fail_fast`
+22. `combine_product`
+23. `combine_map2`
+24. `combine_product_l`
+25. `combine_product_r`
+26. `eq`
+27. `ord`
+28. `hash`
 
 ### Function Semantics
 
@@ -166,9 +167,10 @@ Elimination/conversion:
 
 1. `fold(result, on_total_err, on_partial_err, on_total_ok)` is the canonical eliminator.
 2. `unwrap_or` / `unwrap_or_else` return the carried value for `TotalOk` and `PartialErr`, fallback only for `TotalErr`.
-3. `from_Option(value, on_none)` maps `None` to `TotalErr(on_none())`, `Some(x)` to `TotalOk(x)`.
-4. `from_Result` maps `Err` -> `TotalErr`, `Ok` -> `TotalOk`.
-5. `to_Result_fail_fast` maps `PartialErr(e, _)` to `Err(e)` to preserve error visibility at fail-fast boundaries.
+3. `unwrap(value: forall e. PartialResult[e, a]) -> a` is safe because polymorphic `e` prevents constructing `TotalErr` or `PartialErr`; only `TotalOk` is inhabitable.
+4. `from_Option(value, on_none)` maps `None` to `TotalErr(on_none())`, `Some(x)` to `TotalOk(x)`.
+5. `from_Result` maps `Err` -> `TotalErr`, `Ok` -> `TotalOk`.
+6. `to_Result_fail_fast` maps `PartialErr(e, _)` to `Err(e)` to preserve error visibility at fail-fast boundaries.
 
 Parallel/product composition:
 
@@ -217,7 +219,7 @@ Additional laws/consistency checks:
 ### Phase 1: module skeleton and Result-parity APIs
 
 1. Create `src/Zafu/Control/PartialResult.bosatsu`.
-2. Add enum, exports, predicates/views, `map`, `map_err`, `fold`, unwrap helpers, and option/result conversions.
+2. Add enum, exports, predicates/views, `map`, `map_err`, `fold`, `unwrap`, unwrap helpers, and option/result conversions.
 3. Add baseline branch coverage tests for each exported function.
 
 ### Phase 2: semigroup-aware composition
@@ -251,7 +253,7 @@ Additional laws/consistency checks:
 5. Monad associativity for `and_then` passes tests under a fixed lawful semigroup.
 6. `combine_product` and `combine_map2` are implemented with the exact decision-table behavior.
 7. `combine_product` tests cover all 9 constructor pairings.
-8. `map`, `map_err`, `fold`, `unwrap_or`, and `unwrap_or_else` have tests across all three constructors.
+8. `map`, `map_err`, `fold`, `unwrap_or`, `unwrap_or_else`, and `unwrap` have tests across all relevant constructors/types.
 9. `eq`, `ord`, and `hash` adapters exist and are constructor-sensitive.
 10. `to_Result_fail_fast(PartialErr(e, a))` yields `Err(e)`.
 11. `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh` pass.
