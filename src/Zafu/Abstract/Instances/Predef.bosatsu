@@ -100,13 +100,6 @@ from Zafu/Control/IterState import (
   foldl_List as foldl_state_List,
   foldr_List as foldr_state_List,
 )
-from Zafu/Control/Result import (
-  Result,
-  Ok,
-  Err,
-  map as map_Result,
-  eq as eq_Result,
-)
 
 export (
   semigroup_Unit,
@@ -196,7 +189,6 @@ export (
   foldable_Array,
   foldable_List,
   applicative_Option,
-  applicative_Result,
   applicative_Prog,
   eq_Unit,
   ord_Unit,
@@ -714,23 +706,6 @@ applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(
   Some,
   map_Option_Applicative,
   map2_Option_Applicative,
-)
-
-def map2_Result_Applicative(left: Result[e, a], right: Result[e, b], fn: (a, b) -> c) -> Result[e, c]:
-  match left:
-    case Err(err_value):
-      Err(err_value)
-    case Ok(left_value):
-      match right:
-        case Err(err_value):
-          Err(err_value)
-        case Ok(right_value):
-          Ok(fn(left_value, right_value))
-
-applicative_Result: forall e. Applicative[Result[e]] = applicative_from_pure_map_map2(
-  Ok,
-  map_Result,
-  map2_Result_Applicative,
 )
 
 def map_Prog_Applicative(prog: Prog[e, a], fn: a -> b) -> Prog[e, b]:
@@ -3323,14 +3298,6 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
     map2_Applicative(applicative_Option, Some(1), None, add) matches None,
     "applicative_Option propagates None",
   ),
-  Assertion(
-    map2_Applicative(applicative_Result, Ok(2), Ok(3), add) matches Ok(5),
-    "applicative_Result map2 Ok",
-  ),
-  Assertion(
-    map2_Applicative(applicative_Result, Ok(2), Err("bad"), add) matches Err("bad"),
-    "applicative_Result short-circuits right Err",
-  ),
   (
     eq_opt_int = eq_Option(eq_Int)
     laws_Applicative(
@@ -3341,34 +3308,6 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
       Some(2),
       Some(value -> value.add(1)),
       Some(value -> value.mul(2)),
-      value -> value.add(3),
-      7,
-    )
-  ),
-  (
-    eq_result_int = eq_Result(eq_String, eq_Int)
-    laws_Applicative(
-      applicative_Result,
-      eq_result_int,
-      eq_result_int,
-      eq_result_int,
-      Ok(2),
-      Ok(value -> value.add(1)),
-      Ok(value -> value.mul(2)),
-      value -> value.add(3),
-      7,
-    )
-  ),
-  (
-    eq_result_int = eq_Result(eq_String, eq_Int)
-    laws_Applicative(
-      applicative_Result,
-      eq_result_int,
-      eq_result_int,
-      eq_result_int,
-      Err("bad"),
-      Ok(value -> value.add(1)),
-      Err("fn"),
       value -> value.add(3),
       7,
     )

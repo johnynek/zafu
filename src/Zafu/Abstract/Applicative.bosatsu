@@ -97,18 +97,27 @@ def product3[f: * -> *, a, b, c](inst: Applicative[f], fa: f[a], fb: f[b], fc: f
   ))
 
 def product4[f: * -> *, a, b, c, d](inst: Applicative[f], fa: f[a], fb: f[b], fc: f[c], fd: f[d]) -> f[(a, b, c, d)]:
-  map2(inst, product3(inst, fa, fb, fc), fd, (tuple3_abc, value_d) -> (
-    match tuple3_abc:
-      case (value_a, value_b, value_c):
+  map2(inst, product2(inst, fa, fb), product2(inst, fc, fd), (pair_ab, pair_cd) -> (
+    match (pair_ab, pair_cd):
+      case ((value_a, value_b), (value_c, value_d)):
         (value_a, value_b, value_c, value_d)
   ))
 
 def product5[f: * -> *, a, b, c, d, e](inst: Applicative[f], fa: f[a], fb: f[b], fc: f[c], fd: f[d], fe: f[e]) -> f[(a, b, c, d, e)]:
-  map2(inst, product4(inst, fa, fb, fc, fd), fe, (tuple4_abcd, value_e) -> (
-    match tuple4_abcd:
-      case (value_a, value_b, value_c, value_d):
-        (value_a, value_b, value_c, value_d, value_e)
-  ))
+  map2(
+    inst,
+    map2(inst, product2(inst, fa, fb), product2(inst, fc, fd), (pair_ab, pair_cd) -> (
+      match (pair_ab, pair_cd):
+        case ((value_a, value_b), (value_c, value_d)):
+          (value_a, value_b, value_c, value_d)
+    )),
+    fe,
+    (tuple4_abcd, value_e) -> (
+      match tuple4_abcd:
+        case (value_a, value_b, value_c, value_d):
+          (value_a, value_b, value_c, value_d, value_e)
+    ),
+  )
 
 def laws_Applicative[f: * -> *, a, b, c](
   inst: Applicative[f],
