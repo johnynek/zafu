@@ -8,7 +8,9 @@ from Bosatsu/Num/Float64 import (
   is_nan,
 )
 from Zafu/Abstract/Hash import Hash
-from Zafu/Abstract/Instances/Predef import hash_Char
+from Zafu/Abstract/Instances/Predef import hash_Char, monoid_String
+from Zafu/Abstract/Monoid import combine_n, Monoid, monoid_specialized
+from Zafu/Abstract/Semigroup import combine_tree_option
 from Zafu/Collection/HashSet import (
   HashSet,
   contains as contains_HashSet,
@@ -85,6 +87,7 @@ export (
   document_Float64,
   document_List,
   document_Option,
+  monoid_Doc,
 )
 
 enum Doc:
@@ -226,16 +229,15 @@ def small_spaces(rem: Int) -> String:
 space_16: String = "                "
 
 def spaces_string(width: Int) -> String:
-  def loop(rem: Int, rev: List[String]) -> String:
-    recur rem:
-      case _ if cmp_Int(rem, 0) matches LT | EQ:
-        concat_String(rev.reverse())
-      case _ if cmp_Int(rem, 16) matches GT | EQ:
-        loop(rem.sub(16), [space_16, *rev])
-      case _:
-        concat_String([small_spaces(rem), *rev].reverse())
-
-  loop(width, [])
+    if cmp_Int(width, 0) matches LT | EQ: ""
+    else:
+        d = width.div(16)
+        m = width.mod_Int(16)
+        smod = small_spaces(m)
+        if d matches 0: smod
+        else:
+            sdiv = combine_n(monoid_String, space_16, d)
+            "${sdiv}${smod}"
 
 def line_to_string(indent: Int) -> String:
   actual_indent = max_Int(indent, 0)
@@ -310,7 +312,7 @@ comma: Doc = text_raw(",")
 
 # Soft line break that becomes a space in flattened layouts.
 # Output: newline in broken mode, `" "` in flat mode.
-line: Doc = FlatAlt(doc_branch_size(Line, text_raw(" ")), Line, text_raw(" "))
+line: Doc = FlatAlt(doc_branch_size(Line, space), Line, space)
 # Soft line break that disappears in flattened layouts.
 # Output: newline in broken mode, empty in flat mode.
 line_break: Doc = FlatAlt(doc_branch_size(Line, Empty), Line, Empty)
@@ -426,6 +428,14 @@ def repeat(doc: Doc, count: Int) -> Doc:
 # Output: `repeat(space, width)`.
 def spaces(width: Int) -> Doc:
   repeat(space, width)
+
+# Monoid on Doc where append is the combine
+monoid_Doc: Monoid[Doc] =
+    monoid_specialized(
+        Empty,
+        append,
+        repeat,
+        docs -> combine_tree_option(append, docs))
 
 # Inserts zero-width text into output.
 # Input: `value` bytes to emit without affecting layout width.

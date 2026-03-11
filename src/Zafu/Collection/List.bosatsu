@@ -16,18 +16,14 @@ from Bosatsu/Num/Float64 import (
   addf,
 )
 from Zafu/Abstract/Eq import (
+  Eq,
   eq_from_fn,
   eq as eq_Eq,
 )
-from Zafu/Abstract/Foldable import (
-  Foldable,
-  foldable_specialized,
-)
-from Zafu/Abstract/Instances/Predef import eq_List as eq_List_Eq
-from Zafu/Control/IterState import (
-  IterState,
-  foldl_List as foldl_state_List,
-  foldr_List as foldr_state_List,
+from Zafu/Abstract/Ord import (
+  Ord,
+  ord_from_cmp,
+  cmp as cmp_Ord,
 )
 
 export (
@@ -43,7 +39,6 @@ export (
   sort,
   uncons,
   zip,
-  eq_List,
   is_empty,
   get_or,
   last,
@@ -53,7 +48,11 @@ export (
   flat_map,
   filter,
   concat_all,
-  foldable_List,
+  take,
+  drop,
+  split_at,
+  eq_List,
+  ord_List,
 )
 
 def any(items: List[Bool]) -> Bool:
@@ -93,9 +92,6 @@ def sum(items: List[Int]) -> Int:
 def sumf(items: List[Float64]) -> Float64:
   items.foldl_List(0.0, addf)
 
-def eq_List(eq_item: (a, a) -> Bool, left: List[a], right: List[a]) -> Bool:
-  eq_Eq(eq_List_Eq(eq_from_fn(eq_item)), left, right)
-
 def is_empty(items: List[a]) -> Bool:
   items matches []
 
@@ -116,12 +112,6 @@ def foldr(items: List[a], init: b, fn: (a, b) -> b) -> b:
   # Reverse + foldl gives right-fold semantics with stack-safe traversal.
   items.reverse().foldl_List(init, (acc, item) -> fn(item, acc))
 
-def foldl_iter(items: List[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
-  foldl_state_List(items, init, fn)
-
-def foldr_iter(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
-  foldr_state_List(items, init, fn)
-
 def map(items: List[a], fn: a -> b) -> List[b]:
   items.map_List(fn)
 
@@ -137,18 +127,73 @@ def filter(items: List[a], pred: a -> Bool) -> List[a]:
       acc
   ))
 
+def take(items: List[a], size: Int) -> List[a]:
+    def go(items: List[a], size: Int, acc: List[a]):
+        recur items:
+            case _ if cmp_Int(size, 0) matches LT | EQ: acc.reverse()
+            case []: acc.reverse()
+            case [h, *t]:
+                go(t, size.sub(1), [h, *acc])
+    go(items, size, [])
+
+def drop(items: List[a], size: Int) -> List[a]:
+    def go(items: List[a], size: Int):
+        recur items:
+            case _ if cmp_Int(size, 0) matches LT | EQ: items
+            case []: []
+            case [_, *t]: go(t, size.sub(1))
+    go(items, size)
+
+def split_at(items: List[a], size: Int) -> (List[a], List[a]):
+    def go(items: List[a], size: Int, acc: List[a]):
+        recur items:
+            case _ if cmp_Int(size, 0) matches LT | EQ: (acc.reverse(), items)
+            case []: (acc.reverse(), [])
+            case [h, *t]:
+                go(t, size.sub(1), [h, *acc])
+    go(items, size, [])
+
 def concat_all(items: List[List[a]]) -> List[a]:
   foldr(items, [], (next, acc) -> [*next, *acc])
 
-foldable_List: Foldable[List] = foldable_specialized(
-  foldl,
-  foldr,
-  foldl_iter,
-  foldr_iter,
-  is_empty,
-  size,
-  items -> items,
-)
+def eq_list(eq_item: Eq[a], left: List[a], right: List[a]) -> Bool:
+  def go(left: List[a], right: List[a]) -> Bool:
+    loop (left, right):
+      case ([], []):
+        True
+      case ([left_h, *left_t], [right_h, *right_t]):
+        if eq_Eq(eq_item, left_h, right_h):
+          go(left_t, right_t)
+        else:
+          False
+      case _:
+        False
+  go(left, right)
+
+def cmp_list(ord_item: Ord[a], left: List[a], right: List[a]) -> Comparison:
+  def go(left: List[a], right: List[a]) -> Comparison:
+    loop (left, right):
+      case ([], []):
+        EQ
+      case ([], [_, *_]):
+        LT
+      case ([_, *_], []):
+        GT
+      case ([left_h, *left_t], [right_h, *right_t]):
+        head_cmp = cmp_Ord(ord_item, left_h, right_h)
+        if head_cmp matches EQ:
+          go(left_t, right_t)
+        else:
+          head_cmp
+  go(left, right)
+
+def eq_List(eq_item: Eq[a]) -> Eq[List[a]]:
+  eq_from_fn((left, right) -> eq_list(eq_item, left, right))
+
+def ord_List(ord_item: Ord[a]) -> Ord[List[a]]:
+  ord_from_cmp((left, right) -> cmp_list(ord_item, left, right))
+
+eq_List_Int = eq_List(eq_from_fn(eq_Int))
 
 tests = TestSuite("Zafu/Collection/List tests", [
   Assertion(any([False, True, False]), "any has true"),
@@ -176,8 +221,8 @@ tests = TestSuite("Zafu/Collection/List tests", [
   Assertion(sum([1, 2, 3, 4]).eq_Int(10), "sum ints"),
   Assertion(sumf([]).cmp_Float64(0.0) matches EQ, "sumf empty"),
   Assertion(sumf([1.25, 2.5, 0.25]).cmp_Float64(4.0) matches EQ, "sumf exact sample"),
-  Assertion(eq_List(eq_Int, [1, 2], [1, 2]), "eq_List custom predicate"),
-  Assertion(eq_List(eq_Int, [1, 2], [1]) matches False, "eq_List length mismatch"),
+  Assertion(eq_Eq(eq_List_Int, [1, 2], [1, 2]), "eq_List custom predicate"),
+  Assertion(eq_Eq(eq_List_Int, [1, 2], [1]) matches False, "eq_List length mismatch"),
   Assertion(is_empty([]), "is_empty empty"),
   Assertion(is_empty([1]) matches False, "is_empty non-empty"),
   Assertion(get_or([1, 2, 3], 1, () -> 99).eq_Int(2), "get_or hit"),
