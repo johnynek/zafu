@@ -37,15 +37,16 @@ Proposed
 1. The API has no Semigroup-level operation for “map while combining” over non-empty or optional lists.
 2. `Monoid` lacks a direct mapped combine API, so callers either allocate mapped lists or pay `Option` round-trips.
 3. `Foldable` list-backed implementations cannot currently express “combine mapped values directly” through `Monoid` and therefore do extra allocation work.
-4. We need to add this without breaking existing Semigroup/Monoid construction patterns or regressing current specialized behavior.
+4. `Semigroup` specialization currently centers `combine_all_option`, which is less general than a mapped non-empty combine surface.
 
 ## Goals
 
 1. Add Semigroup mapped bulk operations that support both non-empty and possibly-empty list inputs.
 2. Add Monoid mapped bulk combination that returns `a` directly and uses `empty` for empty input.
-3. Preserve backward compatibility for existing Semigroup and Monoid call sites.
-4. Preserve or improve specialization opportunities for performance-sensitive instances (especially list concatenation).
-5. Update list-backed Foldable paths to use the new API and avoid intermediate mapped list allocation.
+3. Make `combine_map_all` the primary Semigroup specialization surface and derive `combine_all_option` from it.
+4. Keep only one override surface for bulk combine behavior to prevent coherence drift.
+5. Preserve or improve specialization opportunities for performance-sensitive instances (especially list concatenation).
+6. Update list-backed Foldable paths to use the new API and avoid intermediate mapped list allocation.
 
 ## Non-goals
 
@@ -60,10 +61,10 @@ Proposed
 
 1. Add `combine_map_all(inst: Semigroup[a], head: b, tail: List[b], fn: b -> a) -> a` for non-empty mapped combination.
 2. Add `combine_map_all_option(inst: Semigroup[a], items: List[b], fn: b -> a) -> Option[a]` as the empty-aware wrapper.
-3. Extend Semigroup internals with a mapped non-empty specialization hook so instances can optimize mapped aggregation directly.
-4. Keep `semigroup_specialized` source-compatible by deriving the mapped hook with a safe default.
-5. Add a new specialized constructor (for example `semigroup_specialized_map_all`) that accepts the mapped hook explicitly for performance-critical instances.
-6. Keep `combine_all_option` API and semantics unchanged; enforce coherence through tests that compare it to mapped identity usage.
+3. Update `semigroup_specialized` so the specialized bulk hook is `combine_map_all` (non-empty mapped combine), not `combine_all_option`.
+4. Define `combine_map_all_option` by matching on `items`: return `None` for empty input, else call `combine_map_all` and wrap in `Some`.
+5. Define `combine_all_option(inst, items)` as `combine_map_all_option(inst, items, item -> item)`.
+6. Do not support separate overrides for mapped and non-mapped bulk paths in this issue; coherence comes from single-source derivation.
 
 ### Monoid API
 
@@ -92,58 +93,60 @@ Proposed
 
 ### Coherence Invariants
 
-1. For any Semigroup instance and mapping `fn`, `combine_map_all_option(items, fn)` should match the result of mapped-then-`combine_all_option`.
-2. For non-empty input, `combine_map_all(head, tail, fn)` should match unwrapping `combine_map_all_option([head, *tail], fn)`.
+1. `combine_all_option(inst, items)` is definitionally `combine_map_all_option(inst, items, item -> item)`.
+2. For non-empty input, `combine_map_all(head, tail, fn)` is definitionally the unwrapped payload of `combine_map_all_option([head, *tail], fn)`.
 3. `Monoid.combine_all(items)` should remain equivalent to `Monoid.combine_map_all(items, item -> item)`.
 
 ## Implementation Plan
 
 1. Phase 1: Semigroup core.
 2. Add new mapped APIs and internal hook plumbing in `src/Zafu/Abstract/Semigroup.bosatsu`.
-3. Add default derivation path and specialized constructor path.
-4. Add tests for empty/non-empty behavior, coherence, and specialization dispatch.
-5. Phase 2: Monoid adoption.
-6. Add `combine_map_all` to `src/Zafu/Abstract/Monoid.bosatsu`.
-7. Re-implement `combine_all` via mapped identity.
-8. Add tests for empty/non-empty behavior and projection through specialized semigroup.
-9. Phase 3: Foldable call-site updates.
-10. Replace mapped-list allocation call sites with `Monoid.combine_map_all` in:
-11. `src/Zafu/Abstract/Foldable.bosatsu`
-12. `src/Zafu/Abstract/Instances/Predef.bosatsu`
-13. `src/Zafu/Collection/Chain.bosatsu`
-14. Phase 4: Predef specialization and validation.
-15. Update `semigroup_List` in `src/Zafu/Abstract/Instances/Predef.bosatsu` to provide mapped specialization.
-16. Run `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh`.
+3. Update `semigroup_specialized` to specialize through `combine_map_all`, then migrate all current call sites to the new signature.
+4. Derive `combine_map_all_option` and `combine_all_option` from that single hook.
+5. Add tests for empty/non-empty behavior and definition-level coherence.
+6. Phase 2: Monoid adoption.
+7. Add `combine_map_all` to `src/Zafu/Abstract/Monoid.bosatsu`.
+8. Re-implement `combine_all` via mapped identity.
+9. Add tests for empty/non-empty behavior and projection through specialized semigroup.
+10. Phase 3: Foldable call-site updates.
+11. Replace mapped-list allocation call sites with `Monoid.combine_map_all` in:
+12. `src/Zafu/Abstract/Foldable.bosatsu`
+13. `src/Zafu/Abstract/Instances/Predef.bosatsu`
+14. `src/Zafu/Collection/Chain.bosatsu`
+15. Phase 4: Predef specialization and validation.
+16. Update `semigroup_List` in `src/Zafu/Abstract/Instances/Predef.bosatsu` to provide mapped specialization.
+17. Run `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh`.
 
 ## Acceptance Criteria
 
 1. `docs/design/127-improve-semigroup-design.md` documents this architecture, plan, and rollout.
 2. `Semigroup` exports mapped bulk APIs for non-empty and optional list inputs.
-3. Existing Semigroup constructor usage remains source-compatible (no mandatory signature churn at existing call sites).
-4. A specialization path exists for mapped bulk combine and is usable by `semigroup_List`.
-5. `Monoid` exports `combine_map_all` and `combine_all` delegates to identity-mapped usage.
-6. `Foldable` public API remains unchanged.
-7. The three list-backed `fold_map` call sites listed above no longer allocate an intermediate `items.map_List(fn)` just to combine.
-8. `semigroup_List` retains linear-time behavior for large concatenation workloads.
-9. Coherence tests pass for Semigroup and Monoid mapped/non-mapped equivalents.
-10. Existing tests continue passing, and no existing exported names are removed.
-11. `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh` pass before merge.
+3. `semigroup_specialized` is updated so `combine_map_all` is the bulk specialization hook, and existing in-repo call sites are migrated.
+4. `combine_all_option` is derived from `combine_map_all_option` (identity mapping), not independently overridden.
+5. A mapped specialization path is usable by `semigroup_List`.
+6. `Monoid` exports `combine_map_all` and `combine_all` delegates to identity-mapped usage.
+7. `Foldable` public API remains unchanged.
+8. The three list-backed `fold_map` call sites listed above no longer allocate an intermediate `items.map_List(fn)` just to combine.
+9. `semigroup_List` retains linear-time behavior for large concatenation workloads.
+10. Coherence tests pass for Semigroup and Monoid mapped/non-mapped equivalents.
+11. Existing tests continue passing, and no existing exported names are removed.
+12. `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh` pass before merge.
 
 ## Risks and Mitigations
 
 1. Risk: semantic drift between old and new combine paths.
-Mitigation: add explicit coherence tests comparing mapped and non-mapped results.
+Mitigation: derive `combine_all_option` from `combine_map_all_option` so both paths share one implementation.
 2. Risk: accidental performance regression for list concatenation if mapped specialization is not implemented.
 Mitigation: implement and test `semigroup_List` mapped specialization in `Predef`.
-3. Risk: larger blast radius from Semigroup internal shape changes.
-Mitigation: keep existing constructor API stable and add a new opt-in specialized constructor.
+3. Risk: updating `semigroup_specialized` directly touches many call sites.
+Mitigation: do a mechanical migration in one change and rely on full test suite before merge.
 4. Risk: behavior differences in derived combinators (`reverse`, `intercalate`) after adding mapped hooks.
 Mitigation: preserve existing behavior with targeted regression tests for those combinators.
 
 ## Rollout Notes
 
-1. Land as an additive API change on `main`.
-2. Merge in order: Semigroup core, Monoid, Foldable call-site usage, then instance specialization cleanup.
-3. Keep old APIs (`combine_all_option`, `combine_all`, `fold_map`) intact so downstream code does not require migration.
+1. Land as an API evolution on `main`, including the `semigroup_specialized` signature update.
+2. Merge in order: Semigroup core (including `semigroup_specialized` update), Monoid, Foldable call-site usage, then instance specialization cleanup.
+3. Keep old APIs (`combine_all_option`, `combine_all`, `fold_map`) intact at call sites, but allow constructor signature churn in this unpublished library.
 4. Note in PR description that new mapped APIs are the preferred path for list-backed fold-map implementations.
 5. Follow-up (optional): extend mapped call-site adoption to other modules where mapped lists are still allocated before monoid combination.
