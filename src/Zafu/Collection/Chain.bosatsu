@@ -32,13 +32,13 @@ from Zafu/Abstract/Foldable import (
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
-  pure as pure_Applicative,
-  map as map_Applicative,
-  map2 as map2_Applicative,
+  pure,
+  map as map_app,
+  map2,
 )
 from Zafu/Abstract/Traverse import (
   Traverse,
-  traverse as traverse_Traverse,
+  traverse,
   traverse_specialized,
 )
 from Zafu/Abstract/Eq import (
@@ -56,8 +56,8 @@ from Zafu/Abstract/Hash import (
 from Zafu/Abstract/Semigroup import (
   Semigroup,
   semigroup_specialized,
-  combine as combine_Semigroup,
-  combine_all_option as combine_all_option_Semigroup,
+  combine,
+  combine_all_option as combine_all_option_sg,
 )
 from Zafu/Abstract/Instances/Predef import (
   eq_List as eq_List_inst,
@@ -344,7 +344,7 @@ def combine_all(chain: Chain[a], semi: Semigroup[a]) -> Option[a]:
           case None:
             Some(value)
           case Some(total):
-            Some(combine_Semigroup(semi, total, value))
+            Some(semi.combine(total, value))
   def loop_combine(rem: Int, stack: List[Chain[a]], acc: Option[a]) -> Option[a]:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
@@ -363,12 +363,12 @@ def combine_all(chain: Chain[a], semi: Semigroup[a]) -> Option[a]:
                 case None:
                   Some(item)
                 case Some(total):
-                  Some(combine_Semigroup(semi, total, item))
+                  Some(semi.combine(total, item))
             ))
             loop_combine(rem.sub(1), tail, combine_left(acc, array_total))
           case [WrapList(items), *tail]:
             # Preserve Semigroup's list-specialized fast path when available.
-            list_total = combine_all_option_Semigroup(semi, items)
+            list_total = combine_all_option_sg(semi, items)
             loop_combine(rem.sub(1), tail, combine_left(acc, list_total))
           case [Concat(_, left, right), *tail]:
             loop_combine(rem.sub(1), [left, right, *tail], acc)
@@ -516,13 +516,13 @@ def map(chain: Chain[a], fn: a -> b) -> Chain[b]:
   foldr(chain, empty, (item, acc) -> concat(singleton(fn(item)), acc))
 
 # Traverse all elements left-to-right.
-def traverse_Chain_fn[g: * -> *, a, b](app: Applicative[g], chain: Chain[a], fn: a -> g[b]) -> g[Chain[b]]:
+def traverse_Chain_fn[g: * -> *, a, b](chain: Chain[a], app: Applicative[g], fn: a -> g[b]) -> g[Chain[b]]:
   rev_mapped = foldl(
     chain,
-    pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(app, acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    app.pure([]),
+    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map_Applicative(app, rev_mapped, rev_items -> from_List(rev_items.reverse()))
+  rev_mapped.map_app(app, rev_items -> from_List(rev_items.reverse()))
 
 # Keep only elements satisfying pred.
 def filter(chain: Chain[a], pred: a -> Bool) -> Chain[a]:
@@ -590,8 +590,7 @@ def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]
     case _:
       None
 
-def option_applicative() -> Applicative[Option]:
-  applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
   if cmp_Int(mod_Int(value, 2), 0) matches EQ:
@@ -844,7 +843,7 @@ flat_map_prop: Prop = forall_Prop(
     chain = from_List(list)
     fn = i -> from_List([i, i.add(1)])
     expected = flat_map_model(list)
-    actual = to_List(flat_map(chain, fn))
+    actual = to_List(chain.flat_map(fn))
     Assertion(eq_List(eq_Int)(actual, expected), "flat_map law")
   ))
 
@@ -936,23 +935,22 @@ tests = TestSuite("Chain tests", [
   Assertion(map(from_List([1, 2]), i -> i.add(10)).to_List() matches [11, 12], "map sanity"),
   (
     chain = from_List([1, 2, 3])
-    match traverse_Traverse(traverse_Chain, option_applicative(), chain, i -> Some(i.add(10))):
+    match chain.traverse(traverse_Chain, applicative_Option, i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Chain Some")
       case None:
         Assertion(False, "traverse_Chain Some")
   ),
   Assertion(
-    traverse_Traverse(
+    from_List([1, 2, 3, 4]).traverse(
       traverse_Chain,
-      option_applicative(),
-      from_List([1, 2, 3, 4]),
+      applicative_Option,
       keep_even_Option_Int,
     ) matches None,
     "traverse_Chain short-circuits",
   ),
   Assertion(filter(from_List([1, 2, 3, 4]), i -> mod_Int(i, 2).eq_Int(0)).to_List() matches [2, 4], "filter sanity"),
-  Assertion(flat_map(from_List([1, 2]), i -> from_List([i, i.add(1)])).to_List() matches [1, 2, 2, 3], "flat_map sanity"),
+  Assertion(from_List([1, 2]).flat_map(i -> from_List([i, i.add(1)])).to_List() matches [1, 2, 2, 3], "flat_map sanity"),
   (
     deep = deep_concat_chain(20000)
     expected_sum = 20000.mul(20001).div(2)

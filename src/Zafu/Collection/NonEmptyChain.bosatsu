@@ -49,13 +49,13 @@ from Zafu/Abstract/Foldable import (
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
-  pure as pure_Applicative,
-  map as map_Applicative,
-  map2 as map2_Applicative,
+  pure,
+  map as map_app,
+  map2,
 )
 from Zafu/Abstract/Traverse import (
   Traverse,
-  traverse as traverse_Traverse,
+  traverse,
   traverse_specialized,
 )
 from Zafu/Abstract/Ord import (
@@ -71,7 +71,7 @@ from Zafu/Abstract/Hash import (
 from Zafu/Abstract/Semigroup import (
   Semigroup,
   semigroup_from_combine,
-  combine as combine_Semigroup,
+  combine,
 )
 from Zafu/Collection/HashSet import (
   empty as empty_HashSet,
@@ -326,13 +326,13 @@ def combine_all(items: NonEmptyChain[a], semi: Semigroup[a]) -> a:
     case Prepend(head0, tail0):
       match combine_all_Chain(tail0, semi):
         case Some(rest):
-          combine_Semigroup(semi, head0, rest)
+          semi.combine(head0, rest)
         case None:
           head0
     case Append(init0, last0):
       match combine_all_Chain(init0, semi):
         case Some(rest):
-          combine_Semigroup(semi, rest, last0)
+          semi.combine(rest, last0)
         case None:
           last0
 
@@ -344,19 +344,18 @@ def map(items: NonEmptyChain[a], fn: a -> b) -> NonEmptyChain[b]:
       Append(map_Chain(init0, fn), fn(last0))
 
 def traverse_NonEmptyChain_fn[g: * -> *, a, b](
-  app: Applicative[g],
   items: NonEmptyChain[a],
+  app: Applicative[g],
   fn: a -> g[b],
 ) -> g[NonEmptyChain[b]]:
   (head0, tail0) = uncons(items)
   rev_tail = to_List_Chain(tail0).foldl_List(
-    pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(app, acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    app.pure([]),
+    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map2_Applicative(
-    app,
+  app.map2(
     fn(head0),
-    map_Applicative(app, rev_tail, rev_items -> rev_items.reverse()),
+    rev_tail.map_app(app, rev_items -> rev_items.reverse()),
     (mapped_head, mapped_tail) -> Prepend(mapped_head, from_List_Chain(mapped_tail)),
   )
 
@@ -456,8 +455,7 @@ def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]
     case _:
       None
 
-def option_applicative() -> Applicative[Option]:
-  applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
   if cmp_Int(mod_Int(value, 2), 0) matches EQ:
@@ -576,24 +574,23 @@ transform_and_composition_tests = TestSuite("transforms and composition", [
   Assertion(to_List(map(from_prepend(1, from_List_Chain([2, 3])), i -> i.add(10))) matches [11, 12, 13], "map"),
   (
     items = from_prepend(1, from_List_Chain([2, 3]))
-    match traverse_Traverse(traverse_NonEmptyChain, option_applicative(), items, i -> Some(i.add(10))):
+    match items.traverse(traverse_NonEmptyChain, applicative_Option, i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_NonEmptyChain Some")
       case None:
         Assertion(False, "traverse_NonEmptyChain Some")
   ),
   Assertion(
-    traverse_Traverse(
+    from_prepend(1, from_List_Chain([2, 3, 4])).traverse(
       traverse_NonEmptyChain,
-      option_applicative(),
-      from_prepend(1, from_List_Chain([2, 3, 4])),
+      applicative_Option,
       keep_even_Option_Int,
     ) matches None,
     "traverse_NonEmptyChain short-circuits",
   ),
   Assertion(to_List(map(singleton(4), i -> i.add(1))) matches [5], "map preserves non-empty"),
   Assertion(
-    to_List(flat_map(from_prepend(1, from_List_Chain([2])), i -> from_prepend(i, from_List_Chain([i.add(1)])))) matches [1, 2, 2, 3],
+    to_List(from_prepend(1, from_List_Chain([2])).flat_map(i -> from_prepend(i, from_List_Chain([i.add(1)])))) matches [1, 2, 2, 3],
     "flat_map",
   ),
   Assertion(to_List(sort(from_prepend(3, from_List_Chain([1, 2, 1])), Order(cmp_Int))) matches [1, 1, 2, 3], "sort"),

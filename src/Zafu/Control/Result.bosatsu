@@ -24,9 +24,9 @@ from Zafu/Abstract/Hash import (
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
-  pure as pure_Applicative,
-  map as map_Applicative,
-  map2 as map2_Applicative,
+  pure,
+  map as map_app,
+  map2,
   laws_Applicative,
 )
 from Zafu/Abstract/Foldable import (
@@ -35,7 +35,7 @@ from Zafu/Abstract/Foldable import (
 )
 from Zafu/Abstract/Traverse import (
   Traverse,
-  traverse as traverse_Traverse,
+  traverse,
   traverse_specialized,
 )
 
@@ -57,6 +57,7 @@ export (
   unwrap,
   from_Option,
   applicative,
+  applicative_Result,
   traverse_Result,
   eq,
   ord,
@@ -112,7 +113,7 @@ def and_then(result: Result[e, a], fn: a -> Result[e, b]) -> Result[e, b]:
       fn(ok_value)
 
 def flat_map(result: Result[e, a], fn: a -> Result[e, b]) -> Result[e, b]:
-  and_then(result, fn)
+  result.and_then(fn)
 
 def or_else(result: Result[e, a], fn: e -> Result[f, a]) -> Result[f, a]:
   match result:
@@ -164,11 +165,13 @@ def map2_result(left: Result[e, a], right: Result[e, b], fn: (a, b) -> c) -> Res
         case Ok(right_value):
           Ok(fn(left_value, right_value))
 
-applicative: forall e. Applicative[Result[e]] = applicative_from_pure_map_map2(
+applicative_Result: forall e. Applicative[Result[e]] = applicative_from_pure_map_map2(
   Ok,
   map,
   map2_result,
 )
+
+applicative: forall e. Applicative[Result[e]] = applicative_Result
 
 foldable_Result: forall e. Foldable[Result[e]] = foldable_from_folds(
   (value, init, fn) -> (
@@ -188,15 +191,15 @@ foldable_Result: forall e. Foldable[Result[e]] = foldable_from_folds(
 )
 
 def traverse_Result_fn[g: * -> *, e, a, b](
-  app: Applicative[g],
   value: Result[e, a],
+  app: Applicative[g],
   fn: a -> g[b],
 ) -> g[Result[e, b]]:
   match value:
     case Err(err_value):
-      pure_Applicative(app, Err(err_value))
+      app.pure(Err(err_value))
     case Ok(ok_value):
-      map_Applicative(app, fn(ok_value), Ok)
+      fn(ok_value).map_app(app, Ok)
 
 traverse_Result: forall e. Traverse[Result[e]] = traverse_specialized(
   traverse_Result_fn,
@@ -259,8 +262,7 @@ def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]
     case _:
       None
 
-def option_applicative() -> Applicative[Option]:
-  applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
 
 eq_Int_inst: Eq[Int] = eq_from_fn(eq_Int)
 ord_Int_inst: Ord[Int] = ord_from_cmp(cmp_Int)
@@ -292,25 +294,25 @@ tests = TestSuite("Result tests", [
   Assertion(map(Ok(1), x -> x.add(1)) matches Ok(2), "map Ok"),
   Assertion(map(Err(1), x -> x.add(1)) matches Err(1), "map Err"),
   Assertion(
-    traverse_Traverse(traverse_Result, option_applicative(), Ok(1), value -> Some(value.add(1))) matches Some(Ok(2)),
+    (Ok(1)).traverse(traverse_Result, applicative_Option, value -> Some(value.add(1))) matches Some(Ok(2)),
     "traverse_Result Ok",
   ),
   Assertion(
-    traverse_Traverse(traverse_Result, option_applicative(), Err(1), value -> Some(value.add(1))) matches Some(Err(1)),
+    (Err(1)).traverse(traverse_Result, applicative_Option, value -> Some(value.add(1))) matches Some(Err(1)),
     "traverse_Result Err keeps error",
   ),
   Assertion(
-    traverse_Traverse(traverse_Result, option_applicative(), Ok(1), _ -> None) matches None,
+    (Ok(1)).traverse(traverse_Result, applicative_Option, _ -> None) matches None,
     "traverse_Result propagates effect failure",
   ),
-  Assertion(map2_Applicative(applicative, Ok(1), Ok(2), add) matches Ok(3), "applicative map2 Ok"),
-  Assertion(map2_Applicative(applicative, Ok(1), Err(2), add) matches Err(2), "applicative map2 Err"),
+  Assertion(applicative_Result.map2(Ok(1), Ok(2), add) matches Ok(3), "applicative map2 Ok"),
+  Assertion(applicative_Result.map2(Ok(1), Err(2), add) matches Err(2), "applicative map2 Err"),
   Assertion(map_err(Err(1), x -> x.add(1)) matches Err(2), "map_err Err"),
   Assertion(map_err(Ok(1), x -> x.add(1)) matches Ok(1), "map_err Ok"),
-  Assertion(and_then(Ok(2), x -> Ok(x.mul(2))) matches Ok(4), "and_then Ok"),
-  Assertion(and_then(Err(1), x -> Ok(x.mul(2))) matches Err(1), "and_then Err"),
-  Assertion(flat_map(Ok(2), x -> Ok(x.mul(2))) matches Ok(4), "flat_map alias"),
-  Assertion(flat_map(Err(1), x -> Ok(x.mul(2))) matches Err(1), "flat_map Err"),
+  Assertion((Ok(2)).and_then(x -> Ok(x.mul(2))) matches Ok(4), "and_then Ok"),
+  Assertion((Err(1)).and_then(x -> Ok(x.mul(2))) matches Err(1), "and_then Err"),
+  Assertion((Ok(2)).flat_map(x -> Ok(x.mul(2))) matches Ok(4), "flat_map alias"),
+  Assertion((Err(1)).flat_map(x -> Ok(x.mul(2))) matches Err(1), "flat_map Err"),
   Assertion(or_else(Err(1), x -> Err(x.add(1))) matches Err(2), "or_else Err"),
   Assertion(or_else(Ok(2), _ -> Err(0)) matches Ok(2), "or_else Ok"),
   Assertion(fold(Err(1), x -> x.add(1), _ -> 0).eq_Int(2), "fold Err"),
@@ -325,7 +327,7 @@ tests = TestSuite("Result tests", [
   (
     eq_inst = eq(eq_Int_inst, eq_Int_inst)
     laws_Applicative(
-      applicative,
+      applicative_Result,
       eq_inst,
       eq_inst,
       eq_inst,
@@ -339,7 +341,7 @@ tests = TestSuite("Result tests", [
   (
     eq_inst = eq(eq_Int_inst, eq_Int_inst)
     laws_Applicative(
-      applicative,
+      applicative_Result,
       eq_inst,
       eq_inst,
       eq_inst,
@@ -379,7 +381,7 @@ tests = TestSuite("Result tests", [
   (
     inst = eq(eq_Int_inst, eq_Int_inst)
     left = Err(1)
-    Assertion(eq_Eq(inst, and_then(left, x -> Ok(x.add(1))), left), "and_then short-circuits Err")
+    Assertion(eq_Eq(inst, left.and_then(x -> Ok(x.add(1))), left), "and_then short-circuits Err")
   ),
   (
     inst = eq(eq_Int_inst, eq_Int_inst)

@@ -29,13 +29,13 @@ from Zafu/Abstract/Foldable import (
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
-  pure as pure_Applicative,
-  map as map_Applicative,
-  map2 as map2_Applicative,
+  pure,
+  map as map_app,
+  map2,
 )
 from Zafu/Abstract/Traverse import (
   Traverse,
-  traverse as traverse_Traverse,
+  traverse,
   traverse_specialized,
 )
 from Zafu/Abstract/Ord import (
@@ -51,7 +51,7 @@ from Zafu/Abstract/Hash import (
 from Zafu/Abstract/Semigroup import (
   Semigroup,
   semigroup_specialized,
-  combine_all_option as combine_all_option_Semigroup,
+  combine_all_option as combine_all_option_sg,
 )
 from Zafu/Collection/HashSet import (
   empty as empty_HashSet,
@@ -236,19 +236,18 @@ def map(items: NonEmptyList[a], fn: a -> b) -> NonEmptyList[b]:
   NonEmptyList(fn(head0), tail0.map_List(fn))
 
 def traverse_NonEmptyList_fn[g: * -> *, a, b](
-  app: Applicative[g],
   items: NonEmptyList[a],
+  app: Applicative[g],
   fn: a -> g[b],
 ) -> g[NonEmptyList[b]]:
   NonEmptyList(head0, tail0) = items
   rev_tail = tail0.foldl_List(
-    pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(app, acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    app.pure([]),
+    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map2_Applicative(
-    app,
+  app.map2(
     fn(head0),
-    map_Applicative(app, rev_tail, rev_items -> rev_items.reverse()),
+    rev_tail.map_app(app, rev_items -> rev_items.reverse()),
     (mapped_head, mapped_tail) -> NonEmptyList(mapped_head, mapped_tail),
   )
 
@@ -289,7 +288,7 @@ def concat(left: NonEmptyList[a], right: NonEmptyList[a]) -> NonEmptyList[a]:
   NonEmptyList(left_head, [*left_tail, *to_List(right)])
 
 def concat_all(items: NonEmptyList[NonEmptyList[a]]) -> NonEmptyList[a]:
-  flat_map(items, item -> item)
+  items.flat_map(item -> item)
 
 def combine_all(items: NonEmptyList[a], sg: Semigroup[a]) -> a:
   NonEmptyList(head0, tail0) = items
@@ -298,7 +297,7 @@ def combine_all(items: NonEmptyList[a], sg: Semigroup[a]) -> a:
       head0
     case _:
       # Use Semigroup's specialized list combine path when available.
-      match combine_all_option_Semigroup(sg, [head0, *tail0]):
+      match combine_all_option_sg(sg, [head0, *tail0]):
         case Some(total):
           total
         case None:
@@ -343,8 +342,7 @@ def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]
     case _:
       None
 
-def option_applicative() -> Applicative[Option]:
-  applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
   if cmp_Int(mod_Int(value, 2), 0) matches EQ:
@@ -397,23 +395,22 @@ tests = TestSuite("Zafu/Collection/NonEmptyList tests", [
   Assertion(to_List(map(NonEmptyList(1, [2, 3]), i -> i.add(10))) matches [11, 12, 13], "map"),
   (
     items = NonEmptyList(1, [2, 3])
-    match traverse_Traverse(traverse_NonEmptyList, option_applicative(), items, i -> Some(i.add(10))):
+    match items.traverse(traverse_NonEmptyList, applicative_Option, i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_NonEmptyList Some")
       case None:
         Assertion(False, "traverse_NonEmptyList Some")
   ),
   Assertion(
-    traverse_Traverse(
+    NonEmptyList(1, [2, 3, 4]).traverse(
       traverse_NonEmptyList,
-      option_applicative(),
-      NonEmptyList(1, [2, 3, 4]),
+      applicative_Option,
       keep_even_Option_Int,
     ) matches None,
     "traverse_NonEmptyList short-circuits",
   ),
   Assertion(map(singleton(4), i -> i.add(1)) matches NonEmptyList(5, []), "map preserves non-empty"),
-  Assertion(to_List(flat_map(NonEmptyList(1, [2]), i -> NonEmptyList(i, [i.add(1)]))) matches [1, 2, 2, 3], "flat_map"),
+  Assertion(to_List(NonEmptyList(1, [2]).flat_map(i -> NonEmptyList(i, [i.add(1)]))) matches [1, 2, 2, 3], "flat_map"),
   Assertion(to_List(sort(Order(cmp_Int), NonEmptyList(3, [1, 2, 1]))) matches [1, 1, 2, 3], "sort"),
   Assertion(sort(Order(cmp_Int), singleton(4)) matches NonEmptyList(4, []), "sort preserves non-empty"),
   Assertion(to_List(zip(NonEmptyList(1, [2]), NonEmptyList("a", ["b", "c"]))) matches [(1, "a"), (2, "b")], "zip"),

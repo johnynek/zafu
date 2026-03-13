@@ -56,30 +56,30 @@ from Zafu/Abstract/Hash import (
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
-  combine_all_option as combine_all_option_Foldable,
+  combine_all_option as combine_all_option_fold,
 )
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
-  pure as pure_Applicative,
-  map as map_Applicative,
-  map2 as map2_Applicative,
+  pure,
+  map as map_app,
+  map2,
 )
 from Zafu/Abstract/Traverse import (
   Traverse,
-  traverse as traverse_Traverse,
+  traverse,
   traverse_specialized,
 )
 from Zafu/Abstract/Semigroup import (
   Semigroup,
-  combine as combine_Semigroup,
-  combine_all_option as combine_all_option_Semigroup,
+  combine,
+  combine_all_option as combine_all_option_sg,
   semigroup_from_combine,
 )
 from Zafu/Abstract/Monoid import (
   Monoid,
-  empty as empty_Monoid,
-  combine_all as combine_all_Monoid,
+  empty as empty_monoid,
+  combine_all as combine_all_monoid,
   monoid_from_combine,
   monoid_to_semigroup,
 )
@@ -481,13 +481,13 @@ def map_with_fuel(vec: Vector[a], fn: a -> b, fuel: Int) -> Vector[b]:
 def map(vec: Vector[a], fn: a -> b) -> Vector[b]:
   map_with_fuel(vec, fn, height(vec).add(1))
 
-def traverse_Vector_fn[g: * -> *, a, b](app: Applicative[g], vec: Vector[a], fn: a -> g[b]) -> g[Vector[b]]:
+def traverse_Vector_fn[g: * -> *, a, b](vec: Vector[a], app: Applicative[g], fn: a -> g[b]) -> g[Vector[b]]:
   rev_mapped = foldl(
     vec,
-    pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(app, acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    app.pure([]),
+    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map_Applicative(app, rev_mapped, rev_items -> from_List(rev_items.reverse()))
+  rev_mapped.map_app(app, rev_items -> from_List(rev_items.reverse()))
 
 traverse_Vector: Traverse[Vector] = traverse_specialized(
   traverse_Vector_fn,
@@ -1236,7 +1236,7 @@ def combine_left_option(semi: Semigroup[a], state: Option[a], next: Option[a]) -
     case (None, _):
       next
     case (Some(total), Some(value)):
-      Some(combine_Semigroup(semi, total, value))
+      Some(semi.combine(total, value))
 
 def combine_all_option_with_fuel(vec: Vector[a], semi: Semigroup[a], fuel: Int) -> Option[a]:
   recur fuel:
@@ -1245,7 +1245,7 @@ def combine_all_option_with_fuel(vec: Vector[a], semi: Semigroup[a], fuel: Int) 
     case _:
       match vec:
         case Leaf(_, items):
-          combine_all_option_Foldable(foldable_Array, items, semi)
+          items.combine_all_option_fold(foldable_Array, semi)
         case Branch(_, _, _, children):
           foldl_Array(children, None, (state, child) -> (
             child_total = combine_all_option_with_fuel(child, semi, fuel.sub(1))
@@ -1260,7 +1260,7 @@ def combine_all(vec: Vector[a], monoid: Monoid[a]) -> a:
     case Some(total):
       total
     case None:
-      empty_Monoid(monoid)
+      empty_monoid(monoid)
 
 # Returns a slice in the half-open interval [start, end).
 def slice(vec: Vector[a], start: Int, end: Int) -> Vector[a]:
@@ -1319,8 +1319,7 @@ def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]
     case _:
       None
 
-def option_applicative() -> Applicative[Option]:
-  applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
   if cmp_Int(mod_Int(value, 2), 0) matches EQ:
@@ -1534,7 +1533,7 @@ combine_all_option_prop: Prop = forall_Prop(
   "combine_all_option agrees with list semigroup combine_all_option",
   list -> (
     vec = from_List(list)
-    expected = combine_all_option_Semigroup(int_add_semigroup, list)
+    expected = combine_all_option_sg(int_add_semigroup, list)
     actual = combine_all_option(vec, int_add_semigroup)
     Assertion(eq_Option(eq_Int)(actual, expected), "combine_all_option law")
   ))
@@ -1544,7 +1543,7 @@ combine_all_prop: Prop = forall_Prop(
   "combine_all agrees with list monoid combine_all",
   list -> (
     vec = from_List(list)
-    expected = combine_all_Monoid(int_add_monoid, list)
+    expected = combine_all_monoid(int_add_monoid, list)
     actual = combine_all(vec, int_add_monoid)
     Assertion(actual.eq_Int(expected), "combine_all law")
   ))
@@ -1677,7 +1676,7 @@ flat_map_prop: Prop = forall_Prop(
     vec = from_List(list)
     fn = i -> from_List([i, i.add(1)])
     expected = flat_map_model(list)
-    actual = flat_map(vec, fn).to_List()
+    actual = vec.flat_map(fn).to_List()
     Assertion(eq_List(eq_Int)(actual, expected), "flat_map law")
   ))
 
@@ -1785,7 +1784,7 @@ tests = TestSuite("Vector tests", [
   Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
   (
     vec = from_List([1, 2, 3])
-    match traverse_Traverse(traverse_Vector, option_applicative(), vec, i -> Some(i.add(10))):
+    match vec.traverse(traverse_Vector, applicative_Option, i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Vector Some")
       case None:
@@ -1794,10 +1793,9 @@ tests = TestSuite("Vector tests", [
   (
     vec = from_List([1, 2, 3, 4])
     Assertion(
-      traverse_Traverse(
+      vec.traverse(
         traverse_Vector,
-        option_applicative(),
-        vec,
+        applicative_Option,
         keep_even_Option_Int,
       ) matches None,
       "traverse_Vector short-circuits",
