@@ -808,17 +808,17 @@ def tailrec_steps_Option_Monad(
   step: a -> Option[IterState[a, b]],
 ) -> Option[IterState[a, b]]:
   def go(rem: Int, seed: a) -> Option[IterState[a, b]]:
-    loop rem:
+    recur rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         Some(continue(seed))
       case _:
-        match step(seed):
-          case Some(Done(done_value)):
-            Some(done(done_value))
-          case Some(Continue(next_seed)):
-            go(rem.sub(1), next_seed)
-          case None:
-            None
+        flat_map_Option_Monad(step(seed), state -> (
+          match state:
+            case Done(done_value):
+              Some(done(done_value))
+            case Continue(next_seed):
+              go(rem.sub(1), next_seed)
+        ))
   go(max_steps, init)
 
 monad_Option: Monad[Option] = monad_from_applicative_flat_map_tailrec_steps(

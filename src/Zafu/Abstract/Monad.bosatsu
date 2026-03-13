@@ -15,6 +15,8 @@ from Zafu/Control/IterState import (
   IterState,
   Continue,
   Done,
+  done,
+  continue,
 )
 
 export (
@@ -114,7 +116,7 @@ def laws_Monad[f: * -> *, a, b, c](
       flat_map(tailrec_steps(inst, 1, tailrec_seed, tailrec_step), inst, iter -> (
         match iter:
           case Done(done_value):
-            pure(app, Done(done_value))
+            pure(app, done(done_value))
           case Continue(next_seed):
             tailrec_step(next_seed)
       )),
@@ -159,11 +161,11 @@ def tailrec_steps_Option(
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         # Fuel is exhausted, so return the next seed unchanged.
-        Some(Continue(seed))
+        Some(continue(seed))
       case _:
         match step(seed):
           case Some(Done(done_value)):
-            Some(Done(done_value))
+            Some(done(done_value))
           case Some(Continue(next_seed)):
             go(rem.sub(1), next_seed)
           case None:
@@ -206,20 +208,20 @@ tests = TestSuite("Monad tests", [
   Assertion(flatten(Some(Some(1)), monad_Option_local) matches Some(1), "flatten nested Some"),
   Assertion(flatten(Some(None), monad_Option_local) matches None, "flatten nested None"),
   Assertion(
-    tailrec_steps(monad_Option_local, 0, 5, seed -> Some(Continue(seed.add(1)))) matches Some(Continue(5)),
+    tailrec_steps(monad_Option_local, 0, 5, seed -> Some(continue(seed.add(1)))) matches Some(Continue(5)),
     "tailrec_steps max_steps <= 0",
   ),
   Assertion(
     tailrec_steps(monad_Option_local, 10, 0, seed -> (
       if cmp_Int(seed, 3) matches LT:
-        Some(Continue(seed.add(1)))
+        Some(continue(seed.add(1)))
       else:
-        Some(Done(seed))
+        Some(done(seed))
     )) matches Some(Done(3)),
     "tailrec_steps reaches Done",
   ),
   Assertion(
-    tailrec_steps(monad_Option_local, 2, 0, seed -> Some(Continue(seed.add(1)))) matches Some(Continue(2)),
+    tailrec_steps(monad_Option_local, 2, 0, seed -> Some(continue(seed.add(1)))) matches Some(Continue(2)),
     "tailrec_steps keeps remainder on fuel exhaustion",
   ),
   Assertion(
@@ -227,7 +229,7 @@ tests = TestSuite("Monad tests", [
       if cmp_Int(seed, 2) matches EQ:
         None
       else:
-        Some(Continue(seed.add(1)))
+        Some(continue(seed.add(1)))
     )) matches None,
     "tailrec_steps propagates effect failure",
   ),
@@ -250,9 +252,9 @@ tests = TestSuite("Monad tests", [
       0,
       seed -> (
         if cmp_Int(seed, 2) matches LT:
-          Some(Continue(seed.add(1)))
+          Some(continue(seed.add(1)))
         else:
-          Some(Done(seed))
+          Some(done(seed))
       ),
     )
   ),
@@ -278,7 +280,7 @@ tests = TestSuite("Monad tests", [
       value -> Some(value.mul(2)),
       value -> value.add(10),
       1,
-      seed -> Some(Continue(seed.add(1))),
+      seed -> Some(continue(seed.add(1))),
     )
   ),
 ])
