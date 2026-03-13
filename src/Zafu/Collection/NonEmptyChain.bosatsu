@@ -23,6 +23,7 @@ from Zafu/Collection/Chain import (
   prepend as prepend_Chain,
   append as append_Chain,
   concat as concat_Chain,
+  foldable_Chain,
   eq_Chain,
   ord_Chain,
   hash_Chain,
@@ -45,6 +46,7 @@ from Zafu/Abstract/Eq import (
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
+  fold_map as fold_map_foldable,
 )
 from Zafu/Abstract/Applicative import (
   Applicative,
@@ -73,10 +75,7 @@ from Zafu/Abstract/Semigroup import (
   semigroup_from_combine,
   combine,
 )
-from Zafu/Abstract/Monoid import (
-  empty as empty_monoid,
-  combine as combine_monoid,
-)
+from Zafu/Abstract/Monoid import Monoid
 from Zafu/Collection/HashSet import (
   empty as empty_HashSet,
   contains as contains_HashSet,
@@ -312,7 +311,7 @@ def foldr_iter(items: NonEmptyChain[a], init: b, fn: (a, b) -> IterState[b, b]) 
 foldable_NonEmptyChain: Foldable[NonEmptyChain] = foldable_specialized(
   foldl,
   foldr,
-  (items, monoid, fn) -> foldl(items, empty_monoid(monoid), (acc, item) -> combine_monoid(monoid, acc, fn(item))),
+  (items, monoid, fn) -> fold_map_foldable(to_Chain(items), foldable_Chain, monoid, fn),
   foldl_iter,
   foldr_iter,
   (_) -> False,

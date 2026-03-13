@@ -20,6 +20,7 @@ from Zafu/Abstract/Monoid import (
   monoid_from_combine,
   empty,
   combine,
+  combine_all as combine_all_monoid,
 )
 from Zafu/Abstract/Applicative import (
   Applicative,
@@ -653,7 +654,7 @@ def laws_Foldable[f: * -> *](inst: Foldable[f], eq_item: Eq[a], fa: f[a]) -> Tes
 foldable_List: Foldable[List] = foldable_specialized(
   (items, init, fn) -> items.foldl_List(init, fn),
   (items, init, fn) -> foldr_List(items, init, fn),
-  (items, monoid, fn) -> items.foldl_List(monoid.empty(), (acc, item) -> monoid.combine(acc, fn(item))),
+  (items, monoid, fn) -> combine_all_monoid(monoid, items.map_List(fn)),
   foldl_state_List,
   foldr_state_List,
   (items) -> items matches [],
