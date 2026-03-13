@@ -36,6 +36,7 @@ from Zafu/Abstract/Foldable import (
 export (
   Traverse,
   traverse_from_traverse,
+  traverse_from_traverse_map,
   traverse_specialized,
   traverse,
   sequence,
@@ -139,18 +140,25 @@ def const_applicative(monoid_c: Monoid[c]) -> Applicative[Const[c]]:
     (left, right, fn) -> const_map2(monoid_c, left, right, fn),
   )
 
-def traverse_specialized[f: * -> *](
+def traverse_from_traverse_map[f: * -> *](
   traverse_fn: forall g: * -> *, a, b. (Applicative[g], f[a], a -> g[b]) -> g[f[b]],
   map_fn: forall a, b. (f[a], a -> b) -> f[b],
   foldable_inst: Foldable[f],
 ) -> Traverse[f]:
   Traverse(traverse_fn, map_fn, foldable_inst)
 
+def traverse_specialized[f: * -> *](
+  traverse_fn: forall g: * -> *, a, b. (Applicative[g], f[a], a -> g[b]) -> g[f[b]],
+  map_fn: forall a, b. (f[a], a -> b) -> f[b],
+  foldable_inst: Foldable[f],
+) -> Traverse[f]:
+  traverse_from_traverse_map(traverse_fn, map_fn, foldable_inst)
+
 def traverse_from_traverse[f: * -> *](
   traverse_fn: forall g: * -> *, a, b. (Applicative[g], f[a], a -> g[b]) -> g[f[b]],
   foldable_inst: Foldable[f],
 ) -> Traverse[f]:
-  traverse_specialized(
+  traverse_from_traverse_map(
     traverse_fn,
     (fa, fn) -> map_from_traverse(traverse_fn, fa, fn),
     foldable_inst,
