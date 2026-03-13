@@ -29,6 +29,18 @@ from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
 )
+from Zafu/Abstract/Applicative import (
+  Applicative,
+  applicative_from_pure_map_map2,
+  pure as pure_Applicative,
+  map as map_Applicative,
+  map2 as map2_Applicative,
+)
+from Zafu/Abstract/Traverse import (
+  Traverse,
+  traverse as traverse_Traverse,
+  traverse_specialized,
+)
 from Zafu/Abstract/Eq import (
   Eq,
   eq_by,
@@ -95,6 +107,7 @@ export (
   concat,
   concat_all,
   foldable_Chain,
+  traverse_Chain,
 )
 
 # Internal tree used to support O(1) concat while preserving order.
@@ -502,6 +515,15 @@ def uncons_right(chain: Chain[a]) -> Option[(Chain[a], a)]:
 def map(chain: Chain[a], fn: a -> b) -> Chain[b]:
   foldr(chain, empty, (item, acc) -> concat(singleton(fn(item)), acc))
 
+# Traverse all elements left-to-right.
+def traverse_Chain_fn[g: * -> *, a, b](app: Applicative[g], chain: Chain[a], fn: a -> g[b]) -> g[Chain[b]]:
+  rev_mapped = foldl(
+    chain,
+    pure_Applicative(app, []),
+    (acc, item) -> map2_Applicative(app, acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+  )
+  map_Applicative(app, rev_mapped, rev_items -> from_List(rev_items.reverse()))
+
 # Keep only elements satisfying pred.
 def filter(chain: Chain[a], pred: a -> Bool) -> Chain[a]:
   foldr(chain, empty, (item, acc) -> concat(singleton(item), acc) if pred(item) else acc)
@@ -518,6 +540,12 @@ foldable_Chain: Foldable[Chain] = foldable_specialized(
   is_empty,
   size,
   to_List,
+)
+
+traverse_Chain: Traverse[Chain] = traverse_specialized(
+  traverse_Chain_fn,
+  map,
+  foldable_Chain,
 )
 
 def eq_Chain(eq_item: Eq[a]) -> Eq[Chain[a]]:
@@ -547,6 +575,29 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
     right
   else:
     False
+
+def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
+  match value:
+    case Some(item):
+      Some(fn(item))
+    case None:
+      None
+
+def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]:
+  match (left, right):
+    case (Some(left_value), Some(right_value)):
+      Some(fn(left_value, right_value))
+    case _:
+      None
+
+def option_applicative() -> Applicative[Option]:
+  applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+
+def keep_even_Option_Int(value: Int) -> Option[Int]:
+  if cmp_Int(mod_Int(value, 2), 0) matches EQ:
+    Some(value)
+  else:
+    None
 
 def get_or_List(list: List[a], idx: Int, fn: () -> a) -> a:
   match get_List(list, idx):
@@ -883,6 +934,23 @@ tests = TestSuite("Chain tests", [
     ),
   )) matches Some(6), "combine_all uses list combine_all_option"),
   Assertion(map(from_List([1, 2]), i -> i.add(10)).to_List() matches [11, 12], "map sanity"),
+  (
+    chain = from_List([1, 2, 3])
+    match traverse_Traverse(traverse_Chain, option_applicative(), chain, i -> Some(i.add(10))):
+      case Some(mapped):
+        Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Chain Some")
+      case None:
+        Assertion(False, "traverse_Chain Some")
+  ),
+  Assertion(
+    traverse_Traverse(
+      traverse_Chain,
+      option_applicative(),
+      from_List([1, 2, 3, 4]),
+      keep_even_Option_Int,
+    ) matches None,
+    "traverse_Chain short-circuits",
+  ),
   Assertion(filter(from_List([1, 2, 3, 4]), i -> mod_Int(i, 2).eq_Int(0)).to_List() matches [2, 4], "filter sanity"),
   Assertion(flat_map(from_List([1, 2]), i -> from_List([i, i.add(1)])).to_List() matches [1, 2, 2, 3], "flat_map sanity"),
   (

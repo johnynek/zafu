@@ -6,8 +6,6 @@ from Zafu/Abstract/Eq import (
   eq_from_fn,
 )
 
-from Zafu/Collection/List import split_at
-
 export (
   Semigroup,
   semigroup_from_combine,
@@ -58,8 +56,16 @@ def combine_all_option_from_combine(combine_fn: (a, a) -> a, items: List[a]) -> 
         Some(combine_fn(acc, item))
   ))
 
-def reverse_list(items: List[a]) -> List[a]:
-  items.foldl_List([], (acc, item) -> [item, *acc])
+def split_at_List(items: List[a], size: Int) -> (List[a], List[a]):
+  def go(items: List[a], size: Int, rev_front: List[a]) -> (List[a], List[a]):
+    recur items:
+      case _ if cmp_Int(size, 0) matches LT | EQ:
+        (rev_front.reverse(), items)
+      case []:
+        (rev_front.reverse(), [])
+      case [head, *tail]:
+        go(tail, size.sub(1), [head, *rev_front])
+  go(items, size, [])
 
 # Constructor for specialized implementations.
 def semigroup_specialized(
@@ -106,7 +112,7 @@ def combine_tree_option(combine: (a, a) -> a, items: List[a]) -> Option[a]:
                 half = cnt.div(2)
                 left_size = cnt.sub(half)
                 right_size = cnt.sub(left_size)
-                (left, right) = split_at(rest, half)
+                (left, right) = split_at_List(rest, half)
                 left_op = go(head, left, left_size)
                 match right:
                     case []: left_op
@@ -133,14 +139,14 @@ def maybe_combine_right(inst: Semigroup[a], left: a, right_opt: Option[a]) -> a:
     case Some(right):
       combine(inst, left, right)
 
-def reverse(inst: Semigroup[a]) -> Semigroup[a]:
+def reverse_Semigroup(inst: Semigroup[a]) -> Semigroup[a]:
   Semigroup { combine_fn, combine_n_positive_fn, combine_all_option_fn, ... } = inst
   # Keep specialized combine_n for repeated-value behavior; reverse list input
   # so combine_all_option matches the flipped argument order.
   semigroup_specialized(
     (left, right) -> combine_fn(right, left),
     combine_n_positive_fn,
-    (items) -> combine_all_option_fn(reverse_list(items)),
+    (items) -> combine_all_option_fn(items.reverse()),
   )
 
 def intercalate(inst: Semigroup[a], middle: a) -> Semigroup[a]:
@@ -160,9 +166,12 @@ def intercalate(inst: Semigroup[a], middle: a) -> Semigroup[a]:
           None
         case [head, *tail]:
           interleaved_rev = tail.foldl_List([head], (acc, item) -> [item, middle, *acc])
-          combine_all_option_fn(reverse_list(interleaved_rev))
+          combine_all_option_fn(interleaved_rev.reverse())
     ),
   )
+
+def reverse(inst: Semigroup[a]) -> Semigroup[a]:
+  reverse_Semigroup(inst)
 
 first: Semigroup[a] = semigroup_specialized(
   (left, _) -> left,

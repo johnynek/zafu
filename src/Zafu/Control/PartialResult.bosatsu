@@ -27,6 +27,21 @@ from Zafu/Abstract/Semigroup import (
   combine as combine_Semigroup,
   semigroup_from_combine,
 )
+from Zafu/Abstract/Applicative import (
+  Applicative,
+  applicative_from_pure_map_map2,
+  pure as pure_Applicative,
+  map as map_Applicative,
+)
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_from_folds,
+)
+from Zafu/Abstract/Traverse import (
+  Traverse,
+  traverse as traverse_Traverse,
+  traverse_specialized,
+)
 
 from Zafu/Control/Result import (
   Result,
@@ -60,6 +75,7 @@ export (
   combine_map2,
   combine_product_l,
   combine_product_r,
+  traverse_PartialResult,
   eq,
   ord,
   hash,
@@ -264,6 +280,46 @@ def combine_product_r(
 ) -> PartialResult[e, b]:
   combine_map2(semi, left, right, (_, right_value) -> right_value)
 
+foldable_PartialResult: forall e. Foldable[PartialResult[e]] = foldable_from_folds(
+  (value, init, fn) -> (
+    match value:
+      case TotalErr(_):
+        init
+      case PartialErr(_, partial_value):
+        fn(init, partial_value)
+      case TotalOk(ok_value):
+        fn(init, ok_value)
+  ),
+  (value, init, fn) -> (
+    match value:
+      case TotalErr(_):
+        init
+      case PartialErr(_, partial_value):
+        fn(partial_value, init)
+      case TotalOk(ok_value):
+        fn(ok_value, init)
+  ),
+)
+
+def traverse_PartialResult_fn[g: * -> *, e, a, b](
+  app: Applicative[g],
+  value: PartialResult[e, a],
+  fn: a -> g[b],
+) -> g[PartialResult[e, b]]:
+  match value:
+    case TotalErr(err_value):
+      pure_Applicative(app, TotalErr(err_value))
+    case PartialErr(err_value, partial_value):
+      map_Applicative(app, fn(partial_value), mapped -> PartialErr(err_value, mapped))
+    case TotalOk(ok_value):
+      map_Applicative(app, fn(ok_value), TotalOk)
+
+traverse_PartialResult: forall e. Traverse[PartialResult[e]] = traverse_specialized(
+  traverse_PartialResult_fn,
+  map,
+  foldable_PartialResult,
+)
+
 def eq(eq_err: Eq[e], eq_ok: Eq[a]) -> Eq[PartialResult[e, a]]:
   eq_from_fn((left, right) -> (
     match (left, right):
@@ -328,6 +384,23 @@ def hash(hash_err: Hash[e], hash_ok: Hash[a]) -> Hash[PartialResult[e, a]]:
         finish_61(mix_61(hash_seed_total_ok, hash_Hash(hash_ok, ok_value)), 1, hash_tag_total_ok)
   ), eq(eq_err, eq_ok))
 
+def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
+  match value:
+    case Some(item):
+      Some(fn(item))
+    case None:
+      None
+
+def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]:
+  match (left, right):
+    case (Some(left_value), Some(right_value)):
+      Some(fn(left_value, right_value))
+    case _:
+      None
+
+def option_applicative() -> Applicative[Option]:
+  applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+
 int_add_semigroup: Semigroup[Int] = semigroup_from_combine((left, right) -> left.add(right))
 list_semigroup: Semigroup[List[Int]] = semigroup_from_combine((left, right) -> left.concat(right))
 
@@ -390,6 +463,22 @@ tests = TestSuite("PartialResult tests", [
   Assertion(map(TotalErr(1), x -> x.add(1)) matches TotalErr(1), "map TotalErr"),
   Assertion(map(PartialErr(1, 2), x -> x.add(1)) matches PartialErr(1, 3), "map PartialErr"),
   Assertion(map(TotalOk(2), x -> x.add(1)) matches TotalOk(3), "map TotalOk"),
+  Assertion(
+    traverse_Traverse(traverse_PartialResult, option_applicative(), TotalErr(1), value -> Some(value.add(1))) matches Some(TotalErr(1)),
+    "traverse_PartialResult TotalErr",
+  ),
+  Assertion(
+    traverse_Traverse(traverse_PartialResult, option_applicative(), PartialErr(1, 2), value -> Some(value.add(1))) matches Some(PartialErr(1, 3)),
+    "traverse_PartialResult PartialErr",
+  ),
+  Assertion(
+    traverse_Traverse(traverse_PartialResult, option_applicative(), TotalOk(2), value -> Some(value.add(1))) matches Some(TotalOk(3)),
+    "traverse_PartialResult TotalOk",
+  ),
+  Assertion(
+    traverse_Traverse(traverse_PartialResult, option_applicative(), TotalOk(2), _ -> None) matches None,
+    "traverse_PartialResult propagates effect failure",
+  ),
   Assertion(map_err(TotalErr(1), x -> x.add(1)) matches TotalErr(2), "map_err TotalErr"),
   Assertion(map_err(PartialErr(1, 2), x -> x.add(1)) matches PartialErr(2, 2), "map_err PartialErr"),
   Assertion(map_err(TotalOk(2), x -> x.add(1)) matches TotalOk(2), "map_err TotalOk"),
