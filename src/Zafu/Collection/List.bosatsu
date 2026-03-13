@@ -146,12 +146,12 @@ def foldr(items: List[a], init: b, fn: (a, b) -> b) -> b:
 def map(items: List[a], fn: a -> b) -> List[b]:
   items.map_List(fn)
 
-def traverse_List_fn[g: * -> *, a, b](app: Applicative[g], items: List[a], fn: a -> g[b]) -> g[List[b]]:
+def traverse_List_fn[g: * -> *, a, b](items: List[a], app: Applicative[g], fn: a -> g[b]) -> g[List[b]]:
   rev_mapped = items.foldl_List(
     pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(app, acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    (acc, item) -> map2_Applicative(acc, app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map_Applicative(app, rev_mapped, rev_items -> rev_items.reverse())
+  map_Applicative(rev_mapped, app, rev_items -> rev_items.reverse())
 
 def flat_map(items: List[a], fn: a -> List[b]) -> List[b]:
   items.flat_map_List(fn)
@@ -374,14 +374,14 @@ tests = TestSuite("Zafu/Collection/List tests", [
   Assertion(foldr([1, 2, 3], 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr right-associative"),
   Assertion(map([1, 2, 3], i -> i.add(10)) matches [11, 12, 13], "map"),
   Assertion(
-    traverse_Traverse(traverse_List, option_applicative(), [1, 2, 3], i -> Some(i.add(10))) matches Some([11, 12, 13]),
+    traverse_Traverse([1, 2, 3], traverse_List, option_applicative(), i -> Some(i.add(10))) matches Some([11, 12, 13]),
     "traverse_List Some",
   ),
   Assertion(
     traverse_Traverse(
+      [1, 2, 3, 4],
       traverse_List,
       option_applicative(),
-      [1, 2, 3, 4],
       keep_even_Option_Int,
     ) matches None,
     "traverse_List short-circuits",
@@ -393,7 +393,7 @@ tests = TestSuite("Zafu/Collection/List tests", [
     deep_count = 100000
     deep = mk_range(deep_count)
     expected_sum = deep_count.mul(deep_count.add(1)).div(2).add(deep_count)
-    match traverse_Traverse(traverse_List, option_applicative(), deep, i -> Some(i.add(1))):
+    match traverse_Traverse(deep, traverse_List, option_applicative(), i -> Some(i.add(1))):
       case Some(mapped):
         Assertion(
           and_Bool(mapped.foldl_List(0, add).eq_Int(expected_sum), size(mapped).eq_Int(deep_count)),

@@ -27,6 +27,7 @@ from Zafu/Collection/LazyList import (
   cons,
   empty_LazyList,
   foldl as foldl_LazyList,
+  to_List as lazyList_to_List
 )
 
 export (
@@ -78,6 +79,7 @@ export (
   render_stream,
   render_stream_trim,
   render_wide_stream,
+  render_String,
   split,
   paragraph,
   fill,
@@ -923,6 +925,9 @@ def trim_stream(chunks: LazyList[String]) -> LazyList[String]:
 # Output: lazy chunk stream whose concatenation is the rendered text.
 def render_stream(doc: Doc, width: Int) -> LazyList[String]:
   render_stream_core(width, doc, False)
+
+def render_String(doc: Doc, width: Int) -> String:
+  concat_String(lazyList_to_List(render_stream(doc, width)))
 
 # Renders `doc` at `width`.
 # Input: document and target width.

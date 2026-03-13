@@ -188,15 +188,15 @@ foldable_Result: forall e. Foldable[Result[e]] = foldable_from_folds(
 )
 
 def traverse_Result_fn[g: * -> *, e, a, b](
-  app: Applicative[g],
   value: Result[e, a],
+  app: Applicative[g],
   fn: a -> g[b],
 ) -> g[Result[e, b]]:
   match value:
     case Err(err_value):
       pure_Applicative(app, Err(err_value))
     case Ok(ok_value):
-      map_Applicative(app, fn(ok_value), Ok)
+      map_Applicative(fn(ok_value), app, Ok)
 
 traverse_Result: forall e. Traverse[Result[e]] = traverse_specialized(
   traverse_Result_fn,
@@ -292,19 +292,19 @@ tests = TestSuite("Result tests", [
   Assertion(map(Ok(1), x -> x.add(1)) matches Ok(2), "map Ok"),
   Assertion(map(Err(1), x -> x.add(1)) matches Err(1), "map Err"),
   Assertion(
-    traverse_Traverse(traverse_Result, option_applicative(), Ok(1), value -> Some(value.add(1))) matches Some(Ok(2)),
+    traverse_Traverse(Ok(1), traverse_Result, option_applicative(), value -> Some(value.add(1))) matches Some(Ok(2)),
     "traverse_Result Ok",
   ),
   Assertion(
-    traverse_Traverse(traverse_Result, option_applicative(), Err(1), value -> Some(value.add(1))) matches Some(Err(1)),
+    traverse_Traverse(Err(1), traverse_Result, option_applicative(), value -> Some(value.add(1))) matches Some(Err(1)),
     "traverse_Result Err keeps error",
   ),
   Assertion(
-    traverse_Traverse(traverse_Result, option_applicative(), Ok(1), _ -> None) matches None,
+    traverse_Traverse(Ok(1), traverse_Result, option_applicative(), _ -> None) matches None,
     "traverse_Result propagates effect failure",
   ),
-  Assertion(map2_Applicative(applicative, Ok(1), Ok(2), add) matches Ok(3), "applicative map2 Ok"),
-  Assertion(map2_Applicative(applicative, Ok(1), Err(2), add) matches Err(2), "applicative map2 Err"),
+  Assertion(map2_Applicative(Ok(1), applicative, Ok(2), add) matches Ok(3), "applicative map2 Ok"),
+  Assertion(map2_Applicative(Ok(1), applicative, Err(2), add) matches Err(2), "applicative map2 Err"),
   Assertion(map_err(Err(1), x -> x.add(1)) matches Err(2), "map_err Err"),
   Assertion(map_err(Ok(1), x -> x.add(1)) matches Ok(1), "map_err Ok"),
   Assertion(and_then(Ok(2), x -> Ok(x.mul(2))) matches Ok(4), "and_then Ok"),

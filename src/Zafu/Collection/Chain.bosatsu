@@ -516,13 +516,13 @@ def map(chain: Chain[a], fn: a -> b) -> Chain[b]:
   foldr(chain, empty, (item, acc) -> concat(singleton(fn(item)), acc))
 
 # Traverse all elements left-to-right.
-def traverse_Chain_fn[g: * -> *, a, b](app: Applicative[g], chain: Chain[a], fn: a -> g[b]) -> g[Chain[b]]:
+def traverse_Chain_fn[g: * -> *, a, b](chain: Chain[a], app: Applicative[g], fn: a -> g[b]) -> g[Chain[b]]:
   rev_mapped = foldl(
     chain,
     pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(app, acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    (acc, item) -> map2_Applicative(acc, app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map_Applicative(app, rev_mapped, rev_items -> from_List(rev_items.reverse()))
+  map_Applicative(rev_mapped, app, rev_items -> from_List(rev_items.reverse()))
 
 # Keep only elements satisfying pred.
 def filter(chain: Chain[a], pred: a -> Bool) -> Chain[a]:
@@ -936,7 +936,7 @@ tests = TestSuite("Chain tests", [
   Assertion(map(from_List([1, 2]), i -> i.add(10)).to_List() matches [11, 12], "map sanity"),
   (
     chain = from_List([1, 2, 3])
-    match traverse_Traverse(traverse_Chain, option_applicative(), chain, i -> Some(i.add(10))):
+    match traverse_Traverse(chain, traverse_Chain, option_applicative(), i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Chain Some")
       case None:
@@ -944,9 +944,9 @@ tests = TestSuite("Chain tests", [
   ),
   Assertion(
     traverse_Traverse(
+      from_List([1, 2, 3, 4]),
       traverse_Chain,
       option_applicative(),
-      from_List([1, 2, 3, 4]),
       keep_even_Option_Int,
     ) matches None,
     "traverse_Chain short-circuits",

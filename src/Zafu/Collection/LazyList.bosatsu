@@ -191,13 +191,13 @@ def foldl_iter(ll: LazyList[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterS
 
 foldable_LazyList: Foldable[LazyList] = foldable_from_foldl_iter(foldl_iter)
 
-def traverse_LazyList_fn[g: * -> *, a, b](app: Applicative[g], ll: LazyList[a], fn: a -> g[b]) -> g[LazyList[b]]:
+def traverse_LazyList_fn[g: * -> *, a, b](ll: LazyList[a], app: Applicative[g], fn: a -> g[b]) -> g[LazyList[b]]:
   rev_mapped = foldl(
     ll,
     pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(app, acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    (acc, item) -> map2_Applicative(acc, app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map_Applicative(app, rev_mapped, rev_items -> from_List(rev_items.reverse()))
+  map_Applicative(rev_mapped, app, rev_items -> from_List(rev_items.reverse()))
 
 traverse_LazyList: Traverse[LazyList] = traverse_specialized(
   traverse_LazyList_fn,
@@ -482,7 +482,7 @@ tests = TestSuite("LazyList tests", [
   ),
   (
     ll = from_List([1, 2, 3])
-    match traverse_Traverse(traverse_LazyList, option_applicative(), ll, i -> Some(i.add(10))):
+    match traverse_Traverse(ll, traverse_LazyList, option_applicative(), i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_LazyList Some")
       case None:
@@ -490,9 +490,9 @@ tests = TestSuite("LazyList tests", [
   ),
   Assertion(
     traverse_Traverse(
+      from_List([1, 2, 3, 4]),
       traverse_LazyList,
       option_applicative(),
-      from_List([1, 2, 3, 4]),
       keep_even_Option_Int,
     ) matches None,
     "traverse_LazyList short-circuits",

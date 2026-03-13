@@ -140,7 +140,7 @@ def map_err(result: PartialResult[e, a], fn: e -> f) -> PartialResult[f, a]:
     case TotalOk(ok_value):
       TotalOk(ok_value)
 
-def and_then(semi: Semigroup[e], result: PartialResult[e, a], fn: a -> PartialResult[e, b]) -> PartialResult[e, b]:
+def and_then(result: PartialResult[e, a], semi: Semigroup[e], fn: a -> PartialResult[e, b]) -> PartialResult[e, b]:
   match result:
     case TotalErr(err_value):
       TotalErr(err_value)
@@ -157,8 +157,8 @@ def and_then(semi: Semigroup[e], result: PartialResult[e, a], fn: a -> PartialRe
         case TotalOk(next_ok):
           PartialErr(err_value, next_ok)
 
-def flat_map(semi: Semigroup[e], result: PartialResult[e, a], fn: a -> PartialResult[e, b]) -> PartialResult[e, b]:
-  and_then(semi, result, fn)
+def flat_map(result: PartialResult[e, a], semi: Semigroup[e], fn: a -> PartialResult[e, b]) -> PartialResult[e, b]:
+  and_then(result, semi, fn)
 
 def or_else(result: PartialResult[e, a], fn: e -> PartialResult[e, a]) -> PartialResult[e, a]:
   match result:
@@ -302,17 +302,17 @@ foldable_PartialResult: forall e. Foldable[PartialResult[e]] = foldable_from_fol
 )
 
 def traverse_PartialResult_fn[g: * -> *, e, a, b](
-  app: Applicative[g],
   value: PartialResult[e, a],
+  app: Applicative[g],
   fn: a -> g[b],
 ) -> g[PartialResult[e, b]]:
   match value:
     case TotalErr(err_value):
       pure_Applicative(app, TotalErr(err_value))
     case PartialErr(err_value, partial_value):
-      map_Applicative(app, fn(partial_value), mapped -> PartialErr(err_value, mapped))
+      map_Applicative(fn(partial_value), app, mapped -> PartialErr(err_value, mapped))
     case TotalOk(ok_value):
-      map_Applicative(app, fn(ok_value), TotalOk)
+      map_Applicative(fn(ok_value), app, TotalOk)
 
 traverse_PartialResult: forall e. Traverse[PartialResult[e]] = traverse_specialized(
   traverse_PartialResult_fn,
@@ -464,46 +464,46 @@ tests = TestSuite("PartialResult tests", [
   Assertion(map(PartialErr(1, 2), x -> x.add(1)) matches PartialErr(1, 3), "map PartialErr"),
   Assertion(map(TotalOk(2), x -> x.add(1)) matches TotalOk(3), "map TotalOk"),
   Assertion(
-    traverse_Traverse(traverse_PartialResult, option_applicative(), TotalErr(1), value -> Some(value.add(1))) matches Some(TotalErr(1)),
+    traverse_Traverse(TotalErr(1), traverse_PartialResult, option_applicative(), value -> Some(value.add(1))) matches Some(TotalErr(1)),
     "traverse_PartialResult TotalErr",
   ),
   Assertion(
-    traverse_Traverse(traverse_PartialResult, option_applicative(), PartialErr(1, 2), value -> Some(value.add(1))) matches Some(PartialErr(1, 3)),
+    traverse_Traverse(PartialErr(1, 2), traverse_PartialResult, option_applicative(), value -> Some(value.add(1))) matches Some(PartialErr(1, 3)),
     "traverse_PartialResult PartialErr",
   ),
   Assertion(
-    traverse_Traverse(traverse_PartialResult, option_applicative(), TotalOk(2), value -> Some(value.add(1))) matches Some(TotalOk(3)),
+    traverse_Traverse(TotalOk(2), traverse_PartialResult, option_applicative(), value -> Some(value.add(1))) matches Some(TotalOk(3)),
     "traverse_PartialResult TotalOk",
   ),
   Assertion(
-    traverse_Traverse(traverse_PartialResult, option_applicative(), TotalOk(2), _ -> None) matches None,
+    traverse_Traverse(TotalOk(2), traverse_PartialResult, option_applicative(), _ -> None) matches None,
     "traverse_PartialResult propagates effect failure",
   ),
   Assertion(map_err(TotalErr(1), x -> x.add(1)) matches TotalErr(2), "map_err TotalErr"),
   Assertion(map_err(PartialErr(1, 2), x -> x.add(1)) matches PartialErr(2, 2), "map_err PartialErr"),
   Assertion(map_err(TotalOk(2), x -> x.add(1)) matches TotalOk(2), "map_err TotalOk"),
   Assertion(
-    and_then(int_add_semigroup, TotalErr(2), x -> TotalOk(x.add(1))) matches TotalErr(2),
+    and_then(TotalErr(2), int_add_semigroup, x -> TotalOk(x.add(1))) matches TotalErr(2),
     "and_then TotalErr short-circuits",
   ),
   Assertion(
-    and_then(int_add_semigroup, TotalOk(2), x -> TotalOk(x.add(1))) matches TotalOk(3),
+    and_then(TotalOk(2), int_add_semigroup, x -> TotalOk(x.add(1))) matches TotalOk(3),
     "and_then TotalOk",
   ),
   Assertion(
-    and_then(int_add_semigroup, PartialErr(10, 2), x -> TotalOk(x.add(1))) matches PartialErr(10, 3),
+    and_then(PartialErr(10, 2), int_add_semigroup, x -> TotalOk(x.add(1))) matches PartialErr(10, 3),
     "and_then PartialErr then TotalOk",
   ),
   Assertion(
-    and_then(int_add_semigroup, PartialErr(10, 2), x -> PartialErr(20, x.add(1))) matches PartialErr(30, 3),
+    and_then(PartialErr(10, 2), int_add_semigroup, x -> PartialErr(20, x.add(1))) matches PartialErr(30, 3),
     "and_then PartialErr then PartialErr",
   ),
   Assertion(
-    and_then(int_add_semigroup, PartialErr(10, 2), x -> TotalErr(x.add(100))) matches TotalErr(112),
+    and_then(PartialErr(10, 2), int_add_semigroup, x -> TotalErr(x.add(100))) matches TotalErr(112),
     "and_then PartialErr then TotalErr",
   ),
   Assertion(
-    flat_map(int_add_semigroup, PartialErr(1, 2), x -> TotalOk(x.add(3))) matches PartialErr(1, 5),
+    flat_map(PartialErr(1, 2), int_add_semigroup, x -> TotalOk(x.add(3))) matches PartialErr(1, 5),
     "flat_map alias",
   ),
   Assertion(
@@ -604,8 +604,8 @@ tests = TestSuite("PartialResult tests", [
     m = PartialErr([10], 2)
     f = (x) -> PartialErr([x], x.add(1))
     g = (x) -> TotalErr([x.mul(10)])
-    left_assoc = and_then(list_semigroup, and_then(list_semigroup, m, f), g)
-    right_assoc = and_then(list_semigroup, m, x -> and_then(list_semigroup, f(x), g))
+    left_assoc = and_then(and_then(m, list_semigroup, f), list_semigroup, g)
+    right_assoc = and_then(m, list_semigroup, x -> and_then(f(x), list_semigroup, g))
     Assertion(
       if left_assoc matches TotalErr([10, 2, 30]):
         right_assoc matches TotalErr([10, 2, 30])
@@ -615,11 +615,11 @@ tests = TestSuite("PartialResult tests", [
     )
   ),
   Assertion(
-    and_then(list_semigroup, TotalOk(5), x -> PartialErr([x], x.add(1))) matches PartialErr([5], 6),
+    and_then(TotalOk(5), list_semigroup, x -> PartialErr([x], x.add(1))) matches PartialErr([5], 6),
     "and_then left identity",
   ),
   Assertion(
-    and_then(list_semigroup, PartialErr([1, 2], 7), x -> TotalOk(x)) matches PartialErr([1, 2], 7),
+    and_then(PartialErr([1, 2], 7), list_semigroup, x -> TotalOk(x)) matches PartialErr([1, 2], 7),
     "and_then right identity",
   ),
   Assertion(
