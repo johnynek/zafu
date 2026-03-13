@@ -6,8 +6,6 @@ from Zafu/Abstract/Eq import (
   eq_from_fn,
 )
 
-from Zafu/Collection/List import split_at
-
 export (
   Semigroup,
   semigroup_from_combine,
@@ -61,6 +59,17 @@ def combine_all_option_from_combine(combine_fn: (a, a) -> a, items: List[a]) -> 
 def reverse_list(items: List[a]) -> List[a]:
   items.foldl_List([], (acc, item) -> [item, *acc])
 
+def split_at_List(items: List[a], size: Int) -> (List[a], List[a]):
+  def go(items: List[a], size: Int, rev_front: List[a]) -> (List[a], List[a]):
+    recur items:
+      case _ if cmp_Int(size, 0) matches LT | EQ:
+        (reverse_list(rev_front), items)
+      case []:
+        (reverse_list(rev_front), [])
+      case [head, *tail]:
+        go(tail, size.sub(1), [head, *rev_front])
+  go(items, size, [])
+
 # Constructor for specialized implementations.
 def semigroup_specialized(
   combine_fn: (a, a) -> a,
@@ -106,7 +115,7 @@ def combine_tree_option(combine: (a, a) -> a, items: List[a]) -> Option[a]:
                 half = cnt.div(2)
                 left_size = cnt.sub(half)
                 right_size = cnt.sub(left_size)
-                (left, right) = split_at(rest, half)
+                (left, right) = split_at_List(rest, half)
                 left_op = go(head, left, left_size)
                 match right:
                     case []: left_op

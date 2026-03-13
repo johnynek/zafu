@@ -39,6 +39,22 @@ from Zafu/Abstract/Ord import (
   ord_from_cmp,
   cmp as cmp_Ord,
 )
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_from_folds,
+)
+from Zafu/Abstract/Applicative import (
+  Applicative,
+  applicative_from_pure_map_map2,
+  pure as pure_Applicative,
+  map as map_Applicative,
+  map2 as map2_Applicative,
+)
+from Zafu/Abstract/Traverse import (
+  Traverse,
+  traverse as traverse_Traverse,
+  traverse_specialized,
+)
 
 export (
   any,
@@ -65,6 +81,7 @@ export (
   take,
   drop,
   split_at,
+  traverse_List,
   eq_List,
   ord_List,
 )
@@ -129,6 +146,13 @@ def foldr(items: List[a], init: b, fn: (a, b) -> b) -> b:
 def map(items: List[a], fn: a -> b) -> List[b]:
   items.map_List(fn)
 
+def traverse_List_fn[g: * -> *, a, b](items: List[a], fn: a -> g[b], app: Applicative[g]) -> g[List[b]]:
+  rev_mapped = items.foldl_List(
+    pure_Applicative(app, []),
+    (acc, item) -> map2_Applicative(app, acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+  )
+  map_Applicative(app, rev_mapped, rev_items -> rev_items.reverse())
+
 def flat_map(items: List[a], fn: a -> List[b]) -> List[b]:
   items.flat_map_List(fn)
 
@@ -169,6 +193,17 @@ def split_at(items: List[a], size: Int) -> (List[a], List[a]):
 
 def concat_all(items: List[List[a]]) -> List[a]:
   foldr(items, [], (next, acc) -> [*next, *acc])
+
+list_foldable: Foldable[List] = foldable_from_folds(
+  foldl,
+  foldr,
+)
+
+traverse_List: Traverse[List] = traverse_specialized(
+  traverse_List_fn,
+  map,
+  list_foldable,
+)
 
 def eq_list(eq_item: Eq[a], left: List[a], right: List[a]) -> Bool:
   def go(left: List[a], right: List[a]) -> Bool:
@@ -214,6 +249,40 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
     right
   else:
     False
+
+def option_applicative() -> Applicative[Option]:
+  applicative_from_pure_map_map2(
+    Some,
+    (value, fn) -> (
+      match value:
+        case Some(item):
+          Some(fn(item))
+        case None:
+          None
+    ),
+    (left, right, fn) -> (
+      match (left, right):
+        case (Some(left_item), Some(right_item)):
+          Some(fn(left_item, right_item))
+        case _:
+          None
+    ),
+  )
+
+def keep_even_Option_Int(value: Int) -> Option[Int]:
+  if cmp_Int(mod_Int(value, 2), 0) matches EQ:
+    Some(value)
+  else:
+    None
+
+def mk_range(n: Int) -> List[Int]:
+  def go(rem: Int, acc: List[Int]) -> List[Int]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        go(rem.sub(1), [rem, *acc])
+  go(n, [])
 
 rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
 
@@ -304,8 +373,34 @@ tests = TestSuite("Zafu/Collection/List tests", [
   Assertion(foldl([1, 2, 3], 0, add).eq_Int(6), "foldl sum"),
   Assertion(foldr([1, 2, 3], 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr right-associative"),
   Assertion(map([1, 2, 3], i -> i.add(10)) matches [11, 12, 13], "map"),
+  Assertion(
+    traverse_Traverse(traverse_List, [1, 2, 3], i -> Some(i.add(10)), option_applicative()) matches Some([11, 12, 13]),
+    "traverse_List Some",
+  ),
+  Assertion(
+    traverse_Traverse(
+      traverse_List,
+      [1, 2, 3, 4],
+      keep_even_Option_Int,
+      option_applicative(),
+    ) matches None,
+    "traverse_List short-circuits",
+  ),
   Assertion(flat_map([1, 2], i -> [i, i.add(1)]) matches [1, 2, 2, 3], "flat_map"),
   Assertion(filter([1, 2, 3, 4, 5], i -> mod_Int(i, 2).eq_Int(0)) matches [2, 4], "filter preserves order"),
   Assertion(concat_all([[1, 2], [], [3], [4, 5]]) matches [1, 2, 3, 4, 5], "concat_all"),
+  (
+    deep_count = 100000
+    deep = mk_range(deep_count)
+    expected_sum = deep_count.mul(deep_count.add(1)).div(2).add(deep_count)
+    match traverse_Traverse(traverse_List, deep, i -> Some(i.add(1)), option_applicative()):
+      case Some(mapped):
+        Assertion(
+          and_Bool(mapped.foldl_List(0, add).eq_Int(expected_sum), size(mapped).eq_Int(deep_count)),
+          "traverse_List deep stack-safe",
+        )
+      case None:
+        Assertion(False, "traverse_List deep stack-safe")
+  ),
   run_Prop(list_props, 200, 20260311),
 ])

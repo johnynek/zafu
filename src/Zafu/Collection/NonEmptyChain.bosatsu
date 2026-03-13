@@ -46,6 +46,18 @@ from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
 )
+from Zafu/Abstract/Applicative import (
+  Applicative,
+  applicative_from_pure_map_map2,
+  pure as pure_Applicative,
+  map as map_Applicative,
+  map2 as map2_Applicative,
+)
+from Zafu/Abstract/Traverse import (
+  Traverse,
+  traverse as traverse_Traverse,
+  traverse_specialized,
+)
 from Zafu/Abstract/Ord import (
   Ord,
   ord_by,
@@ -120,6 +132,7 @@ export (
   ord_NonEmptyChain,
   hash_NonEmptyChain,
   foldable_NonEmptyChain,
+  traverse_NonEmptyChain,
 )
 
 enum NonEmptyChain[a: +*]:
@@ -330,6 +343,29 @@ def map(items: NonEmptyChain[a], fn: a -> b) -> NonEmptyChain[b]:
     case Append(init0, last0):
       Append(map_Chain(init0, fn), fn(last0))
 
+def traverse_NonEmptyChain_fn[g: * -> *, a, b](
+  items: NonEmptyChain[a],
+  fn: a -> g[b],
+  app: Applicative[g],
+) -> g[NonEmptyChain[b]]:
+  (head0, tail0) = uncons(items)
+  rev_tail = to_List_Chain(tail0).foldl_List(
+    pure_Applicative(app, []),
+    (acc, item) -> map2_Applicative(app, acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+  )
+  map2_Applicative(
+    app,
+    fn(head0),
+    map_Applicative(app, rev_tail, rev_items -> rev_items.reverse()),
+    (mapped_head, mapped_tail) -> Prepend(mapped_head, from_List_Chain(mapped_tail)),
+  )
+
+traverse_NonEmptyChain: Traverse[NonEmptyChain] = traverse_specialized(
+  traverse_NonEmptyChain_fn,
+  map,
+  foldable_NonEmptyChain,
+)
+
 def flat_map(items: NonEmptyChain[a], fn: a -> NonEmptyChain[b]) -> NonEmptyChain[b]:
   flattened = foldr_Chain(to_Chain(items), empty_Chain, (item, acc) -> concat_Chain(to_Chain(fn(item)), acc))
   from_non_empty_Chain_or(flattened, () -> fn(head(items)))
@@ -405,6 +441,29 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
     right
   else:
     False
+
+def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
+  match value:
+    case Some(item):
+      Some(fn(item))
+    case None:
+      None
+
+def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]:
+  match (left, right):
+    case (Some(left_value), Some(right_value)):
+      Some(fn(left_value, right_value))
+    case _:
+      None
+
+def option_applicative() -> Applicative[Option]:
+  applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+
+def keep_even_Option_Int(value: Int) -> Option[Int]:
+  if cmp_Int(mod_Int(value, 2), 0) matches EQ:
+    Some(value)
+  else:
+    None
 
 constructor_and_conversion_tests = TestSuite("constructors and conversions", [
   Assertion(
@@ -515,6 +574,23 @@ query_and_fold_tests = TestSuite("queries and folds", [
 
 transform_and_composition_tests = TestSuite("transforms and composition", [
   Assertion(to_List(map(from_prepend(1, from_List_Chain([2, 3])), i -> i.add(10))) matches [11, 12, 13], "map"),
+  (
+    items = from_prepend(1, from_List_Chain([2, 3]))
+    match traverse_Traverse(traverse_NonEmptyChain, items, i -> Some(i.add(10)), option_applicative()):
+      case Some(mapped):
+        Assertion(to_List(mapped) matches [11, 12, 13], "traverse_NonEmptyChain Some")
+      case None:
+        Assertion(False, "traverse_NonEmptyChain Some")
+  ),
+  Assertion(
+    traverse_Traverse(
+      traverse_NonEmptyChain,
+      from_prepend(1, from_List_Chain([2, 3, 4])),
+      keep_even_Option_Int,
+      option_applicative(),
+    ) matches None,
+    "traverse_NonEmptyChain short-circuits",
+  ),
   Assertion(to_List(map(singleton(4), i -> i.add(1))) matches [5], "map preserves non-empty"),
   Assertion(
     to_List(flat_map(from_prepend(1, from_List_Chain([2])), i -> from_prepend(i, from_List_Chain([i.add(1)])))) matches [1, 2, 2, 3],

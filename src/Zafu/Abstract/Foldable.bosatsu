@@ -21,6 +21,13 @@ from Zafu/Abstract/Monoid import (
   empty as empty_Monoid,
   combine as combine_Monoid,
 )
+from Zafu/Abstract/Applicative import (
+  Applicative,
+  applicative_from_pure_map_map2,
+  pure as pure_Applicative,
+  product_left as product_left_Applicative,
+  void as void_Applicative,
+)
 from Zafu/Control/IterState import (
   IterState,
   Done,
@@ -47,6 +54,8 @@ export (
   non_empty,
   size,
   to_List,
+  traverse_void,
+  sequence_void,
   fold,
   combine_all,
   combine_all_option,
@@ -254,6 +263,22 @@ def size[f: * -> *](inst: Foldable[f], fa: f[a]) -> Int:
 def to_List[f: * -> *](inst: Foldable[f], fa: f[a]) -> List[a]:
   Foldable { to_List_fn, ... } = inst
   to_List_fn(fa)
+
+def traverse_void[f: * -> *, g: * -> *, a, b](
+  inst: Foldable[f],
+  fa: f[a],
+  fn: a -> g[b],
+  app: Applicative[g],
+) -> g[Unit]:
+  foldl(
+    inst,
+    fa,
+    pure_Applicative(app, ()),
+    (acc, item) -> product_left_Applicative(app, acc, void_Applicative(app, fn(item))),
+  )
+
+def sequence_void[f: * -> *, g: * -> *, a](inst: Foldable[f], fga: f[g[a]], app: Applicative[g]) -> g[Unit]:
+  traverse_void(inst, fga, ga -> ga, app)
 
 def combine_all[f: * -> *](inst: Foldable[f], fa: f[a], monoid: Monoid[a]) -> a:
   foldl(inst, fa, empty_Monoid(monoid), (acc, item) -> combine_Monoid(monoid, acc, item))
@@ -533,6 +558,42 @@ def reduce_right_option_List(items: List[a], combine: (a, a) -> a) -> Option[a]:
     case [last, *init_rev]:
       Some(init_rev.foldl_List(last, (acc, item) -> combine(item, acc)))
 
+def option_applicative() -> Applicative[Option]:
+  applicative_from_pure_map_map2(
+    Some,
+    (value, fn) -> (
+      match value:
+        case Some(item):
+          Some(fn(item))
+        case None:
+          None
+    ),
+    (left, right, fn) -> (
+      match (left, right):
+        case (Some(left_item), Some(right_item)):
+          Some(fn(left_item, right_item))
+        case _:
+          None
+    ),
+  )
+
+struct Writer[a](log: List[Int], value: a)
+
+def map_Writer(writer: Writer[a], fn: a -> b) -> Writer[b]:
+  Writer(log, value) = writer
+  Writer(log, fn(value))
+
+def map2_Writer(left: Writer[a], right: Writer[b], fn: (a, b) -> c) -> Writer[c]:
+  match (left, right):
+    case (Writer(left_log, left_value), Writer(right_log, right_value)):
+      Writer([*left_log, *right_log], fn(left_value, right_value))
+
+writer_applicative: Applicative[Writer] = applicative_from_pure_map_map2(
+  value -> Writer([], value),
+  map_Writer,
+  map2_Writer,
+)
+
 def laws_Foldable[f: * -> *](inst: Foldable[f], eq_item: Eq[a], fa: f[a]) -> Test:
   list_view = to_List(inst, fa)
   left_reduced = reduce_left_option(inst, fa, (left, _) -> left)
@@ -674,6 +735,19 @@ tests = TestSuite("Foldable tests", [
   Assertion(filter_to_List(list_foldable, [1, 2, 3, 4], x -> mod_Int(x, 2).eq_Int(0)) matches [2, 4], "filter_to_List"),
   Assertion(take_while_to_List(list_foldable, [2, 4, 6, 7, 8], x -> mod_Int(x, 2).eq_Int(0)) matches [2, 4, 6], "take_while_to_List"),
   Assertion(drop_while_to_List(list_foldable, [2, 4, 6, 7, 8], x -> mod_Int(x, 2).eq_Int(0)) matches [7, 8], "drop_while_to_List"),
+  Assertion(
+    traverse_void(list_foldable, [1, 2, 3], value -> Some(value.add(1)), option_applicative()) matches Some(()),
+    "traverse_void Option success",
+  ),
+  Assertion(
+    sequence_void(list_foldable, [Some(1), None, Some(3)], option_applicative()) matches None,
+    "sequence_void Option failure",
+  ),
+  (
+    match traverse_void(list_foldable, [1, 2, 3], value -> Writer([value], value), writer_applicative):
+      case Writer(log, ()):
+        Assertion(log matches [1, 2, 3], "traverse_void preserves Foldable order")
+  ),
   (
     from_foldl = foldable_from_foldl_iter((items, init, fn) -> foldl_state_List(items, init, fn))
     Assertion(to_List(from_foldl, [1, 2, 3]) matches [1, 2, 3], "foldable_from_foldl_iter")
