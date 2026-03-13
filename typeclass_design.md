@@ -165,7 +165,8 @@ This supports both chained style and left-apply:
 foo.filter(selectfn).traverse(traverse_List, applicative_Option, x -> ...)
 
 selected = foo.filter(selectfn)
-x <- selected.traverse(traverse_List, applicative_Option, x -> ...)
+x <- selected.traverse(traverse_List, applicative_Option)
+...
 ```
 
 When an operation is subject-first, prefer subject dot-apply at the call site:
@@ -310,9 +311,9 @@ Dictionary-first.
 Examples:
 
 ```bosatsu
-eq(eq_inst, left, right)
-cmp(ord_inst, left, right)
-hash(hash_inst, value)
+eq_inst.eq(left, right)
+ord_inst.cmp(left, right)
+hash_inst.hash(value)
 ```
 
 ### Semigroup, Monoid

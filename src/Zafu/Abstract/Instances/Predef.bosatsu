@@ -3360,11 +3360,11 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
     "applicative_Option propagates None",
   ),
   Assertion(
-    (Some(1)).traverse(traverse_Option, applicative_Option, i -> Some(i.add(1))) matches Some(Some(2)),
+    Some(1).traverse(traverse_Option, applicative_Option, i -> Some(i.add(1))) matches Some(Some(2)),
     "traverse_Option Some",
   ),
   Assertion(
-    (Some(1)).traverse(traverse_Option, applicative_Option, _ -> None) matches None,
+    Some(1).traverse(traverse_Option, applicative_Option, _ -> None) matches None,
     "traverse_Option None from fn",
   ),
   (
