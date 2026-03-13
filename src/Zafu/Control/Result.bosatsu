@@ -112,7 +112,7 @@ def and_then(result: Result[e, a], fn: a -> Result[e, b]) -> Result[e, b]:
       fn(ok_value)
 
 def flat_map(result: Result[e, a], fn: a -> Result[e, b]) -> Result[e, b]:
-  and_then(result, fn)
+  result.and_then(fn)
 
 def or_else(result: Result[e, a], fn: e -> Result[f, a]) -> Result[f, a]:
   match result:
@@ -196,7 +196,7 @@ def traverse_Result_fn[g: * -> *, e, a, b](
     case Err(err_value):
       pure_Applicative(app, Err(err_value))
     case Ok(ok_value):
-      map_Applicative(fn(ok_value), app, Ok)
+      fn(ok_value).map_Applicative(app, Ok)
 
 traverse_Result: forall e. Traverse[Result[e]] = traverse_specialized(
   traverse_Result_fn,
@@ -292,25 +292,25 @@ tests = TestSuite("Result tests", [
   Assertion(map(Ok(1), x -> x.add(1)) matches Ok(2), "map Ok"),
   Assertion(map(Err(1), x -> x.add(1)) matches Err(1), "map Err"),
   Assertion(
-    traverse_Traverse(Ok(1), traverse_Result, option_applicative(), value -> Some(value.add(1))) matches Some(Ok(2)),
+    (Ok(1)).traverse_Traverse(traverse_Result, option_applicative(), value -> Some(value.add(1))) matches Some(Ok(2)),
     "traverse_Result Ok",
   ),
   Assertion(
-    traverse_Traverse(Err(1), traverse_Result, option_applicative(), value -> Some(value.add(1))) matches Some(Err(1)),
+    (Err(1)).traverse_Traverse(traverse_Result, option_applicative(), value -> Some(value.add(1))) matches Some(Err(1)),
     "traverse_Result Err keeps error",
   ),
   Assertion(
-    traverse_Traverse(Ok(1), traverse_Result, option_applicative(), _ -> None) matches None,
+    (Ok(1)).traverse_Traverse(traverse_Result, option_applicative(), _ -> None) matches None,
     "traverse_Result propagates effect failure",
   ),
-  Assertion(map2_Applicative(Ok(1), applicative, Ok(2), add) matches Ok(3), "applicative map2 Ok"),
-  Assertion(map2_Applicative(Ok(1), applicative, Err(2), add) matches Err(2), "applicative map2 Err"),
+  Assertion((Ok(1)).map2_Applicative(applicative, Ok(2), add) matches Ok(3), "applicative map2 Ok"),
+  Assertion((Ok(1)).map2_Applicative(applicative, Err(2), add) matches Err(2), "applicative map2 Err"),
   Assertion(map_err(Err(1), x -> x.add(1)) matches Err(2), "map_err Err"),
   Assertion(map_err(Ok(1), x -> x.add(1)) matches Ok(1), "map_err Ok"),
-  Assertion(and_then(Ok(2), x -> Ok(x.mul(2))) matches Ok(4), "and_then Ok"),
-  Assertion(and_then(Err(1), x -> Ok(x.mul(2))) matches Err(1), "and_then Err"),
-  Assertion(flat_map(Ok(2), x -> Ok(x.mul(2))) matches Ok(4), "flat_map alias"),
-  Assertion(flat_map(Err(1), x -> Ok(x.mul(2))) matches Err(1), "flat_map Err"),
+  Assertion((Ok(2)).and_then(x -> Ok(x.mul(2))) matches Ok(4), "and_then Ok"),
+  Assertion((Err(1)).and_then(x -> Ok(x.mul(2))) matches Err(1), "and_then Err"),
+  Assertion((Ok(2)).flat_map(x -> Ok(x.mul(2))) matches Ok(4), "flat_map alias"),
+  Assertion((Err(1)).flat_map(x -> Ok(x.mul(2))) matches Err(1), "flat_map Err"),
   Assertion(or_else(Err(1), x -> Err(x.add(1))) matches Err(2), "or_else Err"),
   Assertion(or_else(Ok(2), _ -> Err(0)) matches Ok(2), "or_else Ok"),
   Assertion(fold(Err(1), x -> x.add(1), _ -> 0).eq_Int(2), "fold Err"),
@@ -379,7 +379,7 @@ tests = TestSuite("Result tests", [
   (
     inst = eq(eq_Int_inst, eq_Int_inst)
     left = Err(1)
-    Assertion(eq_Eq(inst, and_then(left, x -> Ok(x.add(1))), left), "and_then short-circuits Err")
+    Assertion(eq_Eq(inst, left.and_then(x -> Ok(x.add(1))), left), "and_then short-circuits Err")
   ),
   (
     inst = eq(eq_Int_inst, eq_Int_inst)

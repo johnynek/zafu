@@ -520,9 +520,9 @@ def traverse_Chain_fn[g: * -> *, a, b](chain: Chain[a], app: Applicative[g], fn:
   rev_mapped = foldl(
     chain,
     pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(acc, app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    (acc, item) -> acc.map2_Applicative(app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map_Applicative(rev_mapped, app, rev_items -> from_List(rev_items.reverse()))
+  rev_mapped.map_Applicative(app, rev_items -> from_List(rev_items.reverse()))
 
 # Keep only elements satisfying pred.
 def filter(chain: Chain[a], pred: a -> Bool) -> Chain[a]:
@@ -844,7 +844,7 @@ flat_map_prop: Prop = forall_Prop(
     chain = from_List(list)
     fn = i -> from_List([i, i.add(1)])
     expected = flat_map_model(list)
-    actual = to_List(flat_map(chain, fn))
+    actual = to_List(chain.flat_map(fn))
     Assertion(eq_List(eq_Int)(actual, expected), "flat_map law")
   ))
 
@@ -936,15 +936,14 @@ tests = TestSuite("Chain tests", [
   Assertion(map(from_List([1, 2]), i -> i.add(10)).to_List() matches [11, 12], "map sanity"),
   (
     chain = from_List([1, 2, 3])
-    match traverse_Traverse(chain, traverse_Chain, option_applicative(), i -> Some(i.add(10))):
+    match chain.traverse_Traverse(traverse_Chain, option_applicative(), i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Chain Some")
       case None:
         Assertion(False, "traverse_Chain Some")
   ),
   Assertion(
-    traverse_Traverse(
-      from_List([1, 2, 3, 4]),
+    from_List([1, 2, 3, 4]).traverse_Traverse(
       traverse_Chain,
       option_applicative(),
       keep_even_Option_Int,
@@ -952,7 +951,7 @@ tests = TestSuite("Chain tests", [
     "traverse_Chain short-circuits",
   ),
   Assertion(filter(from_List([1, 2, 3, 4]), i -> mod_Int(i, 2).eq_Int(0)).to_List() matches [2, 4], "filter sanity"),
-  Assertion(flat_map(from_List([1, 2]), i -> from_List([i, i.add(1)])).to_List() matches [1, 2, 2, 3], "flat_map sanity"),
+  Assertion(from_List([1, 2]).flat_map(i -> from_List([i, i.add(1)])).to_List() matches [1, 2, 2, 3], "flat_map sanity"),
   (
     deep = deep_concat_chain(20000)
     expected_sum = 20000.mul(20001).div(2)

@@ -485,9 +485,9 @@ def traverse_Vector_fn[g: * -> *, a, b](vec: Vector[a], app: Applicative[g], fn:
   rev_mapped = foldl(
     vec,
     pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(acc, app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    (acc, item) -> acc.map2_Applicative(app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map_Applicative(rev_mapped, app, rev_items -> from_List(rev_items.reverse()))
+  rev_mapped.map_Applicative(app, rev_items -> from_List(rev_items.reverse()))
 
 traverse_Vector: Traverse[Vector] = traverse_specialized(
   traverse_Vector_fn,
@@ -1245,7 +1245,7 @@ def combine_all_option_with_fuel(vec: Vector[a], semi: Semigroup[a], fuel: Int) 
     case _:
       match vec:
         case Leaf(_, items):
-          combine_all_option_Foldable(items, foldable_Array, semi)
+          items.combine_all_option_Foldable(foldable_Array, semi)
         case Branch(_, _, _, children):
           foldl_Array(children, None, (state, child) -> (
             child_total = combine_all_option_with_fuel(child, semi, fuel.sub(1))
@@ -1677,7 +1677,7 @@ flat_map_prop: Prop = forall_Prop(
     vec = from_List(list)
     fn = i -> from_List([i, i.add(1)])
     expected = flat_map_model(list)
-    actual = flat_map(vec, fn).to_List()
+    actual = vec.flat_map(fn).to_List()
     Assertion(eq_List(eq_Int)(actual, expected), "flat_map law")
   ))
 
@@ -1785,7 +1785,7 @@ tests = TestSuite("Vector tests", [
   Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
   (
     vec = from_List([1, 2, 3])
-    match traverse_Traverse(vec, traverse_Vector, option_applicative(), i -> Some(i.add(10))):
+    match vec.traverse_Traverse(traverse_Vector, option_applicative(), i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Vector Some")
       case None:
@@ -1794,8 +1794,7 @@ tests = TestSuite("Vector tests", [
   (
     vec = from_List([1, 2, 3, 4])
     Assertion(
-      traverse_Traverse(
-        vec,
+      vec.traverse_Traverse(
         traverse_Vector,
         option_applicative(),
         keep_even_Option_Int,

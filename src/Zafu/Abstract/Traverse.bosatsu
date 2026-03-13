@@ -197,27 +197,27 @@ def laws_Traverse[f: * -> *, a, b, c](
   fn_aob: a -> Option[b],
 ) -> Test:
   option_app = option_applicative()
-  map_identity = Assertion(eq_Eq(eq_fa, map(fa, inst, item -> item), fa), "map identity")
+  map_identity = Assertion(eq_Eq(eq_fa, fa.map(inst, item -> item), fa), "map identity")
   map_composition = Assertion(
     eq_Eq(
       eq_fc,
-      map(map(fa, inst, fn_ab), inst, fn_bc),
-      map(fa, inst, item -> fn_bc(fn_ab(item))),
+      fa.map(inst, fn_ab).map(inst, fn_bc),
+      fa.map(inst, item -> fn_bc(fn_ab(item))),
     ),
     "map composition",
   )
   sequence_traverse = Assertion(
     eq_Eq(
       eq_option_fb,
-      sequence(map(fa, inst, fn_aob), inst, option_app),
-      traverse(fa, inst, option_app, fn_aob),
+      fa.map(inst, fn_aob).sequence(inst, option_app),
+      fa.traverse(inst, option_app, fn_aob),
     ),
     "sequence/traverse coherence",
   )
   list_monoid = monoid_from_combine([], (left, right) -> [*left, *right])
   const_app = const_applicative(list_monoid)
-  Const(logged_order) = traverse(fa, inst, const_app, item -> Const([item]))
-  projected_order = to_List_Foldable(fa, traverse_to_foldable(inst))
+  Const(logged_order) = fa.traverse(inst, const_app, item -> Const([item]))
+  projected_order = fa.to_List_Foldable(traverse_to_foldable(inst))
   foldable_projection = Assertion(
     eq_List(eq_item, logged_order, projected_order),
     "Foldable projection order coherence",
@@ -225,8 +225,8 @@ def laws_Traverse[f: * -> *, a, b, c](
   foldable_coherence = Assertion(
     eq_Eq(
       eq_option_unit,
-      traverse_void_Foldable(fa, traverse_to_foldable(inst), option_app, fn_aob),
-      void_Applicative(traverse(fa, inst, option_app, fn_aob), option_app),
+      fa.traverse_void_Foldable(traverse_to_foldable(inst), option_app, fn_aob),
+      fa.traverse(inst, option_app, fn_aob).void_Applicative(option_app),
     ),
     "Foldable.traverse_void coherence",
   )
@@ -241,9 +241,9 @@ def laws_Traverse[f: * -> *, a, b, c](
 def traverse_List_local[g: * -> *, a, b](items: List[a], app: Applicative[g], fn: a -> g[b]) -> g[List[b]]:
   rev_mapped = items.foldl_List(
     pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(acc, app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    (acc, item) -> acc.map2_Applicative(app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map_Applicative(rev_mapped, app, rev_items -> rev_items.reverse())
+  rev_mapped.map_Applicative(app, rev_items -> rev_items.reverse())
 
 def list_foldable_local() -> Foldable[List]:
   foldable_from_folds(
@@ -301,7 +301,7 @@ tests = TestSuite("Traverse tests", [
     deep_count = 100000
     deep_items = mk_range(deep_count)
     expected_sum = deep_count.mul(deep_count.add(1)).div(2).add(deep_count)
-    match traverse(deep_items, list_traverse, option_applicative(), item -> Some(item.add(1))):
+    match deep_items.traverse(list_traverse, option_applicative(), item -> Some(item.add(1))):
       case Some(mapped):
         Assertion(
           and_Bool(mapped.foldl_List(0, add).eq_Int(expected_sum), size_List(mapped).eq_Int(deep_count)),
@@ -318,7 +318,7 @@ tests = TestSuite("Traverse tests", [
     )
     deep_count = 100000
     deep_items = mk_range(deep_count)
-    mapped = map(deep_items, derived, item -> item.add(1))
+    mapped = deep_items.map(derived, item -> item.add(1))
     expected_sum = deep_count.mul(deep_count.add(1)).div(2).add(deep_count)
     Assertion(
       and_Bool(mapped.foldl_List(0, add).eq_Int(expected_sum), size_List(mapped).eq_Int(deep_count)),

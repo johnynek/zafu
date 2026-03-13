@@ -195,9 +195,9 @@ def traverse_LazyList_fn[g: * -> *, a, b](ll: LazyList[a], app: Applicative[g], 
   rev_mapped = foldl(
     ll,
     pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(acc, app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    (acc, item) -> acc.map2_Applicative(app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map_Applicative(rev_mapped, app, rev_items -> from_List(rev_items.reverse()))
+  rev_mapped.map_Applicative(app, rev_items -> from_List(rev_items.reverse()))
 
 traverse_LazyList: Traverse[LazyList] = traverse_specialized(
   traverse_LazyList_fn,
@@ -213,11 +213,11 @@ def flat_map(ll: LazyList[a], fn: a -> LazyList[b]) -> LazyList[b]:
     case Cons(head, tail):
       match uncons(fn(get_Lazy(head))):
         case None:
-          flat_map(get_Lazy(tail), fn)
+          get_Lazy(tail).flat_map(fn)
         case Some((mapped_head, mapped_tail)):
           Cons(
             mapped_head,
-            lazy(() -> concat(get_Lazy(mapped_tail), flat_map(get_Lazy(tail), fn)))
+            lazy(() -> concat(get_Lazy(mapped_tail), get_Lazy(tail).flat_map(fn)))
           )
 
 
@@ -382,7 +382,7 @@ flat_map_prop: Prop = forall_Prop(
   list -> (
     fn = i -> from_List([i, i.add(1)])
     expected = flat_map_model(list)
-    actual = to_List(flat_map(from_List(list), fn))
+    actual = to_List(from_List(list).flat_map(fn))
     Assertion(eq_List(eq_Int)(actual, expected), "flat_map law")
   ))
 
@@ -402,7 +402,7 @@ filter_flat_map_prop: Prop = forall_Prop(
   list -> (
     keep_even = i -> mod_Int(i, 2).eq_Int(0)
     ll = from_List(list)
-    expected = to_List(flat_map(ll, i -> from_List([i]) if keep_even(i) else empty_LazyList))
+    expected = to_List(ll.flat_map(i -> from_List([i]) if keep_even(i) else empty_LazyList))
     actual = to_List(filter(ll, keep_even))
     Assertion(eq_List(eq_Int)(actual, expected), "filter via flat_map law")
   ))
@@ -482,15 +482,14 @@ tests = TestSuite("LazyList tests", [
   ),
   (
     ll = from_List([1, 2, 3])
-    match traverse_Traverse(ll, traverse_LazyList, option_applicative(), i -> Some(i.add(10))):
+    match ll.traverse_Traverse(traverse_LazyList, option_applicative(), i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_LazyList Some")
       case None:
         Assertion(False, "traverse_LazyList Some")
   ),
   Assertion(
-    traverse_Traverse(
-      from_List([1, 2, 3, 4]),
+    from_List([1, 2, 3, 4]).traverse_Traverse(
       traverse_LazyList,
       option_applicative(),
       keep_even_Option_Int,
@@ -534,7 +533,7 @@ tests = TestSuite("LazyList tests", [
     )
   ),
   Assertion(
-    uncons(flat_map(deep_concat(20000), _ -> empty_LazyList)) matches None,
+    uncons(deep_concat(20000).flat_map(_ -> empty_LazyList)) matches None,
     "deep flat_map stack-safe"
   ),
   run_Prop(lazy_list_props, 200, 20260304),

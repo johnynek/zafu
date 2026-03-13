@@ -719,7 +719,7 @@ foldable_Option: Foldable[Option] = foldable_from_folds(
 def traverse_Option_fn[g: * -> *, a, b](value: Option[a], app: Applicative[g], fn: a -> g[b]) -> g[Option[b]]:
   match value:
     case Some(item):
-      map_Applicative(fn(item), app, Some)
+      fn(item).map_Applicative(app, Some)
     case None:
       pure_Applicative(app, None)
 
@@ -727,9 +727,9 @@ def traverse_Array_fn[g: * -> *, a, b](items: Array[a], app: Applicative[g], fn:
   rev_mapped = foldl_Array(
     items,
     pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(acc, app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    (acc, item) -> acc.map2_Applicative(app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map_Applicative(rev_mapped, app, rev_items -> from_List_Array(rev_items.reverse()))
+  rev_mapped.map_Applicative(app, rev_items -> from_List_Array(rev_items.reverse()))
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
   if cmp_Int(mod_Int(value, 2), 0) matches EQ:
@@ -3320,11 +3320,11 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   ),
   (
     arr = from_List_Array([1, 2, 3])
-    Assertion(cmp_Int(foldl_Foldable(arr, foldable_Array, 0, add), 6) matches EQ, "foldable_Array foldl")
+    Assertion(cmp_Int(arr.foldl_Foldable(foldable_Array, 0, add), 6) matches EQ, "foldable_Array foldl")
   ),
   (
     arr = from_List_Array([1, 2, 3, 4])
-    total = foldl_iter_Foldable(arr, foldable_Array, 0, (acc, item) -> (
+    total = arr.foldl_iter_Foldable(foldable_Array, 0, (acc, item) -> (
       next = acc.add(item)
       if cmp_Int(next, 3) matches GT:
         done(next)
@@ -3335,7 +3335,7 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   ),
   (
     arr = from_List_Array([1, 2, 3])
-    total = foldr_iter_Foldable(arr, foldable_Array, 0, (item, acc) -> (
+    total = arr.foldr_iter_Foldable(foldable_Array, 0, (item, acc) -> (
       if cmp_Int(item, 2) matches EQ:
         done(item.add(acc))
       else:
@@ -3345,31 +3345,31 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   ),
   (
     arr = from_List_Array([1, 2, 3])
-    Assertion(to_List_Foldable(arr, foldable_Array) matches [1, 2, 3], "foldable_Array to_List")
+    Assertion(arr.to_List_Foldable(foldable_Array) matches [1, 2, 3], "foldable_Array to_List")
   ),
   (
     arr = from_List_Array([1, 2, 3])
-    Assertion(cmp_Int(size_Foldable(arr, foldable_Array), 3) matches EQ, "foldable_Array size")
+    Assertion(cmp_Int(arr.size_Foldable(foldable_Array), 3) matches EQ, "foldable_Array size")
   ),
   Assertion(
-    map2_Applicative(Some(1), applicative_Option, Some(2), add) matches Some(3),
+    (Some(1)).map2_Applicative(applicative_Option, Some(2), add) matches Some(3),
     "applicative_Option map2",
   ),
   Assertion(
-    map2_Applicative(Some(1), applicative_Option, None, add) matches None,
+    (Some(1)).map2_Applicative(applicative_Option, None, add) matches None,
     "applicative_Option propagates None",
   ),
   Assertion(
-    traverse_Traverse(Some(1), traverse_Option, applicative_Option, i -> Some(i.add(1))) matches Some(Some(2)),
+    (Some(1)).traverse_Traverse(traverse_Option, applicative_Option, i -> Some(i.add(1))) matches Some(Some(2)),
     "traverse_Option Some",
   ),
   Assertion(
-    traverse_Traverse(Some(1), traverse_Option, applicative_Option, _ -> None) matches None,
+    (Some(1)).traverse_Traverse(traverse_Option, applicative_Option, _ -> None) matches None,
     "traverse_Option None from fn",
   ),
   (
     arr = from_List_Array([1, 2, 3])
-    match traverse_Traverse(arr, traverse_Array, applicative_Option, i -> Some(i.add(1))):
+    match arr.traverse_Traverse(traverse_Array, applicative_Option, i -> Some(i.add(1))):
       case Some(mapped):
         Assertion(to_List_Array(mapped) matches [2, 3, 4], "traverse_Array Some")
       case None:
@@ -3378,8 +3378,7 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   (
     arr = from_List_Array([1, 2, 3])
     Assertion(
-      traverse_Traverse(
-        arr,
+      arr.traverse_Traverse(
         traverse_Array,
         applicative_Option,
         keep_even_Option_Int,

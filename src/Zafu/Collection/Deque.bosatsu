@@ -232,9 +232,9 @@ def traverse_Queue_fn[g: * -> *, a, b](queue: Queue[a], app: Applicative[g], fn:
   rev_mapped = foldl(
     queue,
     pure_Applicative(app, []),
-    (acc, item) -> map2_Applicative(acc, app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    (acc, item) -> acc.map2_Applicative(app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  map_Applicative(rev_mapped, app, rev_items -> from_List(rev_items.reverse()))
+  rev_mapped.map_Applicative(app, rev_items -> from_List(rev_items.reverse()))
 
 traverse_Queue: Traverse[Queue] = traverse_specialized(
   traverse_Queue_fn,
@@ -560,15 +560,14 @@ tests = TestSuite("Deque tests", [
   Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
   (
     queue = from_List([1, 2, 3])
-    match traverse_Traverse(queue, traverse_Queue, option_applicative(), i -> Some(i.add(10))):
+    match queue.traverse_Traverse(traverse_Queue, option_applicative(), i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Queue Some")
       case None:
         Assertion(False, "traverse_Queue Some")
   ),
   Assertion(
-    traverse_Traverse(
-      from_List([1, 2, 3, 4]),
+    from_List([1, 2, 3, 4]).traverse_Traverse(
       traverse_Queue,
       option_applicative(),
       keep_even_Option_Int,

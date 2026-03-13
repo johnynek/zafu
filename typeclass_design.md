@@ -58,6 +58,18 @@ x <- selected.traverse(traverse_List, applicative_Option)
 
 The important property is that the value being worked on stays in the first position.
 
+When an operation is subject-first, prefer dot-apply at the call site when it is readable:
+
+```bosatsu
+foo.map(app, fn)
+foo.fold_map(foldable, monoid, fn)
+foo.traverse(traverse_f, app, fn)
+partial.and_then(semi, fn)
+```
+
+If a subject-first API is mostly used in prefix form, the ergonomic benefit of making it subject-first is much smaller.
+The API shape and the call style should reinforce each other.
+
 ## 2. Dictionary-first when the call is mainly selecting semantics
 
 Use dictionary-first when the operation is primarily about choosing an algebra, relation, or capability, and there is no distinguished subject value to act as a receiver.
