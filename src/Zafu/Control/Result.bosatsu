@@ -223,18 +223,20 @@ def tailrec_steps_Result(
   step: a -> Result[e, IterState[a, b]],
 ) -> Result[e, IterState[a, b]]:
   def go(rem: Int, seed: a) -> Result[e, IterState[a, b]]:
-    recur rem:
+    loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         # Bounded stepping: no fuel means we yield the current continuation seed.
         Ok(continue(seed))
       case _:
-        step(seed).and_then(state -> (
-          match state:
-            case Done(done_value):
-              Ok(done(done_value))
-            case Continue(next_seed):
-              go(rem.sub(1), next_seed)
-        ))
+        # Keep recursive stepping in tail position so `loop` remains stack-safe.
+        # This duplicates Result.and_then shape intentionally for loop lowering.
+        match step(seed):
+          case Err(err_value):
+            Err(err_value)
+          case Ok(Done(done_value)):
+            Ok(done(done_value))
+          case Ok(Continue(next_seed)):
+            go(rem.sub(1), next_seed)
   go(max_steps, init)
 
 monad_Result: forall e. Monad[Result[e]] = monad_from_applicative_flat_map_tailrec_steps(

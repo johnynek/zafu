@@ -53,6 +53,9 @@ def flat_map[f: * -> *, a, b](fa: f[a], inst: Monad[f], fn: a -> f[b]) -> f[b]:
 def flatten[f: * -> *, a](ffa: f[f[a]], inst: Monad[f]) -> f[a]:
   flat_map(ffa, inst, value -> value)
 
+# Instance implementations should prefer loop-based stepping so large max_steps
+# can run stack-safely. If using flat_map hides recursion under lambdas,
+# duplicating a small amount of sequencing logic is acceptable.
 def tailrec_steps[f: * -> *, a, b](
   inst: Monad[f],
   max_steps: Int,
