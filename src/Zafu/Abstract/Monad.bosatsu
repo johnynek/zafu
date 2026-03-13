@@ -19,7 +19,6 @@ from Zafu/Control/IterState import (
 
 export (
   Monad,
-  monad_specialized,
   monad_from_applicative_flat_map_tailrec_steps,
   monad_to_applicative,
   flat_map,
@@ -34,19 +33,12 @@ struct Monad[f: * -> *](
   tailrec_steps_fn: forall a, b. (Int, a, a -> f[IterState[a, b]]) -> f[IterState[a, b]],
 )
 
-def monad_specialized[f: * -> *](
-  applicative_inst: Applicative[f],
-  flat_map_fn: forall a, b. (f[a], a -> f[b]) -> f[b],
-  tailrec_steps_fn: forall a, b. (Int, a, a -> f[IterState[a, b]]) -> f[IterState[a, b]],
-) -> Monad[f]:
-  Monad(applicative_inst, flat_map_fn, tailrec_steps_fn)
-
 def monad_from_applicative_flat_map_tailrec_steps[f: * -> *](
   applicative_inst: Applicative[f],
   flat_map_fn: forall a, b. (f[a], a -> f[b]) -> f[b],
   tailrec_steps_fn: forall a, b. (Int, a, a -> f[IterState[a, b]]) -> f[IterState[a, b]],
 ) -> Monad[f]:
-  monad_specialized(applicative_inst, flat_map_fn, tailrec_steps_fn)
+  Monad(applicative_inst, flat_map_fn, tailrec_steps_fn)
 
 def monad_to_applicative[f: * -> *](inst: Monad[f]) -> Applicative[f]:
   Monad(applicative_inst, _, _) = inst
@@ -73,11 +65,14 @@ def laws_Monad[f: * -> *, a, b, c](
   eq_fa: Eq[f[a]],
   eq_fb: Eq[f[b]],
   eq_fc: Eq[f[c]],
+  eq_fstate_ab: Eq[f[IterState[a, b]]],
   fa: f[a],
   x: a,
   fn_ab: a -> f[b],
   fn_bc: b -> f[c],
   fn_map: a -> b,
+  tailrec_seed: a,
+  tailrec_step: a -> f[IterState[a, b]],
 ) -> Test:
   app = monad_to_applicative(inst)
   left_identity = Assertion(
@@ -104,7 +99,29 @@ def laws_Monad[f: * -> *, a, b, c](
     ),
     "applicative map coherence",
   )
-  TestSuite("Monad laws", [left_identity, right_identity, associativity, map_coherence])
+  tailrec_step_one = Assertion(
+    eq_Eq(
+      eq_fstate_ab,
+      tailrec_steps(inst, 1, tailrec_seed, tailrec_step),
+      tailrec_step(tailrec_seed),
+    ),
+    "tailrec/flat_map consistency step1",
+  )
+  tailrec_step_two = Assertion(
+    eq_Eq(
+      eq_fstate_ab,
+      tailrec_steps(inst, 2, tailrec_seed, tailrec_step),
+      flat_map(tailrec_steps(inst, 1, tailrec_seed, tailrec_step), inst, iter -> (
+        match iter:
+          case Done(done_value):
+            pure(app, Done(done_value))
+          case Continue(next_seed):
+            tailrec_step(next_seed)
+      )),
+    ),
+    "tailrec/flat_map consistency step2",
+  )
+  TestSuite("Monad laws", [left_identity, right_identity, associativity, map_coherence, tailrec_step_one, tailrec_step_two])
 
 def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
   match value:
@@ -168,6 +185,15 @@ def eq_Option(eq_item: Eq[a], left: Option[a], right: Option[a]) -> Bool:
     case _:
       False
 
+def eq_IterState(eq_cont: Eq[c], eq_done: Eq[d], left: IterState[c, d], right: IterState[c, d]) -> Bool:
+  match (left, right):
+    case (Continue(left_cont), Continue(right_cont)):
+      eq_Eq(eq_cont, left_cont, right_cont)
+    case (Done(left_done), Done(right_done)):
+      eq_Eq(eq_done, left_done, right_done)
+    case _:
+      False
+
 tests = TestSuite("Monad tests", [
   Assertion(
     flat_map(Some(1), monad_Option_local, value -> Some(value.add(2))) matches Some(3),
@@ -208,26 +234,39 @@ tests = TestSuite("Monad tests", [
   (
     eq_int = eq_from_fn(eq_Int)
     eq_opt_int = eq_from_fn((left, right) -> eq_Option(eq_int, left, right))
+    eq_state_int_int = eq_from_fn((left, right) -> eq_IterState(eq_int, eq_int, left, right))
+    eq_opt_state_int_int = eq_from_fn((left, right) -> eq_Option(eq_state_int_int, left, right))
     laws_Monad(
       monad_Option_local,
       eq_opt_int,
       eq_opt_int,
       eq_opt_int,
+      eq_opt_state_int_int,
       Some(3),
       7,
       value -> Some(value.add(1)),
       value -> Some(value.mul(2)),
       value -> value.add(5),
+      0,
+      seed -> (
+        if cmp_Int(seed, 2) matches LT:
+          Some(Continue(seed.add(1)))
+        else:
+          Some(Done(seed))
+      ),
     )
   ),
   (
     eq_int = eq_from_fn(eq_Int)
     eq_opt_int = eq_from_fn((left, right) -> eq_Option(eq_int, left, right))
+    eq_state_int_int = eq_from_fn((left, right) -> eq_IterState(eq_int, eq_int, left, right))
+    eq_opt_state_int_int = eq_from_fn((left, right) -> eq_Option(eq_state_int_int, left, right))
     laws_Monad(
       monad_Option_local,
       eq_opt_int,
       eq_opt_int,
       eq_opt_int,
+      eq_opt_state_int_int,
       None,
       4,
       value -> (
@@ -238,6 +277,8 @@ tests = TestSuite("Monad tests", [
       ),
       value -> Some(value.mul(2)),
       value -> value.add(10),
+      1,
+      seed -> Some(Continue(seed.add(1))),
     )
   ),
 ])

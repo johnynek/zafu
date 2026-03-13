@@ -315,21 +315,46 @@ def tailrec_steps_PartialResult(
   init: a,
   step: a -> PartialResult[e, IterState[a, b]],
 ) -> PartialResult[e, IterState[a, b]]:
-  def go(rem: Int, seed: a) -> PartialResult[e, IterState[a, b]]:
-    recur rem:
+  def attach_error(acc_err: Option[e], state: IterState[a, b]) -> PartialResult[e, IterState[a, b]]:
+    match acc_err:
+      case None:
+        TotalOk(state)
+      case Some(err_value):
+        PartialErr(err_value, state)
+
+  def go(rem: Int, seed: a, acc_err: Option[e]) -> PartialResult[e, IterState[a, b]]:
+    loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         # Mirror Monad.tailrec_steps semantics: no fuel yields Continue(seed).
-        TotalOk(continue(seed))
+        attach_error(acc_err, continue(seed))
       case _:
-        # and_then keeps partial errors accumulated so far while advancing.
-        step(seed).and_then(semi, state -> (
-          match state:
-            case Done(done_value):
-              TotalOk(done(done_value))
-            case Continue(next_seed):
-              go(rem.sub(1), next_seed)
-        ))
-  go(max_steps, init)
+        match step(seed):
+          case TotalErr(err_value):
+            match acc_err:
+              case None:
+                TotalErr(err_value)
+              case Some(prev_err):
+                TotalErr(semi.combine(prev_err, err_value))
+          case TotalOk(iter_state):
+            match iter_state:
+              case Done(done_value):
+                attach_error(acc_err, done(done_value))
+              case Continue(next_seed):
+                go(rem.sub(1), next_seed, acc_err)
+          case PartialErr(err_value, iter_state):
+            next_err = (
+              match acc_err:
+                case None:
+                  err_value
+                case Some(prev_err):
+                  semi.combine(prev_err, err_value)
+            )
+            match iter_state:
+              case Done(done_value):
+                PartialErr(next_err, done(done_value))
+              case Continue(next_seed):
+                go(rem.sub(1), next_seed, Some(next_err))
+  go(max_steps, init, None)
 
 def monad_PartialResult(semi: Semigroup[e]) -> Monad[PartialResult[e]]:
   monad_from_applicative_flat_map_tailrec_steps(
@@ -464,6 +489,16 @@ list_semigroup: Semigroup[List[Int]] = semigroup_from_combine((left, right) -> l
 eq_Int_inst: Eq[Int] = eq_from_fn(eq_Int)
 ord_Int_inst: Ord[Int] = ord_from_cmp(cmp_Int)
 hash_Int_inst: Hash[Int] = hash_from_fn(value -> value, eq_Int_inst)
+eq_IterState_Int_Int: Eq[IterState[Int, Int]] = eq_from_fn((left, right) -> (
+  match (left, right):
+    case (Continue(left_cont), Continue(right_cont)):
+      eq_Int(left_cont, right_cont)
+    case (Done(left_done), Done(right_done)):
+      eq_Int(left_done, right_done)
+    case _:
+      False
+))
+eq_PartialResult_IterState_Int_Int: Eq[PartialResult[Int, IterState[Int, Int]]] = eq(eq_Int_inst, eq_IterState_Int_Int)
 
 tests = TestSuite("PartialResult tests", [
   Assertion(is_total_err(TotalErr(1)), "is_total_err TotalErr"),
@@ -707,11 +742,19 @@ tests = TestSuite("PartialResult tests", [
       eq_inst,
       eq_inst,
       eq_inst,
+      eq_PartialResult_IterState_Int_Int,
       PartialErr(1, 2),
       7,
       value -> PartialErr(3, value.add(1)),
       value -> TotalOk(value.mul(2)),
       value -> value.add(5),
+      0,
+      seed -> (
+        if cmp_Int(seed, 2) matches LT:
+          TotalOk(Continue(seed.add(1)))
+        else:
+          TotalOk(Done(seed))
+      ),
     )
   ),
   (
@@ -721,11 +764,14 @@ tests = TestSuite("PartialResult tests", [
       eq_inst,
       eq_inst,
       eq_inst,
+      eq_PartialResult_IterState_Int_Int,
       TotalErr(9),
       4,
       value -> TotalOk(value.add(1)),
       value -> PartialErr(2, value.mul(2)),
       value -> value.add(10),
+      1,
+      seed -> TotalOk(Continue(seed.add(1))),
     )
   ),
   Assertion(

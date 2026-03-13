@@ -3485,16 +3485,29 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   ),
   (
     eq_opt_int = eq_Option(eq_Int)
+    eq_state_int_int = eq_from_fn((left, right) -> (
+      match (left, right):
+        case (Continue(left_cont), Continue(right_cont)):
+          eq_Eq(eq_Int, left_cont, right_cont)
+        case (Done(left_done), Done(right_done)):
+          eq_Eq(eq_Int, left_done, right_done)
+        case _:
+          False
+    ))
+    eq_opt_state_int_int = eq_Option(eq_state_int_int)
     laws_Monad(
       monad_Option,
       eq_opt_int,
       eq_opt_int,
       eq_opt_int,
+      eq_opt_state_int_int,
       Some(2),
       7,
       value -> Some(value.add(1)),
       value -> Some(value.mul(2)),
       value -> value.add(3),
+      0,
+      seed -> Some(Continue(seed.add(1))),
     )
   ),
   Assertion(eq_Eq(eq_Int, 1, 1), "eq_Int"),

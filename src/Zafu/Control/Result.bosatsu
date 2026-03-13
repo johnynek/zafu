@@ -337,6 +337,16 @@ eq_Int_inst: Eq[Int] = eq_from_fn(eq_Int)
 ord_Int_inst: Ord[Int] = ord_from_cmp(cmp_Int)
 hash_Int_inst: Hash[Int] = hash_from_fn(value -> value, eq_Int_inst)
 semigroup_Int_add: Semigroup[Int] = semigroup_from_combine((left, right) -> left.add(right))
+eq_IterState_Int_Int: Eq[IterState[Int, Int]] = eq_from_fn((left, right) -> (
+  match (left, right):
+    case (Continue(left_cont), Continue(right_cont)):
+      eq_Int(left_cont, right_cont)
+    case (Done(left_done), Done(right_done)):
+      eq_Int(left_done, right_done)
+    case _:
+      False
+))
+eq_Result_IterState_Int_Int: Eq[Result[Int, IterState[Int, Int]]] = eq(eq_Int_inst, eq_IterState_Int_Int)
 
 tests = TestSuite("Result tests", [
   Assertion(is_err(Err(1)), "is_err Err"),
@@ -464,11 +474,19 @@ tests = TestSuite("Result tests", [
       eq_inst,
       eq_inst,
       eq_inst,
+      eq_Result_IterState_Int_Int,
       Ok(2),
       7,
       value -> Ok(value.add(1)),
       value -> Ok(value.mul(2)),
       value -> value.add(3),
+      0,
+      seed -> (
+        if cmp_Int(seed, 2) matches LT:
+          Ok(Continue(seed.add(1)))
+        else:
+          Ok(Done(seed))
+      ),
     )
   ),
   (
@@ -478,11 +496,19 @@ tests = TestSuite("Result tests", [
       eq_inst,
       eq_inst,
       eq_inst,
+      eq_Result_IterState_Int_Int,
       Err(1),
       4,
       value -> Err(value),
       value -> Ok(value.mul(2)),
       value -> value.add(5),
+      10,
+      seed -> (
+        if cmp_Int(seed, 11) matches LT:
+          Ok(Continue(seed.add(1)))
+        else:
+          Ok(Done(seed))
+      ),
     )
   ),
   (
