@@ -20,6 +20,7 @@ from Zafu/Abstract/Monoid import (
   monoid_from_combine,
   empty,
   combine,
+  combine_all as combine_all_monoid,
 )
 from Zafu/Abstract/Applicative import (
   Applicative,
@@ -93,6 +94,7 @@ export (
 struct Foldable[f: * -> *](
   foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b,
   foldr_fn: forall a, b. (f[a], b, (a, b) -> b) -> b,
+  fold_map_fn: forall a, b. (f[a], Monoid[b], a -> b) -> b,
   foldl_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> IterState[b, b],
   foldr_iter_fn: forall a, b. (f[a], b, (a, b) -> IterState[b, b]) -> IterState[b, b],
   is_empty_fn: forall a. f[a] -> Bool,
@@ -153,13 +155,14 @@ def eq_List(eq_item: Eq[a], left: List[a], right: List[a]) -> Bool:
 def foldable_specialized[f: * -> *](
   foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b,
   foldr_fn: forall a, b. (f[a], b, (a, b) -> b) -> b,
+  fold_map_fn: forall a, b. (f[a], Monoid[b], a -> b) -> b,
   foldl_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> IterState[b, b],
   foldr_iter_fn: forall a, b. (f[a], b, (a, b) -> IterState[b, b]) -> IterState[b, b],
   is_empty_fn: forall a. f[a] -> Bool,
   size_fn: forall a. f[a] -> Int,
   to_List_fn: forall a. f[a] -> List[a],
 ) -> Foldable[f]:
-  Foldable(foldl_fn, foldr_fn, foldl_iter_fn, foldr_iter_fn, is_empty_fn, size_fn, to_List_fn)
+  Foldable(foldl_fn, foldr_fn, fold_map_fn, foldl_iter_fn, foldr_iter_fn, is_empty_fn, size_fn, to_List_fn)
 
 def foldable_from_foldl_iter[f: * -> *](
   foldl_iter_fn: forall a, b. (f[a], b, (b, a) -> IterState[b, b]) -> IterState[b, b]
@@ -168,6 +171,9 @@ def foldable_from_foldl_iter[f: * -> *](
   foldable_specialized(
     (fa, init, fn) -> value(foldl_iter_fn(fa, init, (acc, item) -> continue(fn(acc, item)))),
     (fa, init, fn) -> foldr_List(to_List_fn(fa), init, fn),
+    (fa, monoid, fn) -> value(
+      foldl_iter_fn(fa, monoid.empty(), (acc, item) -> continue(monoid.combine(acc, fn(item))))
+    ),
     foldl_iter_fn,
     (fa, init, fn) -> foldr_state_List(to_List_fn(fa), init, fn),
     (fa) -> value(foldl_iter_fn(fa, True, (_, _) -> done(False))),
@@ -182,6 +188,9 @@ def foldable_from_foldr_iter[f: * -> *](
   foldable_specialized(
     (fa, init, fn) -> to_List_fn(fa).foldl_List(init, fn),
     (fa, init, fn) -> value(foldr_iter_fn(fa, init, (item, acc) -> continue(fn(item, acc)))),
+    (fa, monoid, fn) -> value(
+      foldr_iter_fn(fa, monoid.empty(), (item, acc) -> continue(monoid.combine(fn(item), acc)))
+    ),
     (fa, init, fn) -> foldl_state_List(to_List_fn(fa), init, fn),
     foldr_iter_fn,
     (fa) -> value(foldr_iter_fn(fa, True, (_, _) -> done(False))),
@@ -197,6 +206,9 @@ def foldable_from_fold_iters[f: * -> *](
   foldable_specialized(
     (fa, init, fn) -> value(foldl_iter_fn(fa, init, (acc, item) -> continue(fn(acc, item)))),
     (fa, init, fn) -> value(foldr_iter_fn(fa, init, (item, acc) -> continue(fn(item, acc)))),
+    (fa, monoid, fn) -> value(
+      foldl_iter_fn(fa, monoid.empty(), (acc, item) -> continue(monoid.combine(acc, fn(item))))
+    ),
     foldl_iter_fn,
     foldr_iter_fn,
     (fa) -> value(foldl_iter_fn(fa, True, (_, _) -> done(False))),
@@ -213,6 +225,7 @@ def foldable_from_folds[f: * -> *](
   foldable_specialized(
     foldl_fn,
     foldr_fn,
+    (fa, monoid, fn) -> foldl_fn(fa, monoid.empty(), (acc, item) -> monoid.combine(acc, fn(item))),
     (fa, init, fn) -> foldl_fn(fa, Continue(init), (state, item) -> (
       match state:
         case Done(done_value):
@@ -264,7 +277,8 @@ def to_List[f: * -> *](fa: f[a], inst: Foldable[f]) -> List[a]:
   to_List_fn(fa)
 
 def fold_map[f: * -> *](fa: f[a], inst: Foldable[f], monoid: Monoid[b], fn: a -> b) -> b:
-  fa.foldl(inst, monoid.empty(), (acc, item) -> monoid.combine(acc, fn(item)))
+  Foldable { fold_map_fn, ... } = inst
+  fold_map_fn(fa, monoid, fn)
 
 def traverse_void[f: * -> *, g: * -> *, a, b](
   fa: f[a],
@@ -282,7 +296,7 @@ def sequence_void[f: * -> *, g: * -> *, a](fga: f[g[a]], inst: Foldable[f], app:
   fga.traverse_void(inst, app, ga -> ga)
 
 def combine_all[f: * -> *](fa: f[a], inst: Foldable[f], monoid: Monoid[a]) -> a:
-  fa.foldl(inst, monoid.empty(), (acc, item) -> monoid.combine(acc, item))
+  fa.fold_map(inst, monoid, item -> item)
 
 def fold[f: * -> *](fa: f[a], inst: Foldable[f], monoid: Monoid[a]) -> a:
   fa.combine_all(inst, monoid)
@@ -640,6 +654,7 @@ def laws_Foldable[f: * -> *](inst: Foldable[f], eq_item: Eq[a], fa: f[a]) -> Tes
 foldable_List: Foldable[List] = foldable_specialized(
   (items, init, fn) -> items.foldl_List(init, fn),
   (items, init, fn) -> foldr_List(items, init, fn),
+  (items, monoid, fn) -> combine_all_monoid(monoid, items.map_List(fn)),
   foldl_state_List,
   foldr_state_List,
   (items) -> items matches [],

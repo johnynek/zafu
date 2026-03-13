@@ -53,6 +53,10 @@ from Zafu/Abstract/Semigroup import (
   semigroup_specialized,
   combine_all_option as combine_all_option_sg,
 )
+from Zafu/Abstract/Monoid import (
+  empty as empty_monoid,
+  combine as combine_monoid,
+)
 from Zafu/Collection/HashSet import (
   empty as empty_HashSet,
   contains as contains_HashSet,
@@ -218,6 +222,7 @@ def foldr_iter(items: NonEmptyList[a], init: b, fn: (a, b) -> IterState[b, b]) -
 foldable_NonEmptyList: Foldable[NonEmptyList] = foldable_specialized(
   foldl,
   foldr,
+  (items, monoid, fn) -> foldl(items, empty_monoid(monoid), (acc, item) -> combine_monoid(monoid, acc, fn(item))),
   foldl_iter,
   foldr_iter,
   is_empty,
