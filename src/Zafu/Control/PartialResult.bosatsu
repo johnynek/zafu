@@ -80,22 +80,10 @@ def is_total_ok(result: PartialResult[e, a]) -> Bool:
   result matches TotalOk(_)
 
 def has_err(result: PartialResult[e, a]) -> Bool:
-  match result:
-    case TotalErr(_):
-      True
-    case PartialErr(_, _):
-      True
-    case TotalOk(_):
-      False
+  result matches TotalErr(_) | PartialErr(_, _)
 
 def has_ok(result: PartialResult[e, a]) -> Bool:
-  match result:
-    case TotalErr(_):
-      False
-    case PartialErr(_, _):
-      True
-    case TotalOk(_):
-      True
+  result matches PartialErr(_, _) | TotalOk(_)
 
 def err(result: PartialResult[e, a]) -> Option[e]:
   match result:
@@ -160,10 +148,8 @@ def or_else(result: PartialResult[e, a], fn: e -> PartialResult[e, a]) -> Partia
   match result:
     case TotalErr(err_value):
       fn(err_value)
-    case PartialErr(err_value, partial_value):
-      PartialErr(err_value, partial_value)
-    case TotalOk(ok_value):
-      TotalOk(ok_value)
+    case _:
+      result
 
 def fold(
   result: PartialResult[e, a],
@@ -262,10 +248,7 @@ def combine_map2(
   right: PartialResult[e, b],
   fn: (a, b) -> c,
 ) -> PartialResult[e, c]:
-  map(combine_product(semi, left, right), pair -> (
-    (left_value, right_value) = pair
-    fn(left_value, right_value)
-  ))
+  map(combine_product(semi, left, right), ((left_value, right_value)) -> fn(left_value, right_value))
 
 def combine_product_l(
   semi: Semigroup[e],
@@ -517,10 +500,7 @@ tests = TestSuite("PartialResult tests", [
     left = PartialErr(1, 2)
     right = PartialErr(3, 4)
     via_map2 = combine_map2(int_add_semigroup, left, right, add)
-    via_product = map(combine_product(int_add_semigroup, left, right), pair -> (
-      (left_value, right_value) = pair
-      add(left_value, right_value)
-    ))
+    via_product = map(combine_product(int_add_semigroup, left, right), ((left_value, right_value)) -> add(left_value, right_value))
     Assertion(eq_Eq(inst, via_map2, via_product), "combine_map2 consistent with combine_product")
   ),
   Assertion(
