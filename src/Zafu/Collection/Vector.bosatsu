@@ -56,6 +56,7 @@ from Zafu/Abstract/Hash import (
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
+  fold_map as fold_map_foldable,
   combine_all_option as combine_all_option_fold,
 )
 from Zafu/Abstract/Applicative import (
@@ -455,9 +456,28 @@ def foldr_iter(vec: Vector[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterSt
             go(rem.sub(1), next_stack, acc)
   go(traversal_fuel(vec), [vec], init)
 
+def fold_map_with_fuel(vec: Vector[a], monoid: Monoid[b], fn: a -> b, fuel: Int) -> b:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      empty_monoid(monoid)
+    case _:
+      match vec:
+        case Leaf(_, items):
+          fold_map_foldable(items, foldable_Array, monoid, fn)
+        case Branch(_, _, _, children):
+          child_totals_rev = foldl_Array(children, [], (acc, child) -> (
+            child_total = fold_map_with_fuel(child, monoid, fn, fuel.sub(1))
+            [child_total, *acc]
+          ))
+          combine_all_monoid(monoid, child_totals_rev.reverse())
+
+def fold_map(vec: Vector[a], monoid: Monoid[b], fn: a -> b) -> b:
+  fold_map_with_fuel(vec, monoid, fn, height(vec).add(8))
+
 foldable_Vector: Foldable[Vector] = foldable_specialized(
   foldl,
   foldr,
+  fold_map,
   foldl_iter,
   foldr_iter,
   (vec) -> size(vec).eq_Int(0),

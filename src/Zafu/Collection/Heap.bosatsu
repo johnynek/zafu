@@ -35,6 +35,10 @@ from Zafu/Abstract/Ord import (
   cmp as cmp_Ord,
   reverse as reverse_Ord,
 )
+from Zafu/Abstract/Monoid import (
+  empty as empty_monoid,
+  combine as combine_monoid,
+)
 from Zafu/Abstract/Instances/Predef import (
   ord_Int,
   eq_Int as eq_Int_inst,
@@ -290,6 +294,7 @@ def foldr_iter(heap: Heap[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterSta
 foldable_Heap: Foldable[Heap] = foldable_specialized(
   foldl,
   foldr,
+  (heap, monoid, fn) -> foldl(heap, empty_monoid(monoid), (acc, item) -> combine_monoid(monoid, acc, fn(item))),
   foldl_iter,
   foldr_iter,
   is_empty,

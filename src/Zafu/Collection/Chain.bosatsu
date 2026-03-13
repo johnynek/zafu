@@ -28,6 +28,7 @@ from Bosatsu/Testing/Properties import (
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
+  fold_map as fold_map_foldable,
 )
 from Zafu/Abstract/Applicative import (
   Applicative,
@@ -59,7 +60,14 @@ from Zafu/Abstract/Semigroup import (
   combine,
   combine_all_option as combine_all_option_sg,
 )
+from Zafu/Abstract/Monoid import (
+  Monoid,
+  empty as empty_monoid,
+  combine as combine_monoid,
+)
 from Zafu/Abstract/Instances/Predef import (
+  foldable_Array,
+  foldable_List,
   eq_List as eq_List_inst,
   ord_List as ord_List_inst,
   hash_List as hash_List_inst,
@@ -334,6 +342,29 @@ def foldr_iter(chain: Chain[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterS
             loop_fold(rem.sub(1), [right, left, *tail], acc)
   loop_fold(traversal_fuel(chain), [chain], init)
 
+def fold_map(chain: Chain[a], monoid: Monoid[b], fn: a -> b) -> b:
+  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_fold(rem.sub(1), tail, acc)
+          case [Singleton(item), *tail]:
+            loop_fold(rem.sub(1), tail, combine_monoid(monoid, acc, fn(item)))
+          case [WrapArray(items), *tail]:
+            array_total = fold_map_foldable(items, foldable_Array, monoid, fn)
+            loop_fold(rem.sub(1), tail, combine_monoid(monoid, acc, array_total))
+          case [WrapList(items), *tail]:
+            list_total = fold_map_foldable(items, foldable_List, monoid, fn)
+            loop_fold(rem.sub(1), tail, combine_monoid(monoid, acc, list_total))
+          case [Concat(_, left, right), *tail]:
+            loop_fold(rem.sub(1), [left, right, *tail], acc)
+  loop_fold(traversal_fuel(chain), [chain], empty_monoid(monoid))
+
 def combine_all(chain: Chain[a], semi: Semigroup[a]) -> Option[a]:
   def combine_left(state: Option[a], next: Option[a]) -> Option[a]:
     match next:
@@ -535,6 +566,7 @@ def flat_map(chain: Chain[a], fn: a -> Chain[b]) -> Chain[b]:
 foldable_Chain: Foldable[Chain] = foldable_specialized(
   foldl,
   foldr,
+  fold_map,
   foldl_iter,
   foldr_iter,
   is_empty,

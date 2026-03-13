@@ -687,6 +687,7 @@ def foldr_Array(items: Array[a], init: b, fn: (a, b) -> b) -> b:
 foldable_Array: Foldable[Array] = foldable_specialized(
   foldl_Array,
   foldr_Array,
+  (items, monoid, fn) -> foldl_Array(items, empty_Monoid(monoid), (acc, item) -> combine_Monoid(monoid, acc, fn(item))),
   foldl_state_Array,
   foldr_state_Array,
   (items) -> cmp_Int(size_Array(items), 0) matches EQ,
@@ -703,6 +704,7 @@ def foldr_iter(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterSt
 foldable_List: Foldable[List] = foldable_specialized(
   foldl_List,
   foldr_List,
+  (items, monoid, fn) -> combine_all_Monoid(monoid, items.map_List(fn)),
   foldl_iter,
   foldr_iter,
   is_empty_List,

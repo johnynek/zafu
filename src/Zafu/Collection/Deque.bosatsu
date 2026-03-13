@@ -20,6 +20,10 @@ from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
 )
+from Zafu/Abstract/Monoid import (
+  empty as empty_monoid,
+  combine as combine_monoid,
+)
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
@@ -218,6 +222,7 @@ def concat(left: Queue[a], right: Queue[a]) -> Queue[a]:
 foldable_Queue: Foldable[Queue] = foldable_specialized(
   foldl,
   foldr,
+  (queue, monoid, fn) -> foldl(queue, empty_monoid(monoid), (acc, item) -> combine_monoid(monoid, acc, fn(item))),
   foldl_iter,
   foldr_iter,
   is_empty,
