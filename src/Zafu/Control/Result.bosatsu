@@ -29,6 +29,17 @@ from Zafu/Abstract/Applicative import (
   map2,
   laws_Applicative,
 )
+from Zafu/Abstract/Semigroup import (
+  Semigroup,
+  semigroup_from_combine,
+  combine as combine_sg,
+)
+from Zafu/Abstract/Monad import (
+  Monad,
+  monad_from_applicative_flat_map_tailrec_steps,
+  tailrec_steps,
+  laws_Monad,
+)
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_from_folds,
@@ -37,6 +48,13 @@ from Zafu/Abstract/Traverse import (
   Traverse,
   traverse,
   traverse_specialized,
+)
+from Zafu/Control/IterState import (
+  IterState,
+  Continue,
+  Done,
+  done,
+  continue,
 )
 
 export (
@@ -58,6 +76,8 @@ export (
   from_Option,
   applicative,
   applicative_Result,
+  applicative_combine_Err,
+  monad_Result,
   traverse_Result,
   eq,
   ord,
@@ -171,7 +191,59 @@ applicative_Result: forall e. Applicative[Result[e]] = applicative_from_pure_map
   map2_result,
 )
 
+def map2_result_combine_err(
+  semigroup_err: Semigroup[e],
+  left: Result[e, a],
+  right: Result[e, b],
+  fn: (a, b) -> c,
+) -> Result[e, c]:
+  match (left, right):
+    case (Ok(left_value), Ok(right_value)):
+      Ok(fn(left_value, right_value))
+    case (Err(left_err), Err(right_err)):
+      # Validation flavor: combine both errors when neither side succeeds.
+      Err(combine_sg(semigroup_err, left_err, right_err))
+    case (Err(err_value), _):
+      Err(err_value)
+    case (_, Err(err_value)):
+      Err(err_value)
+
+def applicative_combine_Err(semigroup_err: Semigroup[e]) -> Applicative[Result[e]]:
+  applicative_from_pure_map_map2(
+    Ok,
+    map,
+    (left, right, fn) -> map2_result_combine_err(semigroup_err, left, right, fn),
+  )
+
 applicative: forall e. Applicative[Result[e]] = applicative_Result
+
+def tailrec_steps_Result(
+  max_steps: Int,
+  init: a,
+  step: a -> Result[e, IterState[a, b]],
+) -> Result[e, IterState[a, b]]:
+  def go(rem: Int, seed: a) -> Result[e, IterState[a, b]]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        # Bounded stepping: no fuel means we yield the current continuation seed.
+        Ok(continue(seed))
+      case _:
+        # Keep recursive stepping in tail position so `loop` remains stack-safe.
+        # This duplicates Result.and_then shape intentionally for loop lowering.
+        match step(seed):
+          case Err(err_value):
+            Err(err_value)
+          case Ok(Done(done_value)):
+            Ok(done(done_value))
+          case Ok(Continue(next_seed)):
+            go(rem.sub(1), next_seed)
+  go(max_steps, init)
+
+monad_Result: forall e. Monad[Result[e]] = monad_from_applicative_flat_map_tailrec_steps(
+  applicative_Result,
+  and_then,
+  tailrec_steps_Result,
+)
 
 foldable_Result: forall e. Foldable[Result[e]] = foldable_from_folds(
   (value, init, fn) -> (
@@ -267,6 +339,17 @@ applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, m
 eq_Int_inst: Eq[Int] = eq_from_fn(eq_Int)
 ord_Int_inst: Ord[Int] = ord_from_cmp(cmp_Int)
 hash_Int_inst: Hash[Int] = hash_from_fn(value -> value, eq_Int_inst)
+semigroup_Int_add: Semigroup[Int] = semigroup_from_combine((left, right) -> left.add(right))
+eq_IterState_Int_Int: Eq[IterState[Int, Int]] = eq_from_fn((left, right) -> (
+  match (left, right):
+    case (Continue(left_cont), Continue(right_cont)):
+      eq_Int(left_cont, right_cont)
+    case (Done(left_done), Done(right_done)):
+      eq_Int(left_done, right_done)
+    case _:
+      False
+))
+eq_Result_IterState_Int_Int: Eq[Result[Int, IterState[Int, Int]]] = eq(eq_Int_inst, eq_IterState_Int_Int)
 
 tests = TestSuite("Result tests", [
   Assertion(is_err(Err(1)), "is_err Err"),
@@ -307,6 +390,15 @@ tests = TestSuite("Result tests", [
   ),
   Assertion(applicative_Result.map2(Ok(1), Ok(2), add) matches Ok(3), "applicative map2 Ok"),
   Assertion(applicative_Result.map2(Ok(1), Err(2), add) matches Err(2), "applicative map2 Err"),
+  Assertion(applicative_Result.map2(Err(1), Err(2), add) matches Err(1), "applicative_Result left-biased errors"),
+  (
+    combined = applicative_combine_Err(semigroup_Int_add)
+    Assertion(combined.map2(Err(1), Err(2), add) matches Err(3), "applicative_combine_Err combines errors")
+  ),
+  (
+    combined = applicative_combine_Err(semigroup_Int_add)
+    Assertion(combined.map2(Err(1), Ok(2), add) matches Err(1), "applicative_combine_Err single error")
+  ),
   Assertion(map_err(Err(1), x -> x.add(1)) matches Err(2), "map_err Err"),
   Assertion(map_err(Ok(1), x -> x.add(1)) matches Ok(1), "map_err Ok"),
   Assertion((Ok(2)).and_then(x -> Ok(x.mul(2))) matches Ok(4), "and_then Ok"),
@@ -350,6 +442,76 @@ tests = TestSuite("Result tests", [
       Err(2),
       value -> value.add(3),
       7,
+    )
+  ),
+  Assertion(
+    monad_Result.tailrec_steps(0, 9, seed -> Ok(Continue(seed.add(1)))) matches Ok(Continue(9)),
+    "monad_Result tailrec_steps max_steps <= 0",
+  ),
+  Assertion(
+    monad_Result.tailrec_steps(5, 0, seed -> (
+      if cmp_Int(seed, 3) matches LT:
+        Ok(Continue(seed.add(1)))
+      else:
+        Ok(Done(seed))
+    )) matches Ok(Done(3)),
+    "monad_Result tailrec_steps reaches Done",
+  ),
+  Assertion(
+    monad_Result.tailrec_steps(2, 0, seed -> Ok(Continue(seed.add(1)))) matches Ok(Continue(2)),
+    "monad_Result tailrec_steps fuel exhaustion",
+  ),
+  Assertion(
+    monad_Result.tailrec_steps(5, 0, seed -> (
+      if cmp_Int(seed, 2) matches EQ:
+        Err(99)
+      else:
+        Ok(Continue(seed.add(1)))
+    )) matches Err(99),
+    "monad_Result tailrec_steps propagates Err",
+  ),
+  (
+    eq_inst = eq(eq_Int_inst, eq_Int_inst)
+    laws_Monad(
+      monad_Result,
+      eq_inst,
+      eq_inst,
+      eq_inst,
+      eq_Result_IterState_Int_Int,
+      Ok(2),
+      7,
+      value -> Ok(value.add(1)),
+      value -> Ok(value.mul(2)),
+      value -> value.add(3),
+      0,
+      seed -> (
+        if cmp_Int(seed, 2) matches LT:
+          Ok(Continue(seed.add(1)))
+        else:
+          Ok(Done(seed))
+      ),
+    )
+  ),
+  (
+    eq_inst = eq(eq_Int_inst, eq_Int_inst)
+    laws_Monad(
+      monad_Result,
+      eq_inst,
+      eq_inst,
+      eq_inst,
+      eq_Result_IterState_Int_Int,
+      Err(1),
+      4,
+      value -> Err(value),
+      value -> Ok(value.mul(2)),
+      value -> value.add(5),
+      10,
+      seed -> (
+        if cmp_Int(seed, 11) matches LT:
+          Ok(Continue(seed.add(1)))
+        else:
+          Ok(Done(seed))
+      ),
     )
   ),
   (
