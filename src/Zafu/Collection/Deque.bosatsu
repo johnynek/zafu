@@ -23,13 +23,13 @@ from Zafu/Abstract/Foldable import (
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
-  pure as pure_Applicative,
-  map as map_Applicative,
-  map2 as map2_Applicative,
+  pure,
+  map as map_app,
+  map2,
 )
 from Zafu/Abstract/Traverse import (
   Traverse,
-  traverse as traverse_Traverse,
+  traverse,
   traverse_specialized,
 )
 from Zafu/Collection/List import size as size_List
@@ -231,10 +231,10 @@ def map_Queue(queue: Queue[a], fn: a -> b) -> Queue[b]:
 def traverse_Queue_fn[g: * -> *, a, b](queue: Queue[a], app: Applicative[g], fn: a -> g[b]) -> g[Queue[b]]:
   rev_mapped = foldl(
     queue,
-    pure_Applicative(app, []),
-    (acc, item) -> acc.map2_Applicative(app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    pure(app, []),
+    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  rev_mapped.map_Applicative(app, rev_items -> from_List(rev_items.reverse()))
+  rev_mapped.map_app(app, rev_items -> from_List(rev_items.reverse()))
 
 traverse_Queue: Traverse[Queue] = traverse_specialized(
   traverse_Queue_fn,
@@ -314,8 +314,7 @@ def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]
     case _:
       None
 
-def option_applicative() -> Applicative[Option]:
-  applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
   if cmp_Int(mod_Int(value, 2), 0) matches EQ:
@@ -560,16 +559,16 @@ tests = TestSuite("Deque tests", [
   Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
   (
     queue = from_List([1, 2, 3])
-    match queue.traverse_Traverse(traverse_Queue, option_applicative(), i -> Some(i.add(10))):
+    match queue.traverse(traverse_Queue, applicative_Option, i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Queue Some")
       case None:
         Assertion(False, "traverse_Queue Some")
   ),
   Assertion(
-    from_List([1, 2, 3, 4]).traverse_Traverse(
+    from_List([1, 2, 3, 4]).traverse(
       traverse_Queue,
-      option_applicative(),
+      applicative_Option,
       keep_even_Option_Int,
     ) matches None,
     "traverse_Queue short-circuits",

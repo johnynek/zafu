@@ -17,25 +17,134 @@ It is guidance for future work, not a statement that the current code already fo
 
 ## Main rule
 
-Do not choose one first-argument rule for an entire typeclass module.
-Choose the first argument per operation.
+Do not force one receiver rule onto an entire module.
+Choose the API shape that makes the call read naturally.
 
 The question is:
 
-> What is the center of gravity of this call?
+> What should feel like the receiver here?
 
-There are two main cases.
+There are three common answers:
+
+1. the flowing subject value,
+2. the dictionary that selects semantics,
+3. no receiver at all, in which case plain prefix style is fine.
+
+## Usage style
+
+The library API and the file-local import style should reinforce each other.
+If an operation is designed to read with dot-apply, we should normally write it that way.
+If an operation is designed around a dictionary, that dictionary should usually be the receiver.
+
+Preferred shapes:
+
+```bosatsu
+foo.traverse(traverse_List, applicative_Option, x -> ...)
+items.fold_map(foldable_List, monoid_String, render)
+partial.and_then(semigroup_Error, recover)
+applicative_Option.map2(left, right, add)
+semigroup_String.combine(left, right)
+```
+
+Avoid mixed shapes that hide the intended center of gravity:
+
+```bosatsu
+traverse(foo, traverse_List, applicative_Option, x -> ...)
+left.map2(applicative_Option, right, add)
+combine(semigroup_String, left, right)
+```
+
+Prefix style is still fine when the dot form is not clearer, but the default should be to make the code read the way the API was designed.
+
+## Naming style for instances
+
+The canonical exported name for a dictionary instance is:
+
+```text
+typeclass_Type
+```
+
+Examples:
+
+```bosatsu
+eq_Int
+ord_String
+hash_List
+foldable_Array
+traverse_List
+applicative_Option
+semigroup_String
+monoid_Int_add
+```
+
+If the instance has a meaningful variant, append it after the type:
+
+```bosatsu
+semigroup_Int_add
+semigroup_Int_mul
+monoid_List_concat
+```
+
+For file-local helpers, use the same pattern when possible, and add `_local` only when that actually helps:
+
+```bosatsu
+foldable_List_local
+applicative_Eval
+applicative_Writer
+```
+
+Avoid reversed names like `option_applicative`.
+They are harder to scan, and they break the repo-wide naming rhythm.
+
+## Import style
+
+Prefer the shortest name that is clear in the current file.
+
+Rules:
+
+1. If there is no conflict, import the function with its plain name.
+2. If there is a conflict, use the shortest meaningful alias.
+3. The function that is central in a file should usually get the shortest name.
+
+Examples:
+
+```bosatsu
+from Zafu/Abstract/Traverse import traverse
+from Zafu/Abstract/Applicative import (
+  pure,
+  map as map_app,
+  map2,
+)
+```
+
+Good:
+
+```bosatsu
+items.traverse(traverse_List, applicative_Option, fn)
+app.map2(left, right, fn)
+value.map_app(app, fn)
+```
+
+Bad:
+
+```bosatsu
+items.traverse_Traverse(traverse_List, applicative_Option, fn)
+left.map2_Applicative(app, right, fn)
+value.map_Applicative(app, fn)
+```
+
+The old `name_Typeclass` alias pattern should only appear when it is truly the best available name.
+In most cases it is just noise.
 
 ## 1. Subject-first when there is a distinguished flowing value
 
-Use subject-first when the operation is primarily about consuming, transforming, traversing, or sequencing a value that users will want to keep piping through code.
-
-This is the rule that preserves dot-chaining.
+Use subject-first when the operation is primarily about consuming, transforming, traversing, or sequencing one value that users will want to keep piping through code.
 
 Examples:
 
 ```bosatsu
 map(fa, app, fn)
+void(fa, app)
 foldl(fa, foldable, init, fn)
 fold_map(fa, foldable, monoid, fn)
 traverse(fa, traverse_f, app, fn)
@@ -43,22 +152,16 @@ and_then(result, fn)
 and_then(partial, semi, fn)
 ```
 
-This style supports both:
+This supports both chained style and left-apply:
 
 ```bosatsu
 foo.filter(selectfn).traverse(traverse_List, applicative_Option, x -> ...)
-```
 
-and:
-
-```bosatsu
 selected = foo.filter(selectfn)
-x <- selected.traverse(traverse_List, applicative_Option)
+x <- selected.traverse(traverse_List, applicative_Option, x -> ...)
 ```
 
-The important property is that the value being worked on stays in the first position.
-
-When an operation is subject-first, prefer dot-apply at the call site when it is readable:
+When an operation is subject-first, prefer subject dot-apply at the call site:
 
 ```bosatsu
 foo.map(app, fn)
@@ -67,12 +170,9 @@ foo.traverse(traverse_f, app, fn)
 partial.and_then(semi, fn)
 ```
 
-If a subject-first API is mostly used in prefix form, the ergonomic benefit of making it subject-first is much smaller.
-The API shape and the call style should reinforce each other.
-
 ## 2. Dictionary-first when the call is mainly selecting semantics
 
-Use dictionary-first when the operation is primarily about choosing an algebra, relation, or capability, and there is no distinguished subject value to act as a receiver.
+Use dictionary-first when the operation is mainly about choosing an algebra, relation, or capability, and there is no single flowing subject value.
 
 Examples:
 
@@ -85,14 +185,46 @@ empty(monoid)
 pure(app, value)
 ```
 
-These calls are not naturally about "doing something to `left`" or "doing something to `value`" in the same way that `map` or `traverse` are.
-They are mainly about choosing which semantics to use.
+These are semantics-first calls.
+The dictionary is the interesting part, not any one data argument.
 
-This is why relation and algebra typeclasses naturally read dictionary-first.
+When readable, prefer dictionary dot-apply:
 
-## 3. Continuation functions go last
+```bosatsu
+eq_Int.eq(left, right)
+semigroup_String.combine(left, right)
+applicative_Option.pure(value)
+```
 
-If an operation takes a continuation, mapping function, predicate, or callback, put that function last.
+## 3. Do not invent a value receiver when the data arguments are peers
+
+If an operation takes several peer values of the same conceptual kind, do not force one of them to look like the owner of the call.
+
+This is the important correction for Applicative-style combinators.
+
+Good:
+
+```bosatsu
+app.map2(fx, fy, fn)
+app.product2(fx, fy)
+app.product_left(fx, fy)
+semi.combine(left, right)
+```
+
+Bad:
+
+```bosatsu
+fx.map2(app, fy, fn)
+fx.product2(app, fy)
+left.combine(semi, right)
+```
+
+The value-receiver form looks arbitrary because neither peer is actually more central than the other.
+Let the dictionary be the receiver instead.
+
+## 4. Continuation functions go last
+
+If an operation takes a continuation, mapping function, predicate, or callback, put it last.
 
 Examples:
 
@@ -100,98 +232,50 @@ Examples:
 map(fa, app, fn)
 foldl(fa, foldable, init, fn)
 traverse(fa, traverse_f, app, fn)
-flat_map(ma, monad, fn)
+app.map2(fx, fy, fn)
+partial.and_then(semi, fn)
 ```
 
-This matters for readability in both direct calls and left-apply style.
+This matters for direct calls, dot-apply, and left-apply.
 
-## 4. How to order multiple dictionaries
+## 5. How to order multiple dictionaries
 
-When an operation is subject-first and needs more than one explicit dictionary, use this order:
-
-1. the subject value,
-2. the dictionary that explains the subject's structure or primary capability,
-3. dictionaries that describe how results are combined, accumulated, compared, or effected,
-4. ordinary non-function arguments,
-5. continuation functions.
-
-Short mnemonic:
+When there is a single flowing subject, use:
 
 > subject, shape, effect/algebra, data, lambda
 
 Examples:
 
 ```bosatsu
-traverse(fa, traverse_f, app, fn)
-sequence(fga, traverse_f, app)
-fold_map(fa, foldable, monoid, fn)
-combine_all(fa, foldable, monoid)
-traverse_void(fa, foldable, app, fn)
-minimum_option(fa, foldable, ord_inst)
-contains(fa, foldable, eq_inst, target)
-and_then(partial, semi, fn)
+fa.traverse(traverse_f, app, fn)
+fa.fold_map(foldable, monoid, fn)
+fa.combine_all(foldable, monoid)
+fa.contains(foldable, eq_inst, target)
+partial.and_then(semi, fn)
 ```
 
-The important distinction is between:
+The shape dictionary comes before secondary dictionaries because it explains how we are working with the subject.
 
-- the dictionary that tells us how to work with the subject itself, and
-- the dictionary that tells us how to combine or interpret results while doing that work.
+Examples:
 
-So for the common cases:
+- `fa.traverse(traverse_f, app, fn)`
+  `traverse_f` explains how to walk `fa`; `app` explains how to accumulate effects.
+- `fa.fold_map(foldable, monoid, fn)`
+  `foldable` explains iteration; `monoid` explains accumulation.
+- `fa.contains(foldable, eq_inst, target)`
+  `foldable` explains traversal; `eq_inst` is used inside that traversal.
 
-- `traverse(fa, traverse_f, app, fn)`
-  `traverse_f` comes before `app` because we first need to know how to walk `fa`, then how to accumulate the effects.
-- `fold_map(fa, foldable, monoid, fn)`
-  `foldable` comes before `monoid` because we first need to know how to iterate the structure, then how to accumulate mapped results.
-- `combine_all(fa, foldable, monoid)`
-  same rule: structure first, accumulation second.
-- `contains(fa, foldable, eq_inst, target)`
-  `foldable` comes before `eq_inst` because traversal of `fa` is the outer operation; equality is used inside that traversal.
+When there is no flowing subject and the dictionary is the receiver, use:
 
-If there is no subject, then this rule does not apply.
-In that case, fall back to dictionary-first.
-
-## 5. Do not invent a receiver when the data arguments are peers
-
-Some operations have multiple value arguments, but they are peers rather than a receiver plus inputs.
-
-For those, do not force subject-first just to make method syntax possible.
+> primary dictionary, peer values, other data, lambda
 
 Examples:
 
 ```bosatsu
-combine(semi, left, right)
-eq(eq_inst, left, right)
-cmp(ord_inst, left, right)
+app.map2(fx, fy, fn)
+app.product3(fx, fy, fz)
+semi.combine(left, right)
 ```
-
-`left` is not really the "owner" of the call here.
-The operation is about the dictionary and the relation/algebra it defines.
-
-By contrast, these are still receiver-like operations even though they mention more than one value:
-
-```bosatsu
-map2(fa, app, fb, fn)
-product_left(fa, app, fb)
-```
-
-Those read as extending work on an existing effectful value `fa`, so subject-first still makes sense.
-
-## 6. Constructors and projections are usually dictionary-first
-
-Operations that construct a value from a typeclass alone, or project another capability from it, should usually remain dictionary-first.
-
-Examples:
-
-```bosatsu
-pure(app, value)
-empty(monoid)
-monoid_to_semigroup(monoid)
-ord_to_eq(ord_inst)
-combine_fn(semi)
-```
-
-There is no flowing subject to preserve in these calls.
 
 ## Recommended defaults for common typeclasses
 
@@ -207,48 +291,42 @@ cmp(ord_inst, left, right)
 hash(hash_inst, value)
 ```
 
-Rationale: these choose comparison or hashing semantics for peer values.
-
 ### Semigroup, Monoid
 
-Dictionary-first for the abstract algebra operations.
+Dictionary-first.
 
 Examples:
 
 ```bosatsu
-combine(semi, left, right)
+semi.combine(left, right)
 combine_all_option(semi, items)
 empty(monoid)
-combine(monoid, left, right)
+monoid.combine(left, right)
 combine_all(monoid, items)
 ```
 
-Rationale: these are algebra-first operations over peer values.
-
-Concrete data structure modules may still expose value-centric helpers when that improves ergonomics, but the generic abstract operations should treat the algebra as the semantic center.
+These are algebra-first operations over peer values.
 
 ### Applicative
 
 Mixed.
 
-Use dictionary-first for operations with no subject:
+Use dictionary-first for capability selection and peer-value combinators:
 
 ```bosatsu
 pure(app, value)
+app.map2(fx, fy, fn)
+app.ap(ff, fa)
+app.product_left(fx, fy)
+app.product2(fx, fy)
 ```
 
-Use subject-first for operations over existing effectful values:
+Use subject-first for unary transformations on one flowing value:
 
 ```bosatsu
-map(fa, app, fn)
-map2(fa, app, fb, fn)
-ap(ff, app, fa)
-product_left(fa, app, fb)
-product_right(fa, app, fb)
-void(fa, app)
+fa.map(app, fn)
+fa.void(app)
 ```
-
-Rationale: `pure` selects an effect, but `map` and friends continue work on an existing subject.
 
 ### Foldable
 
@@ -257,18 +335,11 @@ Subject-first.
 Examples:
 
 ```bosatsu
-foldl(fa, foldable, init, fn)
-foldr(fa, foldable, init, fn)
-fold_map(fa, foldable, monoid, fn)
-combine_all(fa, foldable, monoid)
-combine_all_option(fa, foldable, semi)
-traverse_void(fa, foldable, app, fn)
-contains(fa, foldable, eq_inst, target)
-minimum_option(fa, foldable, ord_inst)
+fa.foldl(foldable, init, fn)
+fa.fold_map(foldable, monoid, fn)
+fa.combine_all(foldable, monoid)
+fa.traverse_void(foldable, app, fn)
 ```
-
-Rationale: these are all operations on a structure that users will often want to chain.
-When another dictionary is needed, `Foldable` stays first among dictionaries because it governs the subject structure.
 
 ### Traverse
 
@@ -277,24 +348,15 @@ Subject-first.
 Examples:
 
 ```bosatsu
-traverse(fa, traverse_f, app, fn)
-sequence(fga, traverse_f, app)
-map(fa, traverse_f, fn)
+fa.traverse(traverse_f, app, fn)
+fga.sequence(traverse_f, app)
+fa.map(traverse_f, fn)
 ```
 
-Rationale: the traversed structure is the receiver-like subject; the applicative is secondary.
-So the ordering is subject, then `Traverse`, then `Applicative`, then the callback.
-
-Preferred shape for chained code:
+Preferred chained form:
 
 ```bosatsu
 foo.filter(selectfn).traverse(traverse_List, applicative_Option, x -> ...)
-```
-
-Not:
-
-```bosatsu
-traverse_List.traverse(applicative_Option, foo, x -> ...)
 ```
 
 ### Monad
@@ -304,39 +366,36 @@ Subject-first.
 Examples:
 
 ```bosatsu
-flat_map(ma, monad, fn)
-flatten(mma, monad)
+ma.flat_map(monad, fn)
+partial.and_then(semi, fn)
 ```
 
-If lawfulness requires an extra algebra dictionary, keep the monadic subject first:
-
-```bosatsu
-and_then(partial, semi, fn)
-```
-
-Rationale: monadic sequencing is usually the core pipeline in user code.
-The extra algebra dictionary is auxiliary to the sequencing subject, so it comes after the subject and before the callback.
+The sequencing subject is still the center of gravity.
 
 ## How to design a new typeclass API
 
-When adding a new typeclass or a new operation, use this checklist:
+When adding a new typeclass or a new operation:
 
-1. Write the call the way you expect users to read it in normal code.
-2. Write the same call in a chained style.
-3. Write the same call in a left-apply style if it is effectful or sequential.
-4. Ask whether there is a single flowing subject value.
+1. Write the call the way you want users to read it in normal code.
+2. Write the same call in the dot style you expect people to prefer.
+3. If it is effectful, write the left-apply form too.
+4. Ask whether there is exactly one flowing subject value.
 5. Ask whether the data arguments are peers.
-6. Ask whether the operation is really selecting semantics from a dictionary.
-7. Put any continuation function last.
+6. Ask whether the dictionary is really selecting semantics.
+7. Put callback arguments last.
+8. Choose the shortest local names that keep the file readable.
 
-If there is a single flowing subject, it should usually be first.
-If there is not, the dictionary should usually be first.
+If there is one flowing subject, it should usually be the receiver.
+If the values are peers, the dictionary should usually be the receiver.
+If there is no natural receiver, plain dictionary-first prefix style is fine.
 
 ## Things to avoid
 
-- Do not make every operation dictionary-first just because typeclasses are explicit.
 - Do not make every operation subject-first just to enable method syntax.
-- Do not use one blanket rule for an entire module when different operations have different centers of gravity.
+- Do not make every operation dictionary-first just because typeclasses are explicit.
+- Do not make one peer value pretend to own a call that is really about a dictionary.
+- Do not keep long imported names when a short unambiguous name is available.
+- Do not introduce naming schemes that fight the repo-wide `typeclass_Type` pattern.
 - Do not put callbacks in the middle of the argument list.
 - Do not treat symmetric peer operations as if one operand were the natural receiver.
 

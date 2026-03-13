@@ -46,13 +46,13 @@ from Zafu/Abstract/Foldable import (
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
-  pure as pure_Applicative,
-  map as map_Applicative,
-  map2 as map2_Applicative,
+  pure,
+  map as map_app,
+  map2,
 )
 from Zafu/Abstract/Traverse import (
   Traverse,
-  traverse as traverse_Traverse,
+  traverse,
   traverse_specialized,
 )
 
@@ -148,10 +148,10 @@ def map(items: List[a], fn: a -> b) -> List[b]:
 
 def traverse_List_fn[g: * -> *, a, b](items: List[a], app: Applicative[g], fn: a -> g[b]) -> g[List[b]]:
   rev_mapped = items.foldl_List(
-    pure_Applicative(app, []),
-    (acc, item) -> acc.map2_Applicative(app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    pure(app, []),
+    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  rev_mapped.map_Applicative(app, rev_items -> rev_items.reverse())
+  rev_mapped.map_app(app, rev_items -> rev_items.reverse())
 
 def flat_map(items: List[a], fn: a -> List[b]) -> List[b]:
   items.flat_map_List(fn)
@@ -194,7 +194,7 @@ def split_at(items: List[a], size: Int) -> (List[a], List[a]):
 def concat_all(items: List[List[a]]) -> List[a]:
   foldr(items, [], (next, acc) -> [*next, *acc])
 
-list_foldable: Foldable[List] = foldable_from_folds(
+foldable_List: Foldable[List] = foldable_from_folds(
   foldl,
   foldr,
 )
@@ -202,7 +202,7 @@ list_foldable: Foldable[List] = foldable_from_folds(
 traverse_List: Traverse[List] = traverse_specialized(
   traverse_List_fn,
   map,
-  list_foldable,
+  foldable_List,
 )
 
 def eq_list(eq_item: Eq[a], left: List[a], right: List[a]) -> Bool:
@@ -250,24 +250,23 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
-def option_applicative() -> Applicative[Option]:
-  applicative_from_pure_map_map2(
-    Some,
-    (value, fn) -> (
-      match value:
-        case Some(item):
-          Some(fn(item))
-        case None:
-          None
-    ),
-    (left, right, fn) -> (
-      match (left, right):
-        case (Some(left_item), Some(right_item)):
-          Some(fn(left_item, right_item))
-        case _:
-          None
-    ),
-  )
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(
+  Some,
+  (value, fn) -> (
+    match value:
+      case Some(item):
+        Some(fn(item))
+      case None:
+        None
+  ),
+  (left, right, fn) -> (
+    match (left, right):
+      case (Some(left_item), Some(right_item)):
+        Some(fn(left_item, right_item))
+      case _:
+        None
+  ),
+)
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
   if cmp_Int(mod_Int(value, 2), 0) matches EQ:
@@ -374,13 +373,13 @@ tests = TestSuite("Zafu/Collection/List tests", [
   Assertion(foldr([1, 2, 3], 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr right-associative"),
   Assertion(map([1, 2, 3], i -> i.add(10)) matches [11, 12, 13], "map"),
   Assertion(
-    ([1, 2, 3]).traverse_Traverse(traverse_List, option_applicative(), i -> Some(i.add(10))) matches Some([11, 12, 13]),
+    ([1, 2, 3]).traverse(traverse_List, applicative_Option, i -> Some(i.add(10))) matches Some([11, 12, 13]),
     "traverse_List Some",
   ),
   Assertion(
-    ([1, 2, 3, 4]).traverse_Traverse(
+    ([1, 2, 3, 4]).traverse(
       traverse_List,
-      option_applicative(),
+      applicative_Option,
       keep_even_Option_Int,
     ) matches None,
     "traverse_List short-circuits",
@@ -392,7 +391,7 @@ tests = TestSuite("Zafu/Collection/List tests", [
     deep_count = 100000
     deep = mk_range(deep_count)
     expected_sum = deep_count.mul(deep_count.add(1)).div(2).add(deep_count)
-    match deep.traverse_Traverse(traverse_List, option_applicative(), i -> Some(i.add(1))):
+    match deep.traverse(traverse_List, applicative_Option, i -> Some(i.add(1))):
       case Some(mapped):
         Assertion(
           and_Bool(mapped.foldl_List(0, add).eq_Int(expected_sum), size(mapped).eq_Int(deep_count)),

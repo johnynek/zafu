@@ -56,18 +56,18 @@ from Zafu/Abstract/Hash import (
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
-  combine_all_option as combine_all_option_Foldable,
+  combine_all_option as combine_all_option_fold,
 )
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
-  pure as pure_Applicative,
-  map as map_Applicative,
-  map2 as map2_Applicative,
+  pure,
+  map as map_app,
+  map2,
 )
 from Zafu/Abstract/Traverse import (
   Traverse,
-  traverse as traverse_Traverse,
+  traverse,
   traverse_specialized,
 )
 from Zafu/Abstract/Semigroup import (
@@ -484,10 +484,10 @@ def map(vec: Vector[a], fn: a -> b) -> Vector[b]:
 def traverse_Vector_fn[g: * -> *, a, b](vec: Vector[a], app: Applicative[g], fn: a -> g[b]) -> g[Vector[b]]:
   rev_mapped = foldl(
     vec,
-    pure_Applicative(app, []),
-    (acc, item) -> acc.map2_Applicative(app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    pure(app, []),
+    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  rev_mapped.map_Applicative(app, rev_items -> from_List(rev_items.reverse()))
+  rev_mapped.map_app(app, rev_items -> from_List(rev_items.reverse()))
 
 traverse_Vector: Traverse[Vector] = traverse_specialized(
   traverse_Vector_fn,
@@ -1245,7 +1245,7 @@ def combine_all_option_with_fuel(vec: Vector[a], semi: Semigroup[a], fuel: Int) 
     case _:
       match vec:
         case Leaf(_, items):
-          items.combine_all_option_Foldable(foldable_Array, semi)
+          items.combine_all_option_fold(foldable_Array, semi)
         case Branch(_, _, _, children):
           foldl_Array(children, None, (state, child) -> (
             child_total = combine_all_option_with_fuel(child, semi, fuel.sub(1))
@@ -1319,8 +1319,7 @@ def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]
     case _:
       None
 
-def option_applicative() -> Applicative[Option]:
-  applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
   if cmp_Int(mod_Int(value, 2), 0) matches EQ:
@@ -1785,7 +1784,7 @@ tests = TestSuite("Vector tests", [
   Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
   (
     vec = from_List([1, 2, 3])
-    match vec.traverse_Traverse(traverse_Vector, option_applicative(), i -> Some(i.add(10))):
+    match vec.traverse(traverse_Vector, applicative_Option, i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Vector Some")
       case None:
@@ -1794,9 +1793,9 @@ tests = TestSuite("Vector tests", [
   (
     vec = from_List([1, 2, 3, 4])
     Assertion(
-      vec.traverse_Traverse(
+      vec.traverse(
         traverse_Vector,
-        option_applicative(),
+        applicative_Option,
         keep_even_Option_Int,
       ) matches None,
       "traverse_Vector short-circuits",

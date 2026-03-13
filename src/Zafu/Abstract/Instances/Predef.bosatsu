@@ -81,23 +81,23 @@ from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_from_folds,
   foldable_specialized,
-  foldl as foldl_Foldable,
-  foldl_iter as foldl_iter_Foldable,
-  foldr_iter as foldr_iter_Foldable,
-  to_List as to_List_Foldable,
-  size as size_Foldable,
+  foldl,
+  foldl_iter as foldl_iter_fold,
+  foldr_iter as foldr_iter_fold,
+  to_List,
+  size,
 )
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
-  pure as pure_Applicative,
-  map as map_Applicative,
-  map2 as map2_Applicative,
+  pure,
+  map,
+  map2,
   laws_Applicative,
 )
 from Zafu/Abstract/Traverse import (
   Traverse,
-  traverse as traverse_Traverse,
+  traverse,
   traverse_specialized,
 )
 from Zafu/Control/IterState import (
@@ -719,17 +719,17 @@ foldable_Option: Foldable[Option] = foldable_from_folds(
 def traverse_Option_fn[g: * -> *, a, b](value: Option[a], app: Applicative[g], fn: a -> g[b]) -> g[Option[b]]:
   match value:
     case Some(item):
-      fn(item).map_Applicative(app, Some)
+      fn(item).map(app, Some)
     case None:
-      pure_Applicative(app, None)
+      pure(app, None)
 
 def traverse_Array_fn[g: * -> *, a, b](items: Array[a], app: Applicative[g], fn: a -> g[b]) -> g[Array[b]]:
   rev_mapped = foldl_Array(
     items,
-    pure_Applicative(app, []),
-    (acc, item) -> acc.map2_Applicative(app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    pure(app, []),
+    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  rev_mapped.map_Applicative(app, rev_items -> from_List_Array(rev_items.reverse()))
+  rev_mapped.map(app, rev_items -> from_List_Array(rev_items.reverse()))
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
   if cmp_Int(mod_Int(value, 2), 0) matches EQ:
@@ -3320,11 +3320,11 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   ),
   (
     arr = from_List_Array([1, 2, 3])
-    Assertion(cmp_Int(arr.foldl_Foldable(foldable_Array, 0, add), 6) matches EQ, "foldable_Array foldl")
+    Assertion(cmp_Int(arr.foldl(foldable_Array, 0, add), 6) matches EQ, "foldable_Array foldl")
   ),
   (
     arr = from_List_Array([1, 2, 3, 4])
-    total = arr.foldl_iter_Foldable(foldable_Array, 0, (acc, item) -> (
+    total = foldl_iter_fold(arr, foldable_Array, 0, (acc, item) -> (
       next = acc.add(item)
       if cmp_Int(next, 3) matches GT:
         done(next)
@@ -3335,7 +3335,7 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   ),
   (
     arr = from_List_Array([1, 2, 3])
-    total = arr.foldr_iter_Foldable(foldable_Array, 0, (item, acc) -> (
+    total = foldr_iter_fold(arr, foldable_Array, 0, (item, acc) -> (
       if cmp_Int(item, 2) matches EQ:
         done(item.add(acc))
       else:
@@ -3345,31 +3345,31 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   ),
   (
     arr = from_List_Array([1, 2, 3])
-    Assertion(arr.to_List_Foldable(foldable_Array) matches [1, 2, 3], "foldable_Array to_List")
+    Assertion(arr.to_List(foldable_Array) matches [1, 2, 3], "foldable_Array to_List")
   ),
   (
     arr = from_List_Array([1, 2, 3])
-    Assertion(cmp_Int(arr.size_Foldable(foldable_Array), 3) matches EQ, "foldable_Array size")
+    Assertion(cmp_Int(arr.size(foldable_Array), 3) matches EQ, "foldable_Array size")
   ),
   Assertion(
-    (Some(1)).map2_Applicative(applicative_Option, Some(2), add) matches Some(3),
+    applicative_Option.map2(Some(1), Some(2), add) matches Some(3),
     "applicative_Option map2",
   ),
   Assertion(
-    (Some(1)).map2_Applicative(applicative_Option, None, add) matches None,
+    applicative_Option.map2(Some(1), None, add) matches None,
     "applicative_Option propagates None",
   ),
   Assertion(
-    (Some(1)).traverse_Traverse(traverse_Option, applicative_Option, i -> Some(i.add(1))) matches Some(Some(2)),
+    (Some(1)).traverse(traverse_Option, applicative_Option, i -> Some(i.add(1))) matches Some(Some(2)),
     "traverse_Option Some",
   ),
   Assertion(
-    (Some(1)).traverse_Traverse(traverse_Option, applicative_Option, _ -> None) matches None,
+    (Some(1)).traverse(traverse_Option, applicative_Option, _ -> None) matches None,
     "traverse_Option None from fn",
   ),
   (
     arr = from_List_Array([1, 2, 3])
-    match arr.traverse_Traverse(traverse_Array, applicative_Option, i -> Some(i.add(1))):
+    match arr.traverse(traverse_Array, applicative_Option, i -> Some(i.add(1))):
       case Some(mapped):
         Assertion(to_List_Array(mapped) matches [2, 3, 4], "traverse_Array Some")
       case None:
@@ -3378,7 +3378,7 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   (
     arr = from_List_Array([1, 2, 3])
     Assertion(
-      arr.traverse_Traverse(
+      arr.traverse(
         traverse_Array,
         applicative_Option,
         keep_even_Option_Int,

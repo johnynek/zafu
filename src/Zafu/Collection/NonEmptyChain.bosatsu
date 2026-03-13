@@ -49,13 +49,13 @@ from Zafu/Abstract/Foldable import (
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
-  pure as pure_Applicative,
-  map as map_Applicative,
-  map2 as map2_Applicative,
+  pure,
+  map as map_app,
+  map2,
 )
 from Zafu/Abstract/Traverse import (
   Traverse,
-  traverse as traverse_Traverse,
+  traverse,
   traverse_specialized,
 )
 from Zafu/Abstract/Ord import (
@@ -350,12 +350,12 @@ def traverse_NonEmptyChain_fn[g: * -> *, a, b](
 ) -> g[NonEmptyChain[b]]:
   (head0, tail0) = uncons(items)
   rev_tail = to_List_Chain(tail0).foldl_List(
-    pure_Applicative(app, []),
-    (acc, item) -> acc.map2_Applicative(app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    pure(app, []),
+    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  fn(head0).map2_Applicative(
-    app,
-    rev_tail.map_Applicative(app, rev_items -> rev_items.reverse()),
+  app.map2(
+    fn(head0),
+    rev_tail.map_app(app, rev_items -> rev_items.reverse()),
     (mapped_head, mapped_tail) -> Prepend(mapped_head, from_List_Chain(mapped_tail)),
   )
 
@@ -455,8 +455,7 @@ def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]
     case _:
       None
 
-def option_applicative() -> Applicative[Option]:
-  applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
   if cmp_Int(mod_Int(value, 2), 0) matches EQ:
@@ -575,16 +574,16 @@ transform_and_composition_tests = TestSuite("transforms and composition", [
   Assertion(to_List(map(from_prepend(1, from_List_Chain([2, 3])), i -> i.add(10))) matches [11, 12, 13], "map"),
   (
     items = from_prepend(1, from_List_Chain([2, 3]))
-    match items.traverse_Traverse(traverse_NonEmptyChain, option_applicative(), i -> Some(i.add(10))):
+    match items.traverse(traverse_NonEmptyChain, applicative_Option, i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_NonEmptyChain Some")
       case None:
         Assertion(False, "traverse_NonEmptyChain Some")
   ),
   Assertion(
-    from_prepend(1, from_List_Chain([2, 3, 4])).traverse_Traverse(
+    from_prepend(1, from_List_Chain([2, 3, 4])).traverse(
       traverse_NonEmptyChain,
-      option_applicative(),
+      applicative_Option,
       keep_even_Option_Int,
     ) matches None,
     "traverse_NonEmptyChain short-circuits",

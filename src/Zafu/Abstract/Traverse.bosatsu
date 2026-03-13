@@ -21,16 +21,16 @@ from Zafu/Abstract/Monoid import (
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
-  pure as pure_Applicative,
-  map as map_Applicative,
-  map2 as map2_Applicative,
-  void as void_Applicative,
+  pure,
+  map as map_app,
+  map2,
+  void,
 )
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_from_folds,
-  to_List as to_List_Foldable,
-  traverse_void as traverse_void_Foldable,
+  to_List,
+  traverse_void,
 )
 
 export (
@@ -82,29 +82,28 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
-def option_applicative() -> Applicative[Option]:
-  applicative_from_pure_map_map2(
-    Some,
-    (value, fn) -> (
-      match value:
-        case Some(item):
-          Some(fn(item))
-        case None:
-          None
-    ),
-    (left, right, fn) -> (
-      match (left, right):
-        case (Some(left_item), Some(right_item)):
-          Some(fn(left_item, right_item))
-        case _:
-          None
-    ),
-  )
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(
+  Some,
+  (value, fn) -> (
+    match value:
+      case Some(item):
+        Some(fn(item))
+      case None:
+        None
+  ),
+  (left, right, fn) -> (
+    match (left, right):
+      case (Some(left_item), Some(right_item)):
+        Some(fn(left_item, right_item))
+      case _:
+        None
+  ),
+)
 
 def eval_map2(left: Eval[a], right: Eval[b], fn: (a, b) -> c) -> Eval[c]:
   flat_map_Eval(left, left_value -> map_Eval(right, right_value -> fn(left_value, right_value)))
 
-eval_applicative: Applicative[Eval] = applicative_from_pure_map_map2(
+applicative_Eval: Applicative[Eval] = applicative_from_pure_map_map2(
   done_Eval,
   map_Eval,
   eval_map2,
@@ -116,7 +115,7 @@ def map_from_traverse[f: * -> *](
   fn: a -> b,
 ) -> f[b]:
   # Derive map through Eval so large right-associated applicative chains stay stack-safe.
-  mapped_eval = traverse_fn(fa, eval_applicative, item -> done_Eval(fn(item)))
+  mapped_eval = traverse_fn(fa, applicative_Eval, item -> done_Eval(fn(item)))
   eval_Eval(mapped_eval)
 
 def const_map(value: Const[c, a], _: a -> b) -> Const[c, b]:
@@ -196,7 +195,7 @@ def laws_Traverse[f: * -> *, a, b, c](
   fn_bc: b -> c,
   fn_aob: a -> Option[b],
 ) -> Test:
-  option_app = option_applicative()
+  option_app = applicative_Option
   map_identity = Assertion(eq_Eq(eq_fa, fa.map(inst, item -> item), fa), "map identity")
   map_composition = Assertion(
     eq_Eq(
@@ -217,7 +216,7 @@ def laws_Traverse[f: * -> *, a, b, c](
   list_monoid = monoid_from_combine([], (left, right) -> [*left, *right])
   const_app = const_applicative(list_monoid)
   Const(logged_order) = fa.traverse(inst, const_app, item -> Const([item]))
-  projected_order = fa.to_List_Foldable(traverse_to_foldable(inst))
+  projected_order = fa.to_List(traverse_to_foldable(inst))
   foldable_projection = Assertion(
     eq_List(eq_item, logged_order, projected_order),
     "Foldable projection order coherence",
@@ -225,8 +224,8 @@ def laws_Traverse[f: * -> *, a, b, c](
   foldable_coherence = Assertion(
     eq_Eq(
       eq_option_unit,
-      fa.traverse_void_Foldable(traverse_to_foldable(inst), option_app, fn_aob),
-      fa.traverse(inst, option_app, fn_aob).void_Applicative(option_app),
+      fa.traverse_void(traverse_to_foldable(inst), option_app, fn_aob),
+      fa.traverse(inst, option_app, fn_aob).void(option_app),
     ),
     "Foldable.traverse_void coherence",
   )
@@ -240,12 +239,12 @@ def laws_Traverse[f: * -> *, a, b, c](
 
 def traverse_List_local[g: * -> *, a, b](items: List[a], app: Applicative[g], fn: a -> g[b]) -> g[List[b]]:
   rev_mapped = items.foldl_List(
-    pure_Applicative(app, []),
-    (acc, item) -> acc.map2_Applicative(app, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+    pure(app, []),
+    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
-  rev_mapped.map_Applicative(app, rev_items -> rev_items.reverse())
+  rev_mapped.map_app(app, rev_items -> rev_items.reverse())
 
-def list_foldable_local() -> Foldable[List]:
+def foldable_List_local() -> Foldable[List]:
   foldable_from_folds(
     (items, init, fn) -> items.foldl_List(init, fn),
     (items, init, fn) -> items.reverse().foldl_List(init, (acc, item) -> fn(item, acc)),
@@ -271,7 +270,7 @@ tests = TestSuite("Traverse tests", [
     list_traverse = traverse_specialized(
       traverse_List_local,
       map_List_local,
-      list_foldable_local(),
+      foldable_List_local(),
     )
     eq_int = eq_from_fn(eq_Int)
     eq_list_int = eq_from_fn((left, right) -> eq_List(eq_int, left, right))
@@ -296,12 +295,12 @@ tests = TestSuite("Traverse tests", [
     list_traverse = traverse_specialized(
       traverse_List_local,
       map_List_local,
-      list_foldable_local(),
+      foldable_List_local(),
     )
     deep_count = 100000
     deep_items = mk_range(deep_count)
     expected_sum = deep_count.mul(deep_count.add(1)).div(2).add(deep_count)
-    match deep_items.traverse(list_traverse, option_applicative(), item -> Some(item.add(1))):
+    match deep_items.traverse(list_traverse, applicative_Option, item -> Some(item.add(1))):
       case Some(mapped):
         Assertion(
           and_Bool(mapped.foldl_List(0, add).eq_Int(expected_sum), size_List(mapped).eq_Int(deep_count)),
@@ -314,7 +313,7 @@ tests = TestSuite("Traverse tests", [
     # This exercises the Eval-backed map derivation path in traverse_from_traverse.
     derived = traverse_from_traverse(
       traverse_List_local,
-      list_foldable_local(),
+      foldable_List_local(),
     )
     deep_count = 100000
     deep_items = mk_range(deep_count)
