@@ -721,12 +721,12 @@ def traverse_Option_fn[g: * -> *, a, b](value: Option[a], app: Applicative[g], f
     case Some(item):
       fn(item).map(app, Some)
     case None:
-      pure(app, None)
+      app.pure(None)
 
 def traverse_Array_fn[g: * -> *, a, b](items: Array[a], app: Applicative[g], fn: a -> g[b]) -> g[Array[b]]:
   rev_mapped = foldl_Array(
     items,
-    pure(app, []),
+    app.pure([]),
     (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
   rev_mapped.map(app, rev_items -> from_List_Array(rev_items.reverse()))

@@ -51,7 +51,7 @@ from Zafu/Abstract/Hash import (
 from Zafu/Abstract/Semigroup import (
   Semigroup,
   semigroup_specialized,
-  combine_all_option as combine_all_option_Semigroup,
+  combine_all_option as combine_all_option_sg,
 )
 from Zafu/Collection/HashSet import (
   empty as empty_HashSet,
@@ -242,7 +242,7 @@ def traverse_NonEmptyList_fn[g: * -> *, a, b](
 ) -> g[NonEmptyList[b]]:
   NonEmptyList(head0, tail0) = items
   rev_tail = tail0.foldl_List(
-    pure(app, []),
+    app.pure([]),
     (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
   app.map2(
@@ -297,7 +297,7 @@ def combine_all(items: NonEmptyList[a], sg: Semigroup[a]) -> a:
       head0
     case _:
       # Use Semigroup's specialized list combine path when available.
-      match combine_all_option_Semigroup(sg, [head0, *tail0]):
+      match combine_all_option_sg(sg, [head0, *tail0]):
         case Some(total):
           total
         case None:

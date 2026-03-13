@@ -71,7 +71,7 @@ from Zafu/Abstract/Hash import (
 from Zafu/Abstract/Semigroup import (
   Semigroup,
   semigroup_from_combine,
-  combine as combine_Semigroup,
+  combine,
 )
 from Zafu/Collection/HashSet import (
   empty as empty_HashSet,
@@ -326,13 +326,13 @@ def combine_all(items: NonEmptyChain[a], semi: Semigroup[a]) -> a:
     case Prepend(head0, tail0):
       match combine_all_Chain(tail0, semi):
         case Some(rest):
-          combine_Semigroup(semi, head0, rest)
+          semi.combine(head0, rest)
         case None:
           head0
     case Append(init0, last0):
       match combine_all_Chain(init0, semi):
         case Some(rest):
-          combine_Semigroup(semi, rest, last0)
+          semi.combine(rest, last0)
         case None:
           last0
 
@@ -350,7 +350,7 @@ def traverse_NonEmptyChain_fn[g: * -> *, a, b](
 ) -> g[NonEmptyChain[b]]:
   (head0, tail0) = uncons(items)
   rev_tail = to_List_Chain(tail0).foldl_List(
-    pure(app, []),
+    app.pure([]),
     (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
   app.map2(

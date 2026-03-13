@@ -72,14 +72,14 @@ from Zafu/Abstract/Traverse import (
 )
 from Zafu/Abstract/Semigroup import (
   Semigroup,
-  combine as combine_Semigroup,
-  combine_all_option as combine_all_option_Semigroup,
+  combine,
+  combine_all_option as combine_all_option_sg,
   semigroup_from_combine,
 )
 from Zafu/Abstract/Monoid import (
   Monoid,
-  empty as empty_Monoid,
-  combine_all as combine_all_Monoid,
+  empty as empty_monoid,
+  combine_all as combine_all_monoid,
   monoid_from_combine,
   monoid_to_semigroup,
 )
@@ -484,7 +484,7 @@ def map(vec: Vector[a], fn: a -> b) -> Vector[b]:
 def traverse_Vector_fn[g: * -> *, a, b](vec: Vector[a], app: Applicative[g], fn: a -> g[b]) -> g[Vector[b]]:
   rev_mapped = foldl(
     vec,
-    pure(app, []),
+    app.pure([]),
     (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
   rev_mapped.map_app(app, rev_items -> from_List(rev_items.reverse()))
@@ -1236,7 +1236,7 @@ def combine_left_option(semi: Semigroup[a], state: Option[a], next: Option[a]) -
     case (None, _):
       next
     case (Some(total), Some(value)):
-      Some(combine_Semigroup(semi, total, value))
+      Some(semi.combine(total, value))
 
 def combine_all_option_with_fuel(vec: Vector[a], semi: Semigroup[a], fuel: Int) -> Option[a]:
   recur fuel:
@@ -1260,7 +1260,7 @@ def combine_all(vec: Vector[a], monoid: Monoid[a]) -> a:
     case Some(total):
       total
     case None:
-      empty_Monoid(monoid)
+      empty_monoid(monoid)
 
 # Returns a slice in the half-open interval [start, end).
 def slice(vec: Vector[a], start: Int, end: Int) -> Vector[a]:
@@ -1533,7 +1533,7 @@ combine_all_option_prop: Prop = forall_Prop(
   "combine_all_option agrees with list semigroup combine_all_option",
   list -> (
     vec = from_List(list)
-    expected = combine_all_option_Semigroup(int_add_semigroup, list)
+    expected = combine_all_option_sg(int_add_semigroup, list)
     actual = combine_all_option(vec, int_add_semigroup)
     Assertion(eq_Option(eq_Int)(actual, expected), "combine_all_option law")
   ))
@@ -1543,7 +1543,7 @@ combine_all_prop: Prop = forall_Prop(
   "combine_all agrees with list monoid combine_all",
   list -> (
     vec = from_List(list)
-    expected = combine_all_Monoid(int_add_monoid, list)
+    expected = combine_all_monoid(int_add_monoid, list)
     actual = combine_all(vec, int_add_monoid)
     Assertion(actual.eq_Int(expected), "combine_all law")
   ))

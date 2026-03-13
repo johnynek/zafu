@@ -127,7 +127,7 @@ def laws_Applicative[f: * -> *, a, b, c](
   x: a,
 ) -> Test:
   identity = Assertion(
-    eq_Eq(eq_fa, inst.ap(pure(inst, value -> value), fa), fa),
+    eq_Eq(eq_fa, inst.ap(inst.pure(value -> value), fa), fa),
     "identity",
   )
   composition = Assertion(
@@ -144,21 +144,21 @@ def laws_Applicative[f: * -> *, a, b, c](
   homomorphism = Assertion(
     eq_Eq(
       eq_fb,
-      inst.ap(pure(inst, fn_ab), pure(inst, x)),
-      pure(inst, fn_ab(x)),
+      inst.ap(inst.pure(fn_ab), inst.pure(x)),
+      inst.pure(fn_ab(x)),
     ),
     "homomorphism",
   )
   interchange = Assertion(
     eq_Eq(
       eq_fb,
-      inst.ap(ff_ab, pure(inst, x)),
-      inst.ap(pure(inst, fn -> fn(x)), ff_ab),
+      inst.ap(ff_ab, inst.pure(x)),
+      inst.ap(inst.pure(fn -> fn(x)), ff_ab),
     ),
     "interchange",
   )
   map_via_ap = Assertion(
-    eq_Eq(eq_fb, fa.map(inst, fn_ab), inst.ap(pure(inst, fn_ab), fa)),
+    eq_Eq(eq_fb, fa.map(inst, fn_ab), inst.ap(inst.pure(fn_ab), fa)),
     "map via ap",
   )
   TestSuite("Applicative laws", [identity, composition, homomorphism, interchange, map_via_ap])
@@ -193,7 +193,7 @@ def eq_Option(eq_item: Eq[a], left: Option[a], right: Option[a]) -> Bool:
       False
 
 tests = TestSuite("Applicative tests", [
-  Assertion(pure(applicative_Option, 1) matches Some(1), "pure"),
+  Assertion(applicative_Option.pure(1) matches Some(1), "pure"),
   Assertion((Some(1)).map(applicative_Option, value -> value.add(2)) matches Some(3), "map"),
   Assertion(applicative_Option.map2(Some(1), Some(2), add) matches Some(3), "map2"),
   Assertion(applicative_Option.product2(Some(1), Some("a")) matches Some((1, "a")), "product2"),

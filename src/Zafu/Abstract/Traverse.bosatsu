@@ -15,8 +15,8 @@ from Zafu/Abstract/Eq import (
 from Zafu/Abstract/Monoid import (
   Monoid,
   monoid_from_combine,
-  empty as empty_Monoid,
-  combine as combine_Monoid,
+  empty,
+  combine,
 )
 from Zafu/Abstract/Applicative import (
   Applicative,
@@ -130,11 +130,11 @@ def const_map2(
 ) -> Const[c, d]:
   Const(left_log) = left
   Const(right_log) = right
-  Const(combine_Monoid(monoid_c, left_log, right_log))
+  Const(monoid_c.combine(left_log, right_log))
 
 def const_applicative(monoid_c: Monoid[c]) -> Applicative[Const[c]]:
   applicative_from_pure_map_map2(
-    _ -> Const(empty_Monoid(monoid_c)),
+    _ -> Const(monoid_c.empty()),
     const_map,
     (left, right, fn) -> const_map2(monoid_c, left, right, fn),
   )
@@ -239,7 +239,7 @@ def laws_Traverse[f: * -> *, a, b, c](
 
 def traverse_List_local[g: * -> *, a, b](items: List[a], app: Applicative[g], fn: a -> g[b]) -> g[List[b]]:
   rev_mapped = items.foldl_List(
-    pure(app, []),
+    app.pure([]),
     (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
   rev_mapped.map_app(app, rev_items -> rev_items.reverse())

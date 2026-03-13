@@ -194,7 +194,7 @@ foldable_LazyList: Foldable[LazyList] = foldable_from_foldl_iter(foldl_iter)
 def traverse_LazyList_fn[g: * -> *, a, b](ll: LazyList[a], app: Applicative[g], fn: a -> g[b]) -> g[LazyList[b]]:
   rev_mapped = foldl(
     ll,
-    pure(app, []),
+    app.pure([]),
     (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
   rev_mapped.map_app(app, rev_items -> from_List(rev_items.reverse()))

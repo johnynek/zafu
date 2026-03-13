@@ -42,16 +42,20 @@ Preferred shapes:
 foo.traverse(traverse_List, applicative_Option, x -> ...)
 items.fold_map(foldable_List, monoid_String, render)
 partial.and_then(semigroup_Error, recover)
+applicative_Option.pure(value)
 applicative_Option.map2(left, right, add)
 semigroup_String.combine(left, right)
+monoid_Int_add.empty()
 ```
 
 Avoid mixed shapes that hide the intended center of gravity:
 
 ```bosatsu
 traverse(foo, traverse_List, applicative_Option, x -> ...)
+pure(applicative_Option, value)
 left.map2(applicative_Option, right, add)
 combine(semigroup_String, left, right)
+empty(monoid_Int_add)
 ```
 
 Prefix style is still fine when the dot form is not clearer, but the default should be to make the code read the way the API was designed.
@@ -105,6 +109,7 @@ Rules:
 1. If there is no conflict, import the function with its plain name.
 2. If there is a conflict, use the shortest meaningful alias.
 3. The function that is central in a file should usually get the shortest name.
+4. The name after `.` is the imported identifier, so import the name you want the call site to read.
 
 Examples:
 
@@ -121,6 +126,7 @@ Good:
 
 ```bosatsu
 items.traverse(traverse_List, applicative_Option, fn)
+app.pure(value)
 app.map2(left, right, fn)
 value.map_app(app, fn)
 ```
@@ -135,6 +141,7 @@ value.map_Applicative(app, fn)
 
 The old `name_Typeclass` alias pattern should only appear when it is truly the best available name.
 In most cases it is just noise.
+If a conflict forces an alias, prefer a short functional alias like `map_app` over a copied name like `map_Applicative`.
 
 ## 1. Subject-first when there is a distinguished flowing value
 
@@ -177,12 +184,12 @@ Use dictionary-first when the operation is mainly about choosing an algebra, rel
 Examples:
 
 ```bosatsu
-eq(eq_inst, left, right)
-cmp(ord_inst, left, right)
-hash(hash_inst, value)
-combine(semi, left, right)
-empty(monoid)
-pure(app, value)
+eq_inst.eq(left, right)
+ord_inst.cmp(left, right)
+hash_inst.hash(value)
+semi.combine(left, right)
+monoid.empty()
+app.pure(value)
 ```
 
 These are semantics-first calls.
@@ -193,6 +200,9 @@ When readable, prefer dictionary dot-apply:
 ```bosatsu
 eq_Int.eq(left, right)
 semigroup_String.combine(left, right)
+semigroup_String.combine_all_option(parts)
+monoid_Int_add.empty()
+monoid_Int_add.combine_all(values)
 applicative_Option.pure(value)
 ```
 
@@ -221,6 +231,19 @@ left.combine(semi, right)
 
 The value-receiver form looks arbitrary because neither peer is actually more central than the other.
 Let the dictionary be the receiver instead.
+
+Tie-breaker:
+if both the value and the dictionary feel like plausible receivers, prefer the value receiver only when the operation is a unary chain step on one flowing value.
+
+Examples:
+
+```bosatsu
+fa.void(app)
+app.map2(fx, fy, fn)
+```
+
+`fa.void(app)` keeps a chain moving.
+`app.map2(fx, fy, fn)` avoids pretending that `fx` owns a peer-value combination.
 
 ## 4. Continuation functions go last
 
@@ -275,6 +298,7 @@ Examples:
 app.map2(fx, fy, fn)
 app.product3(fx, fy, fz)
 semi.combine(left, right)
+monoid.combine_all(items)
 ```
 
 ## Recommended defaults for common typeclasses
@@ -299,10 +323,10 @@ Examples:
 
 ```bosatsu
 semi.combine(left, right)
-combine_all_option(semi, items)
-empty(monoid)
+semi.combine_all_option(items)
+monoid.empty()
 monoid.combine(left, right)
-combine_all(monoid, items)
+monoid.combine_all(items)
 ```
 
 These are algebra-first operations over peer values.
@@ -314,7 +338,7 @@ Mixed.
 Use dictionary-first for capability selection and peer-value combinators:
 
 ```bosatsu
-pure(app, value)
+app.pure(value)
 app.map2(fx, fy, fn)
 app.ap(ff, fa)
 app.product_left(fx, fy)
@@ -327,6 +351,9 @@ Use subject-first for unary transformations on one flowing value:
 fa.map(app, fn)
 fa.void(app)
 ```
+
+`void` is the instructive edge case.
+Both `fa` and `app` are plausible receivers, but `fa.void(app)` reads better because it is a unary chain step on the flowing value.
 
 ### Foldable
 
@@ -401,7 +428,7 @@ If there is no natural receiver, plain dictionary-first prefix style is fine.
 
 ## Short version
 
-Use subject-first for pipeline operations.
-Use dictionary-first for semantics-selection operations.
+Use subject-first for unary pipeline operations.
+Use dictionary-first for capabilities, algebras, and peer-value combinators.
 Keep continuation functions last.
 When extra dictionaries are needed, put them after the subject and before the callback.

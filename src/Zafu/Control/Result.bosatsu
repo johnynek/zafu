@@ -197,7 +197,7 @@ def traverse_Result_fn[g: * -> *, e, a, b](
 ) -> g[Result[e, b]]:
   match value:
     case Err(err_value):
-      pure(app, Err(err_value))
+      app.pure(Err(err_value))
     case Ok(ok_value):
       fn(ok_value).map_app(app, Ok)
 

@@ -148,7 +148,7 @@ def map(items: List[a], fn: a -> b) -> List[b]:
 
 def traverse_List_fn[g: * -> *, a, b](items: List[a], app: Applicative[g], fn: a -> g[b]) -> g[List[b]]:
   rev_mapped = items.foldl_List(
-    pure(app, []),
+    app.pure([]),
     (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
   )
   rev_mapped.map_app(app, rev_items -> rev_items.reverse())

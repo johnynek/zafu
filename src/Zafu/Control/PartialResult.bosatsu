@@ -24,7 +24,7 @@ from Zafu/Abstract/Hash import (
 
 from Zafu/Abstract/Semigroup import (
   Semigroup,
-  combine as combine_Semigroup,
+  combine,
   semigroup_from_combine,
 )
 from Zafu/Abstract/Applicative import (
@@ -151,9 +151,9 @@ def and_then(result: PartialResult[e, a], semi: Semigroup[e], fn: a -> PartialRe
       next = fn(partial_value)
       match next:
         case TotalErr(next_err):
-          TotalErr(combine_Semigroup(semi, err_value, next_err))
+          TotalErr(semi.combine(err_value, next_err))
         case PartialErr(next_err, next_partial):
-          PartialErr(combine_Semigroup(semi, err_value, next_err), next_partial)
+          PartialErr(semi.combine(err_value, next_err), next_partial)
         case TotalOk(next_ok):
           PartialErr(err_value, next_ok)
 
@@ -236,17 +236,17 @@ def combine_product(
     case TotalErr(left_err):
       match right:
         case TotalErr(right_err):
-          TotalErr(combine_Semigroup(semi, left_err, right_err))
+          TotalErr(semi.combine(left_err, right_err))
         case PartialErr(right_err, _):
-          TotalErr(combine_Semigroup(semi, left_err, right_err))
+          TotalErr(semi.combine(left_err, right_err))
         case TotalOk(_):
           TotalErr(left_err)
     case PartialErr(left_err, left_value):
       match right:
         case TotalErr(right_err):
-          TotalErr(combine_Semigroup(semi, left_err, right_err))
+          TotalErr(semi.combine(left_err, right_err))
         case PartialErr(right_err, right_value):
-          PartialErr(combine_Semigroup(semi, left_err, right_err), (left_value, right_value))
+          PartialErr(semi.combine(left_err, right_err), (left_value, right_value))
         case TotalOk(right_value):
           PartialErr(left_err, (left_value, right_value))
     case TotalOk(left_value):
@@ -308,7 +308,7 @@ def traverse_PartialResult_fn[g: * -> *, e, a, b](
 ) -> g[PartialResult[e, b]]:
   match value:
     case TotalErr(err_value):
-      pure(app, TotalErr(err_value))
+      app.pure(TotalErr(err_value))
     case PartialErr(err_value, partial_value):
       fn(partial_value).map_app(app, mapped -> PartialErr(err_value, mapped))
     case TotalOk(ok_value):

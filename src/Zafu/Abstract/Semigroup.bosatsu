@@ -130,14 +130,14 @@ def maybe_combine_left(inst: Semigroup[a], left_opt: Option[a], right: a) -> a:
     case None:
       right
     case Some(left):
-      combine(inst, left, right)
+      inst.combine(left, right)
 
 def maybe_combine_right(inst: Semigroup[a], left: a, right_opt: Option[a]) -> a:
   match right_opt:
     case None:
       left
     case Some(right):
-      combine(inst, left, right)
+      inst.combine(left, right)
 
 def reverse_Semigroup(inst: Semigroup[a]) -> Semigroup[a]:
   Semigroup { combine_fn, combine_n_positive_fn, combine_all_option_fn, ... } = inst
@@ -199,7 +199,7 @@ last: Semigroup[a] = semigroup_specialized(
 
 def laws_Semigroup(inst: Semigroup[a], eq_inst: Eq[a], x: a, y: a, z: a) -> Test:
   associative = Assertion(
-    eq_Eq(eq_inst, combine(inst, x, combine(inst, y, z)), combine(inst, combine(inst, x, y), z)),
+    eq_Eq(eq_inst, inst.combine(x, inst.combine(y, z)), inst.combine(inst.combine(x, y), z)),
     "associative",
   )
   TestSuite("Semigroup laws", [associative])
@@ -207,23 +207,23 @@ def laws_Semigroup(inst: Semigroup[a], eq_inst: Eq[a], x: a, y: a, z: a) -> Test
 tests = TestSuite("Semigroup tests", [
   (
     int_add = semigroup_from_combine((left, right) -> left.add(right))
-    Assertion(combine(int_add, 1, 2).eq_Int(3), "combine")
+    Assertion(int_add.combine(1, 2).eq_Int(3), "combine")
   ),
   (
     int_add = semigroup_from_combine((left, right) -> left.add(right))
-    Assertion(combine_n(int_add, 5, 0) matches None, "combine_n non-positive")
+    Assertion(int_add.combine_n(5, 0) matches None, "combine_n non-positive")
   ),
   (
     int_add = semigroup_from_combine((left, right) -> left.add(right))
-    Assertion(combine_n(int_add, 3, 100000) matches Some(300000), "combine_n large n")
+    Assertion(int_add.combine_n(3, 100000) matches Some(300000), "combine_n large n")
   ),
   (
     int_add = semigroup_from_combine((left, right) -> left.add(right))
-    Assertion(combine_all_option(int_add, []) matches None, "combine_all_option empty")
+    Assertion(int_add.combine_all_option([]) matches None, "combine_all_option empty")
   ),
   (
     int_add = semigroup_from_combine((left, right) -> left.add(right))
-    Assertion(combine_all_option(int_add, [1, 2, 3]) matches Some(6), "combine_all_option non-empty")
+    Assertion(int_add.combine_all_option([1, 2, 3]) matches Some(6), "combine_all_option non-empty")
   ),
   (
     int_add = semigroup_from_combine((left, right) -> left.add(right))
@@ -235,26 +235,26 @@ tests = TestSuite("Semigroup tests", [
   ),
   (
     list_sg = semigroup_from_combine((left, right) -> left.concat(right))
-    reversed = reverse(list_sg)
-    Assertion(combine(reversed, [1], [2, 3]) matches [2, 3, 1], "reverse combine order")
+    reversed = list_sg.reverse()
+    Assertion(reversed.combine([1], [2, 3]) matches [2, 3, 1], "reverse combine order")
   ),
   (
     list_sg = semigroup_from_combine((left, right) -> left.concat(right))
-    reversed = reverse(list_sg)
-    Assertion(combine_n(reversed, [1], 4) matches Some([1, 1, 1, 1]), "reverse combine_n repeated values")
+    reversed = list_sg.reverse()
+    Assertion(reversed.combine_n([1], 4) matches Some([1, 1, 1, 1]), "reverse combine_n repeated values")
   ),
   (
     int_add = semigroup_from_combine((left, right) -> left.add(right))
-    inter = intercalate(int_add, 10)
-    Assertion(combine(inter, 1, 2).eq_Int(13), "intercalate")
+    inter = int_add.intercalate(10)
+    Assertion(inter.combine(1, 2).eq_Int(13), "intercalate")
   ),
   (
     first_int = first
-    Assertion(combine(first_int, 1, 2).eq_Int(1), "first")
+    Assertion(first_int.combine(1, 2).eq_Int(1), "first")
   ),
   (
     last_int = last
-    Assertion(combine(last_int, 1, 2).eq_Int(2), "last")
+    Assertion(last_int.combine(1, 2).eq_Int(2), "last")
   ),
   (
     int_add = semigroup_from_combine((left, right) -> left.add(right))

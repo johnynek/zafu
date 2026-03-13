@@ -10,10 +10,10 @@ from Zafu/Abstract/Semigroup import (
   Semigroup,
   semigroup_from_combine,
   semigroup_specialized,
-  combine as combine_Semigroup,
-  combine_n as combine_n_Semigroup,
-  combine_all_option as combine_all_option_Semigroup,
-  reverse as reverse_Semigroup,
+  combine as combine_semigroup,
+  combine_n as combine_n_semigroup,
+  combine_all_option as combine_all_option_semigroup,
+  reverse as reverse_semigroup,
   laws_Semigroup,
 )
 
@@ -67,68 +67,68 @@ def empty(inst: Monoid[a]) -> a:
   empty_value
 
 def combine(inst: Monoid[a], left: a, right: a) -> a:
-  combine_Semigroup(monoid_to_semigroup(inst), left, right)
+  combine_semigroup(monoid_to_semigroup(inst), left, right)
 
 def combine_n(inst: Monoid[a], value: a, n: Int) -> a:
-    match combine_n_Semigroup(monoid_to_semigroup(inst), value, n):
+    match combine_n_semigroup(monoid_to_semigroup(inst), value, n):
       case Some(combined):
         combined
       case None:
-        empty(inst)
+        inst.empty()
 
 def combine_all(inst: Monoid[a], items: List[a]) -> a:
   match items:
     case []:
-      empty(inst)
+      inst.empty()
     case _:
-      match combine_all_option_Semigroup(monoid_to_semigroup(inst), items):
+      match combine_all_option_semigroup(monoid_to_semigroup(inst), items):
         case Some(combined):
           combined
         case None:
           # Defensive fallback for malformed semigroups; non-empty should yield Some.
-          empty(inst)
+          inst.empty()
 
 def is_empty(inst: Monoid[a], eq_inst: Eq[a], value: a) -> Bool:
-  eq_Eq(eq_inst, value, empty(inst))
+  eq_Eq(eq_inst, value, inst.empty())
 
 def reverse(inst: Monoid[a]) -> Monoid[a]:
   monoid_from_semigroup(
-    empty(inst),
-    reverse_Semigroup(monoid_to_semigroup(inst)),
+    inst.empty(),
+    reverse_semigroup(monoid_to_semigroup(inst)),
   )
 
 def laws_Monoid(inst: Monoid[a], eq_inst: Eq[a], x: a, y: a, z: a) -> Test:
   semigroup_laws = laws_Semigroup(monoid_to_semigroup(inst), eq_inst, x, y, z)
-  left_identity = Assertion(eq_Eq(eq_inst, combine(inst, empty(inst), x), x), "left identity")
-  right_identity = Assertion(eq_Eq(eq_inst, combine(inst, x, empty(inst)), x), "right identity")
+  left_identity = Assertion(eq_Eq(eq_inst, inst.combine(inst.empty(), x), x), "left identity")
+  right_identity = Assertion(eq_Eq(eq_inst, inst.combine(x, inst.empty()), x), "right identity")
   TestSuite("Monoid laws", [semigroup_laws, left_identity, right_identity])
 
 tests = TestSuite("Monoid tests", [
   (
     int_add = monoid_from_combine(0, (left, right) -> left.add(right))
-    Assertion(combine(int_add, empty(int_add), 3).eq_Int(3), "identity")
+    Assertion(int_add.combine(int_add.empty(), 3).eq_Int(3), "identity")
   ),
   (
     int_add = monoid_from_combine(0, (left, right) -> left.add(right))
-    Assertion(combine_n(int_add, 5, 0).eq_Int(0), "combine_n non-positive")
+    Assertion(int_add.combine_n(5, 0).eq_Int(0), "combine_n non-positive")
   ),
   (
     int_add = monoid_from_combine(0, (left, right) -> left.add(right))
-    Assertion(combine_n(int_add, 5, -2).eq_Int(0), "combine_n negative")
+    Assertion(int_add.combine_n(5, -2).eq_Int(0), "combine_n negative")
   ),
   (
     int_add = monoid_from_combine(0, (left, right) -> left.add(right))
-    Assertion(combine_all(int_add, []).eq_Int(0), "combine_all empty")
+    Assertion(int_add.combine_all([]).eq_Int(0), "combine_all empty")
   ),
   (
     list_monoid = monoid_from_combine([], (left, right) -> left.concat(right))
-    reversed = reverse(list_monoid)
-    Assertion(combine(reversed, [1], [2, 3]) matches [2, 3, 1], "reverse combine order")
+    reversed = list_monoid.reverse()
+    Assertion(reversed.combine([1], [2, 3]) matches [2, 3, 1], "reverse combine order")
   ),
   (
     int_add = monoid_from_combine(0, (left, right) -> left.add(right))
     int_eq = eq_from_fn(eq_Int)
-    Assertion(is_empty(int_add, int_eq, 0), "is_empty")
+    Assertion(int_add.is_empty(int_eq, 0), "is_empty")
   ),
   (
     int_add = monoid_from_combine(0, (left, right) -> left.add(right))
@@ -143,7 +143,7 @@ tests = TestSuite("Monoid tests", [
       (_) -> Some(777),
     )
     projected = monoid_to_semigroup(specialized)
-    Assertion(combine_n_Semigroup(projected, 1, 3) matches Some(1003), "monoid_to_semigroup keeps combine_n")
+    Assertion(combine_n_semigroup(projected, 1, 3) matches Some(1003), "monoid_to_semigroup keeps combine_n")
   ),
   (
     specialized = monoid_specialized(
@@ -153,6 +153,6 @@ tests = TestSuite("Monoid tests", [
       (_) -> Some(777),
     )
     projected = monoid_to_semigroup(specialized)
-    Assertion(combine_all_option_Semigroup(projected, [1, 2, 3]) matches Some(777), "monoid_to_semigroup keeps combine_all")
+    Assertion(combine_all_option_semigroup(projected, [1, 2, 3]) matches Some(777), "monoid_to_semigroup keeps combine_all")
   ),
 ])

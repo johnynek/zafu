@@ -13,13 +13,13 @@ from Zafu/Abstract/Ord import (
 from Zafu/Abstract/Semigroup import (
   Semigroup,
   semigroup_from_combine,
-  combine as combine_Semigroup,
+  combine as combine_sg,
 )
 from Zafu/Abstract/Monoid import (
   Monoid,
   monoid_from_combine,
-  empty as empty_Monoid,
-  combine as combine_Monoid,
+  empty,
+  combine,
 )
 from Zafu/Abstract/Applicative import (
   Applicative,
@@ -264,7 +264,7 @@ def to_List[f: * -> *](fa: f[a], inst: Foldable[f]) -> List[a]:
   to_List_fn(fa)
 
 def fold_map[f: * -> *](fa: f[a], inst: Foldable[f], monoid: Monoid[b], fn: a -> b) -> b:
-  fa.foldl(inst, empty_Monoid(monoid), (acc, item) -> combine_Monoid(monoid, acc, fn(item)))
+  fa.foldl(inst, monoid.empty(), (acc, item) -> monoid.combine(acc, fn(item)))
 
 def traverse_void[f: * -> *, g: * -> *, a, b](
   fa: f[a],
@@ -273,7 +273,7 @@ def traverse_void[f: * -> *, g: * -> *, a, b](
   fn: a -> g[b],
 ) -> g[Unit]:
   monoid_unit = monoid_from_combine(
-    pure(app, ()),
+    app.pure(()),
     (left, right) -> app.product_left(left, right),
   )
   fa.fold_map(inst, monoid_unit, item -> fn(item).void(app))
@@ -282,7 +282,7 @@ def sequence_void[f: * -> *, g: * -> *, a](fga: f[g[a]], inst: Foldable[f], app:
   fga.traverse_void(inst, app, ga -> ga)
 
 def combine_all[f: * -> *](fa: f[a], inst: Foldable[f], monoid: Monoid[a]) -> a:
-  fa.foldl(inst, empty_Monoid(monoid), (acc, item) -> combine_Monoid(monoid, acc, item))
+  fa.foldl(inst, monoid.empty(), (acc, item) -> monoid.combine(acc, item))
 
 def fold[f: * -> *](fa: f[a], inst: Foldable[f], monoid: Monoid[a]) -> a:
   fa.combine_all(inst, monoid)
@@ -293,7 +293,7 @@ def combine_all_option[f: * -> *](fa: f[a], inst: Foldable[f], semigroup: Semigr
       case None:
         Some(item)
       case Some(acc):
-        Some(combine_Semigroup(semigroup, acc, item))
+        Some(combine_sg(semigroup, acc, item))
   ))
 
 def fold_map_option[f: * -> *](fa: f[a], inst: Foldable[f], semigroup: Semigroup[b], fn: a -> b) -> Option[b]:
@@ -303,7 +303,7 @@ def fold_map_option[f: * -> *](fa: f[a], inst: Foldable[f], semigroup: Semigroup
       case None:
         Some(mapped)
       case Some(acc):
-        Some(combine_Semigroup(semigroup, acc, mapped))
+        Some(combine_sg(semigroup, acc, mapped))
   ))
 
 def reduce_left_to_option[f: * -> *](
@@ -400,10 +400,10 @@ def collect_first_some[f: * -> *](fa: f[a], inst: Foldable[f], fn: a -> Option[b
   ))
 
 def collect_fold_some[f: * -> *](fa: f[a], inst: Foldable[f], monoid: Monoid[b], fn: a -> Option[b]) -> b:
-  fa.foldl(inst, empty_Monoid(monoid), (acc, item) -> (
+  fa.foldl(inst, monoid.empty(), (acc, item) -> (
     match fn(item):
       case Some(value):
-        combine_Monoid(monoid, acc, value)
+        monoid.combine(acc, value)
       case None:
         acc
   ))
@@ -507,12 +507,12 @@ def maximum_list[f: * -> *](fa: f[a], inst: Foldable[f], ord_inst: Ord[a]) -> Li
   fa.maximum_by_list(inst, ord_inst, item -> item)
 
 def intercalate[f: * -> *](fa: f[a], inst: Foldable[f], monoid: Monoid[a], middle: a) -> a:
-  (_, total) = fa.foldl(inst, (False, empty_Monoid(monoid)), (state, item) -> (
+  (_, total) = fa.foldl(inst, (False, monoid.empty()), (state, item) -> (
     (seen_any, acc) = state
     if seen_any:
-      (True, combine_Monoid(monoid, combine_Monoid(monoid, acc, middle), item))
+      (True, monoid.combine(monoid.combine(acc, middle), item))
     else:
-      (True, combine_Monoid(monoid, acc, item))
+      (True, monoid.combine(acc, item))
   ))
   total
 
