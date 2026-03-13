@@ -33,6 +33,12 @@ from Zafu/Abstract/Applicative import (
   pure,
   map as map_app,
 )
+from Zafu/Abstract/Monad import (
+  Monad,
+  monad_from_applicative_flat_map_tailrec_steps,
+  tailrec_steps,
+  laws_Monad,
+)
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_from_folds,
@@ -47,6 +53,13 @@ from Zafu/Control/Result import (
   Result,
   Err,
   Ok,
+)
+from Zafu/Control/IterState import (
+  IterState,
+  Continue,
+  Done,
+  continue,
+  done,
 )
 
 export (
@@ -75,6 +88,7 @@ export (
   combine_map2,
   combine_product_l,
   combine_product_r,
+  monad_PartialResult,
   traverse_PartialResult,
   eq,
   ord,
@@ -279,6 +293,50 @@ def combine_product_r(
   right: PartialResult[e, b],
 ) -> PartialResult[e, b]:
   combine_map2(semi, left, right, (_, right_value) -> right_value)
+
+def map2_monad_PartialResult(
+  semi: Semigroup[e],
+  left: PartialResult[e, a],
+  right: PartialResult[e, b],
+  fn: (a, b) -> c,
+) -> PartialResult[e, c]:
+  left.and_then(semi, left_value -> map(right, right_value -> fn(left_value, right_value)))
+
+def applicative_monad_PartialResult(semi: Semigroup[e]) -> Applicative[PartialResult[e]]:
+  applicative_from_pure_map_map2(
+    TotalOk,
+    map,
+    (left, right, fn) -> map2_monad_PartialResult(semi, left, right, fn),
+  )
+
+def tailrec_steps_PartialResult(
+  semi: Semigroup[e],
+  max_steps: Int,
+  init: a,
+  step: a -> PartialResult[e, IterState[a, b]],
+) -> PartialResult[e, IterState[a, b]]:
+  def go(rem: Int, seed: a) -> PartialResult[e, IterState[a, b]]:
+    recur rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        # Mirror Monad.tailrec_steps semantics: no fuel yields Continue(seed).
+        TotalOk(continue(seed))
+      case _:
+        # and_then keeps partial errors accumulated so far while advancing.
+        step(seed).and_then(semi, state -> (
+          match state:
+            case Done(done_value):
+              TotalOk(done(done_value))
+            case Continue(next_seed):
+              go(rem.sub(1), next_seed)
+        ))
+  go(max_steps, init)
+
+def monad_PartialResult(semi: Semigroup[e]) -> Monad[PartialResult[e]]:
+  monad_from_applicative_flat_map_tailrec_steps(
+    applicative_monad_PartialResult(semi),
+    (value, fn) -> value.and_then(semi, fn),
+    (max_steps, init, step) -> tailrec_steps_PartialResult(semi, max_steps, init, step),
+  )
 
 foldable_PartialResult: forall e. Foldable[PartialResult[e]] = foldable_from_folds(
   (value, init, fn) -> (
@@ -620,6 +678,55 @@ tests = TestSuite("PartialResult tests", [
   Assertion(
     (PartialErr([1, 2], 7)).and_then(list_semigroup, x -> TotalOk(x)) matches PartialErr([1, 2], 7),
     "and_then right identity",
+  ),
+  Assertion(
+    monad_PartialResult(int_add_semigroup).tailrec_steps(0, 9, seed -> TotalOk(Continue(seed.add(1)))) matches TotalOk(Continue(9)),
+    "monad_PartialResult tailrec_steps max_steps <= 0",
+  ),
+  Assertion(
+    monad_PartialResult(int_add_semigroup).tailrec_steps(5, 0, seed -> (
+      if cmp_Int(seed, 2) matches LT:
+        PartialErr(1, Continue(seed.add(1)))
+      else:
+        TotalOk(Done(seed))
+    )) matches PartialErr(2, Done(2)),
+    "monad_PartialResult tailrec_steps reaches Done with accumulated partial errors",
+  ),
+  Assertion(
+    monad_PartialResult(int_add_semigroup).tailrec_steps(2, 0, seed -> PartialErr(1, Continue(seed.add(1)))) matches PartialErr(2, Continue(2)),
+    "monad_PartialResult tailrec_steps fuel exhaustion",
+  ),
+  Assertion(
+    monad_PartialResult(int_add_semigroup).tailrec_steps(5, 0, seed -> TotalErr(seed.add(100))) matches TotalErr(100),
+    "monad_PartialResult tailrec_steps short-circuits TotalErr",
+  ),
+  (
+    eq_inst = eq(eq_Int_inst, eq_Int_inst)
+    laws_Monad(
+      monad_PartialResult(int_add_semigroup),
+      eq_inst,
+      eq_inst,
+      eq_inst,
+      PartialErr(1, 2),
+      7,
+      value -> PartialErr(3, value.add(1)),
+      value -> TotalOk(value.mul(2)),
+      value -> value.add(5),
+    )
+  ),
+  (
+    eq_inst = eq(eq_Int_inst, eq_Int_inst)
+    laws_Monad(
+      monad_PartialResult(int_add_semigroup),
+      eq_inst,
+      eq_inst,
+      eq_inst,
+      TotalErr(9),
+      4,
+      value -> TotalOk(value.add(1)),
+      value -> PartialErr(2, value.mul(2)),
+      value -> value.add(10),
+    )
   ),
   Assertion(
     map(PartialErr(1, 2), x -> x) matches PartialErr(1, 2),

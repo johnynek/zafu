@@ -20,14 +20,14 @@ export (
   map_done,
 )
 
-enum IterState[done: +*, cont: +*]:
-  Done(done: done)
+enum IterState[cont: +*, done: +*]:
   Continue(cont: cont)
+  Done(done: done)
 
-def done(value: d) -> IterState[d, c]:
+def done(value: d) -> IterState[c, d]:
   Done(value)
 
-def continue(value: c) -> IterState[d, c]:
+def continue(value: c) -> IterState[c, d]:
   Continue(value)
 
 def value(iter: IterState[a, a]) -> a:
@@ -86,19 +86,19 @@ def foldr_Array(items: Array[a], init: b, fn: (a, b) -> IterState[b, b]) -> Iter
             Continue(acc)
   go(cnt, cnt.sub(1), init)
 
-def map_continue(state: IterState[d, c], fn: c -> e) -> IterState[d, e]:
+def map_continue(state: IterState[c, d], fn: c -> e) -> IterState[e, d]:
   match state:
-    case Done(done_value):
-      Done(done_value)
     case Continue(cont_value):
       Continue(fn(cont_value))
-
-def map_done(state: IterState[d, c], fn: d -> e) -> IterState[e, c]:
-  match state:
     case Done(done_value):
-      Done(fn(done_value))
+      Done(done_value)
+
+def map_done(state: IterState[c, d], fn: d -> e) -> IterState[c, e]:
+  match state:
     case Continue(cont_value):
       Continue(cont_value)
+    case Done(done_value):
+      Done(fn(done_value))
 
 tests = TestSuite("IterState tests", [
   Assertion(done(1) matches Done(1), "done helper"),
