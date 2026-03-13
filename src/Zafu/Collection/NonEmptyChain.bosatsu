@@ -344,9 +344,9 @@ def map(items: NonEmptyChain[a], fn: a -> b) -> NonEmptyChain[b]:
       Append(map_Chain(init0, fn), fn(last0))
 
 def traverse_NonEmptyChain_fn[g: * -> *, a, b](
+  app: Applicative[g],
   items: NonEmptyChain[a],
   fn: a -> g[b],
-  app: Applicative[g],
 ) -> g[NonEmptyChain[b]]:
   (head0, tail0) = uncons(items)
   rev_tail = to_List_Chain(tail0).foldl_List(
@@ -576,7 +576,7 @@ transform_and_composition_tests = TestSuite("transforms and composition", [
   Assertion(to_List(map(from_prepend(1, from_List_Chain([2, 3])), i -> i.add(10))) matches [11, 12, 13], "map"),
   (
     items = from_prepend(1, from_List_Chain([2, 3]))
-    match traverse_Traverse(traverse_NonEmptyChain, items, i -> Some(i.add(10)), option_applicative()):
+    match traverse_Traverse(traverse_NonEmptyChain, option_applicative(), items, i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_NonEmptyChain Some")
       case None:
@@ -585,9 +585,9 @@ transform_and_composition_tests = TestSuite("transforms and composition", [
   Assertion(
     traverse_Traverse(
       traverse_NonEmptyChain,
+      option_applicative(),
       from_prepend(1, from_List_Chain([2, 3, 4])),
       keep_even_Option_Int,
-      option_applicative(),
     ) matches None,
     "traverse_NonEmptyChain short-circuits",
   ),

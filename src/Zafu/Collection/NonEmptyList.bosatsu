@@ -236,9 +236,9 @@ def map(items: NonEmptyList[a], fn: a -> b) -> NonEmptyList[b]:
   NonEmptyList(fn(head0), tail0.map_List(fn))
 
 def traverse_NonEmptyList_fn[g: * -> *, a, b](
+  app: Applicative[g],
   items: NonEmptyList[a],
   fn: a -> g[b],
-  app: Applicative[g],
 ) -> g[NonEmptyList[b]]:
   NonEmptyList(head0, tail0) = items
   rev_tail = tail0.foldl_List(
@@ -397,7 +397,7 @@ tests = TestSuite("Zafu/Collection/NonEmptyList tests", [
   Assertion(to_List(map(NonEmptyList(1, [2, 3]), i -> i.add(10))) matches [11, 12, 13], "map"),
   (
     items = NonEmptyList(1, [2, 3])
-    match traverse_Traverse(traverse_NonEmptyList, items, i -> Some(i.add(10)), option_applicative()):
+    match traverse_Traverse(traverse_NonEmptyList, option_applicative(), items, i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_NonEmptyList Some")
       case None:
@@ -406,9 +406,9 @@ tests = TestSuite("Zafu/Collection/NonEmptyList tests", [
   Assertion(
     traverse_Traverse(
       traverse_NonEmptyList,
+      option_applicative(),
       NonEmptyList(1, [2, 3, 4]),
       keep_even_Option_Int,
-      option_applicative(),
     ) matches None,
     "traverse_NonEmptyList short-circuits",
   ),

@@ -481,7 +481,7 @@ def map_with_fuel(vec: Vector[a], fn: a -> b, fuel: Int) -> Vector[b]:
 def map(vec: Vector[a], fn: a -> b) -> Vector[b]:
   map_with_fuel(vec, fn, height(vec).add(1))
 
-def traverse_Vector_fn[g: * -> *, a, b](vec: Vector[a], fn: a -> g[b], app: Applicative[g]) -> g[Vector[b]]:
+def traverse_Vector_fn[g: * -> *, a, b](app: Applicative[g], vec: Vector[a], fn: a -> g[b]) -> g[Vector[b]]:
   rev_mapped = foldl(
     vec,
     pure_Applicative(app, []),
@@ -1785,7 +1785,7 @@ tests = TestSuite("Vector tests", [
   Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
   (
     vec = from_List([1, 2, 3])
-    match traverse_Traverse(traverse_Vector, vec, i -> Some(i.add(10)), option_applicative()):
+    match traverse_Traverse(traverse_Vector, option_applicative(), vec, i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Vector Some")
       case None:
@@ -1796,9 +1796,9 @@ tests = TestSuite("Vector tests", [
     Assertion(
       traverse_Traverse(
         traverse_Vector,
+        option_applicative(),
         vec,
         keep_even_Option_Int,
-        option_applicative(),
       ) matches None,
       "traverse_Vector short-circuits",
     )

@@ -228,7 +228,7 @@ foldable_Queue: Foldable[Queue] = foldable_specialized(
 def map_Queue(queue: Queue[a], fn: a -> b) -> Queue[b]:
   foldl(queue, empty, (acc, item) -> enqueue(acc, fn(item)))
 
-def traverse_Queue_fn[g: * -> *, a, b](queue: Queue[a], fn: a -> g[b], app: Applicative[g]) -> g[Queue[b]]:
+def traverse_Queue_fn[g: * -> *, a, b](app: Applicative[g], queue: Queue[a], fn: a -> g[b]) -> g[Queue[b]]:
   rev_mapped = foldl(
     queue,
     pure_Applicative(app, []),
@@ -560,7 +560,7 @@ tests = TestSuite("Deque tests", [
   Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
   (
     queue = from_List([1, 2, 3])
-    match traverse_Traverse(traverse_Queue, queue, i -> Some(i.add(10)), option_applicative()):
+    match traverse_Traverse(traverse_Queue, option_applicative(), queue, i -> Some(i.add(10))):
       case Some(mapped):
         Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Queue Some")
       case None:
@@ -569,9 +569,9 @@ tests = TestSuite("Deque tests", [
   Assertion(
     traverse_Traverse(
       traverse_Queue,
+      option_applicative(),
       from_List([1, 2, 3, 4]),
       keep_even_Option_Int,
-      option_applicative(),
     ) matches None,
     "traverse_Queue short-circuits",
   ),

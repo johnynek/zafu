@@ -302,9 +302,9 @@ foldable_PartialResult: forall e. Foldable[PartialResult[e]] = foldable_from_fol
 )
 
 def traverse_PartialResult_fn[g: * -> *, e, a, b](
+  app: Applicative[g],
   value: PartialResult[e, a],
   fn: a -> g[b],
-  app: Applicative[g],
 ) -> g[PartialResult[e, b]]:
   match value:
     case TotalErr(err_value):
@@ -464,19 +464,19 @@ tests = TestSuite("PartialResult tests", [
   Assertion(map(PartialErr(1, 2), x -> x.add(1)) matches PartialErr(1, 3), "map PartialErr"),
   Assertion(map(TotalOk(2), x -> x.add(1)) matches TotalOk(3), "map TotalOk"),
   Assertion(
-    traverse_Traverse(traverse_PartialResult, TotalErr(1), value -> Some(value.add(1)), option_applicative()) matches Some(TotalErr(1)),
+    traverse_Traverse(traverse_PartialResult, option_applicative(), TotalErr(1), value -> Some(value.add(1))) matches Some(TotalErr(1)),
     "traverse_PartialResult TotalErr",
   ),
   Assertion(
-    traverse_Traverse(traverse_PartialResult, PartialErr(1, 2), value -> Some(value.add(1)), option_applicative()) matches Some(PartialErr(1, 3)),
+    traverse_Traverse(traverse_PartialResult, option_applicative(), PartialErr(1, 2), value -> Some(value.add(1))) matches Some(PartialErr(1, 3)),
     "traverse_PartialResult PartialErr",
   ),
   Assertion(
-    traverse_Traverse(traverse_PartialResult, TotalOk(2), value -> Some(value.add(1)), option_applicative()) matches Some(TotalOk(3)),
+    traverse_Traverse(traverse_PartialResult, option_applicative(), TotalOk(2), value -> Some(value.add(1))) matches Some(TotalOk(3)),
     "traverse_PartialResult TotalOk",
   ),
   Assertion(
-    traverse_Traverse(traverse_PartialResult, TotalOk(2), _ -> None, option_applicative()) matches None,
+    traverse_Traverse(traverse_PartialResult, option_applicative(), TotalOk(2), _ -> None) matches None,
     "traverse_PartialResult propagates effect failure",
   ),
   Assertion(map_err(TotalErr(1), x -> x.add(1)) matches TotalErr(2), "map_err TotalErr"),

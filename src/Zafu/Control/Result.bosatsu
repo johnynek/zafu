@@ -188,9 +188,9 @@ foldable_Result: forall e. Foldable[Result[e]] = foldable_from_folds(
 )
 
 def traverse_Result_fn[g: * -> *, e, a, b](
+  app: Applicative[g],
   value: Result[e, a],
   fn: a -> g[b],
-  app: Applicative[g],
 ) -> g[Result[e, b]]:
   match value:
     case Err(err_value):
@@ -292,15 +292,15 @@ tests = TestSuite("Result tests", [
   Assertion(map(Ok(1), x -> x.add(1)) matches Ok(2), "map Ok"),
   Assertion(map(Err(1), x -> x.add(1)) matches Err(1), "map Err"),
   Assertion(
-    traverse_Traverse(traverse_Result, Ok(1), value -> Some(value.add(1)), option_applicative()) matches Some(Ok(2)),
+    traverse_Traverse(traverse_Result, option_applicative(), Ok(1), value -> Some(value.add(1))) matches Some(Ok(2)),
     "traverse_Result Ok",
   ),
   Assertion(
-    traverse_Traverse(traverse_Result, Err(1), value -> Some(value.add(1)), option_applicative()) matches Some(Err(1)),
+    traverse_Traverse(traverse_Result, option_applicative(), Err(1), value -> Some(value.add(1))) matches Some(Err(1)),
     "traverse_Result Err keeps error",
   ),
   Assertion(
-    traverse_Traverse(traverse_Result, Ok(1), _ -> None, option_applicative()) matches None,
+    traverse_Traverse(traverse_Result, option_applicative(), Ok(1), _ -> None) matches None,
     "traverse_Result propagates effect failure",
   ),
   Assertion(map2_Applicative(applicative, Ok(1), Ok(2), add) matches Ok(3), "applicative map2 Ok"),

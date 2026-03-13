@@ -264,18 +264,20 @@ def to_List[f: * -> *](inst: Foldable[f], fa: f[a]) -> List[a]:
   Foldable { to_List_fn, ... } = inst
   to_List_fn(fa)
 
+def fold_map[f: * -> *](inst: Foldable[f], fa: f[a], fn: a -> b, monoid: Monoid[b]) -> b:
+  foldl(inst, fa, empty_Monoid(monoid), (acc, item) -> combine_Monoid(monoid, acc, fn(item)))
+
 def traverse_void[f: * -> *, g: * -> *, a, b](
   inst: Foldable[f],
   fa: f[a],
   fn: a -> g[b],
   app: Applicative[g],
 ) -> g[Unit]:
-  foldl(
-    inst,
-    fa,
+  monoid_unit = monoid_from_combine(
     pure_Applicative(app, ()),
-    (acc, item) -> product_left_Applicative(app, acc, void_Applicative(app, fn(item))),
+    (left, right) -> product_left_Applicative(app, left, right),
   )
+  fold_map(inst, fa, item -> void_Applicative(app, fn(item)), monoid_unit)
 
 def sequence_void[f: * -> *, g: * -> *, a](inst: Foldable[f], fga: f[g[a]], app: Applicative[g]) -> g[Unit]:
   traverse_void(inst, fga, ga -> ga, app)
@@ -294,9 +296,6 @@ def combine_all_option[f: * -> *](inst: Foldable[f], fa: f[a], semigroup: Semigr
       case Some(acc):
         Some(combine_Semigroup(semigroup, acc, item))
   ))
-
-def fold_map[f: * -> *](inst: Foldable[f], fa: f[a], fn: a -> b, monoid: Monoid[b]) -> b:
-  foldl(inst, fa, empty_Monoid(monoid), (acc, item) -> combine_Monoid(monoid, acc, fn(item)))
 
 def fold_map_option[f: * -> *](inst: Foldable[f], fa: f[a], fn: a -> b, semigroup: Semigroup[b]) -> Option[b]:
   foldl(inst, fa, None, (state, item) -> (
