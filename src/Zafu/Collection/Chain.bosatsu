@@ -1,0 +1,1014 @@
+package Zafu/Collection/Chain
+
+from Bosatsu/List import eq_List
+from Bosatsu/Collection/Array import (
+  Array,
+  from_List_Array,
+  size_Array,
+  get_Array,
+  foldl_Array,
+  slice_Array,
+  reverse_Array,
+)
+from Bosatsu/Rand import (
+  Rand,
+  int_range,
+  geometric_Int,
+  map_Rand,
+  flat_map_Rand,
+  prod_Rand,
+  sequence_Rand,
+)
+from Bosatsu/Testing/Properties import (
+  Prop,
+  forall_Prop,
+  suite_Prop,
+  run_Prop,
+)
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_specialized,
+  fold_map as fold_map_foldable,
+)
+from Zafu/Abstract/Applicative import (
+  Applicative,
+  applicative_from_pure_map_map2,
+  pure,
+  map as map_app,
+  map2,
+)
+from Zafu/Abstract/Traverse import (
+  Traverse,
+  traverse,
+  traverse_specialized,
+)
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_by,
+)
+from Zafu/Abstract/Ord import (
+  Ord,
+  ord_by,
+)
+from Zafu/Abstract/Hash import (
+  Hash,
+  hash_by,
+)
+from Zafu/Abstract/Semigroup import (
+  Semigroup,
+  semigroup_specialized,
+  combine,
+  combine_all_option as combine_all_option_sg,
+)
+from Zafu/Abstract/Monoid import (
+  Monoid,
+  empty as empty_monoid,
+  combine as combine_monoid,
+  combine_map_all as combine_map_all_monoid,
+)
+from Zafu/Abstract/Instances/Predef import (
+  foldable_Array,
+  eq_List as eq_List_inst,
+  ord_List as ord_List_inst,
+  hash_List as hash_List_inst,
+)
+from Zafu/Collection/List import (
+  size as size_List,
+  get_List,
+)
+from Zafu/Control/IterState import (
+  IterState,
+  Done,
+  Continue,
+  foldl_List as foldl_state_List,
+  foldl_Array as foldl_state_Array,
+  foldr_List as foldr_state_List,
+  foldr_Array as foldr_state_Array,
+)
+
+export (
+  Chain,
+  empty,
+  singleton,
+  from_List,
+  to_List,
+  size,
+  is_empty,
+  get,
+  get_or,
+  any,
+  exists,
+  for_all,
+  uncons_left,
+  uncons_right,
+  foldl,
+  foldr,
+  combine_all,
+  map,
+  flat_map,
+  filter,
+  eq_Chain,
+  ord_Chain,
+  hash_Chain,
+  prepend,
+  append,
+  concat,
+  concat_all,
+  foldable_Chain,
+  traverse_Chain,
+)
+
+# Internal tree used to support O(1) concat while preserving order.
+# Invariant: WrapArray and WrapList only hold collections with at least two items.
+enum Chain[a: +*]:
+  Empty
+  Singleton(item: a)
+  WrapArray(items: Array[a])
+  WrapList(items: List[a])
+  Concat(nodes: Int, left: Chain[a], right: Chain[a])
+
+def chain_nodes(chain: Chain[a]) -> Int:
+  match chain:
+    case Empty:
+      0
+    case Singleton(_):
+      1
+    case WrapArray(_):
+      1
+    case WrapList(_):
+      1
+    case Concat(nodes, _, _):
+      nodes
+
+def chain_size(chain: Chain[a]) -> Int:
+  def loop_size(rem: Int, stack: List[Chain[a]], acc: Int) -> Int:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_size(rem.sub(1), tail, acc)
+          case [Singleton(_), *tail]:
+            loop_size(rem.sub(1), tail, acc.add(1))
+          case [WrapArray(items), *tail]:
+            loop_size(rem.sub(1), tail, acc.add(size_Array(items)))
+          case [WrapList(items), *tail]:
+            loop_size(rem.sub(1), tail, acc.add(size_List(items)))
+          case [Concat(_, left, right), *tail]:
+            loop_size(rem.sub(1), [left, right, *tail], acc)
+  loop_size(chain_nodes(chain).add(1), [chain], 0)
+
+def from_Array(items: Array[a]) -> Chain[a]:
+  sz = size_Array(items)
+  if sz.eq_Int(0):
+    Empty
+  elif sz.eq_Int(1):
+    match get_Array(items, 0):
+      case Some(item):
+        Singleton(item)
+      case None:
+        Empty
+  else:
+    WrapArray(items)
+
+# Empty chain.
+empty: forall a. Chain[a] = Empty
+
+# Single-item chain.
+def singleton(item: a) -> Chain[a]:
+  Singleton(item)
+
+# Build a chain from a list.
+def from_List(list: List[a]) -> Chain[a]:
+  match list:
+    case []:
+      Empty
+    case [item]:
+      Singleton(item)
+    case _:
+      WrapList(list)
+
+# O(1) concatenation of two chains.
+def concat(left: Chain[a], right: Chain[a]) -> Chain[a]:
+  match left:
+    case Empty:
+      right
+    case _:
+      match right:
+        case Empty:
+          left
+        case _:
+          Concat(chain_nodes(left).add(chain_nodes(right)).add(1), left, right)
+
+# Concatenate all chains from left to right.
+def concat_all(chains: List[Chain[a]]) -> Chain[a]:
+  chains.foldl_List(empty, concat)
+
+# Add an item to the front of a chain.
+def prepend(item: a, chain: Chain[a]) -> Chain[a]:
+  concat(singleton(item), chain)
+
+# Add an item to the end of a chain.
+def append(chain: Chain[a], item: a) -> Chain[a]:
+  concat(chain, singleton(item))
+
+# Number of elements in the chain.
+def size(chain: Chain[a]) -> Int:
+  chain_size(chain)
+
+def is_empty(chain: Chain[a]) -> Bool:
+  chain matches Empty
+
+def traversal_fuel(chain: Chain[a]) -> Int:
+  chain_nodes(chain).add(64)
+
+# Stack-safe left fold.
+def foldl(chain: Chain[a], init: b, fn: (b, a) -> b) -> b:
+  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_fold(rem.sub(1), tail, acc)
+          case [Singleton(item), *tail]:
+            loop_fold(rem.sub(1), tail, fn(acc, item))
+          case [WrapArray(items), *tail]:
+            loop_fold(rem.sub(1), tail, foldl_Array(items, acc, fn))
+          case [WrapList(items), *tail]:
+            loop_fold(rem.sub(1), tail, items.foldl_List(acc, fn))
+          case [Concat(_, left, right), *tail]:
+            loop_fold(rem.sub(1), [left, right, *tail], acc)
+  loop_fold(traversal_fuel(chain), [chain], init)
+
+def foldr_Array(items: Array[a], init: b, fn: (a, b) -> b) -> b:
+  rev = reverse_Array(items)
+  foldl_Array(rev, init, (acc, item) -> fn(item, acc))
+
+def foldr_List(items: List[a], init: b, fn: (a, b) -> b) -> b:
+  items.reverse().foldl_List(init, (acc, item) -> fn(item, acc))
+
+# Stack-safe right fold.
+def foldr(chain: Chain[a], init: b, fn: (a, b) -> b) -> b:
+  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_fold(rem.sub(1), tail, acc)
+          case [Singleton(item), *tail]:
+            loop_fold(rem.sub(1), tail, fn(item, acc))
+          case [WrapArray(items), *tail]:
+            loop_fold(rem.sub(1), tail, foldr_Array(items, acc, fn))
+          case [WrapList(items), *tail]:
+            loop_fold(rem.sub(1), tail, foldr_List(items, acc, fn))
+          case [Concat(_, left, right), *tail]:
+            loop_fold(rem.sub(1), [right, left, *tail], acc)
+  loop_fold(traversal_fuel(chain), [chain], init)
+
+def foldl_iter(chain: Chain[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> IterState[b, b]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        Continue(acc)
+      case _:
+        match stack:
+          case []:
+            Continue(acc)
+          case [Empty, *tail]:
+            loop_fold(rem.sub(1), tail, acc)
+          case [Singleton(item), *tail]:
+            match fn(acc, item):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                loop_fold(rem.sub(1), tail, next_acc)
+          case [WrapArray(items), *tail]:
+            match foldl_state_Array(items, acc, fn):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                loop_fold(rem.sub(1), tail, next_acc)
+          case [WrapList(items), *tail]:
+            match foldl_state_List(items, acc, fn):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                loop_fold(rem.sub(1), tail, next_acc)
+          case [Concat(_, left, right), *tail]:
+            loop_fold(rem.sub(1), [left, right, *tail], acc)
+  loop_fold(traversal_fuel(chain), [chain], init)
+
+def foldr_iter(chain: Chain[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> IterState[b, b]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        Continue(acc)
+      case _:
+        match stack:
+          case []:
+            Continue(acc)
+          case [Empty, *tail]:
+            loop_fold(rem.sub(1), tail, acc)
+          case [Singleton(item), *tail]:
+            match fn(item, acc):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                loop_fold(rem.sub(1), tail, next_acc)
+          case [WrapArray(items), *tail]:
+            match foldr_state_Array(items, acc, fn):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                loop_fold(rem.sub(1), tail, next_acc)
+          case [WrapList(items), *tail]:
+            match foldr_state_List(items, acc, fn):
+              case Done(done_value):
+                Done(done_value)
+              case Continue(next_acc):
+                loop_fold(rem.sub(1), tail, next_acc)
+          case [Concat(_, left, right), *tail]:
+            loop_fold(rem.sub(1), [right, left, *tail], acc)
+  loop_fold(traversal_fuel(chain), [chain], init)
+
+def fold_map(chain: Chain[a], monoid: Monoid[b], fn: a -> b) -> b:
+  def loop_fold(rem: Int, stack: List[Chain[a]], acc: b) -> b:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_fold(rem.sub(1), tail, acc)
+          case [Singleton(item), *tail]:
+            loop_fold(rem.sub(1), tail, combine_monoid(monoid, acc, fn(item)))
+          case [WrapArray(items), *tail]:
+            array_total = fold_map_foldable(items, foldable_Array, monoid, fn)
+            loop_fold(rem.sub(1), tail, combine_monoid(monoid, acc, array_total))
+          case [WrapList(items), *tail]:
+            list_total = combine_map_all_monoid(monoid, items, fn)
+            loop_fold(rem.sub(1), tail, combine_monoid(monoid, acc, list_total))
+          case [Concat(_, left, right), *tail]:
+            loop_fold(rem.sub(1), [left, right, *tail], acc)
+  loop_fold(traversal_fuel(chain), [chain], empty_monoid(monoid))
+
+def combine_all(chain: Chain[a], semi: Semigroup[a]) -> Option[a]:
+  def combine_left(state: Option[a], next: Option[a]) -> Option[a]:
+    match next:
+      case None:
+        state
+      case Some(value):
+        match state:
+          case None:
+            Some(value)
+          case Some(total):
+            Some(semi.combine(total, value))
+  def loop_combine(rem: Int, stack: List[Chain[a]], acc: Option[a]) -> Option[a]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        match stack:
+          case []:
+            acc
+          case [Empty, *tail]:
+            loop_combine(rem.sub(1), tail, acc)
+          case [Singleton(item), *tail]:
+            loop_combine(rem.sub(1), tail, combine_left(acc, Some(item)))
+          case [WrapArray(items), *tail]:
+            array_total = foldl_Array(items, None, (state, item) -> (
+              match state:
+                case None:
+                  Some(item)
+                case Some(total):
+                  Some(semi.combine(total, item))
+            ))
+            loop_combine(rem.sub(1), tail, combine_left(acc, array_total))
+          case [WrapList(items), *tail]:
+            # Preserve Semigroup's list-specialized fast path when available.
+            list_total = combine_all_option_sg(semi, items)
+            loop_combine(rem.sub(1), tail, combine_left(acc, list_total))
+          case [Concat(_, left, right), *tail]:
+            loop_combine(rem.sub(1), [left, right, *tail], acc)
+  loop_combine(traversal_fuel(chain), [chain], None)
+
+# Convert to a list in iteration order.
+def to_List(chain: Chain[a]) -> List[a]:
+  foldr(chain, [], (item, acc) -> [item, *acc])
+
+def find_with(chain: Chain[a], idx: Int, on_missing: () -> b, on_found: a -> b) -> b:
+  if cmp_Int(idx, 0) matches LT:
+    on_missing()
+  else:
+    def loop_find(rem: Int, stack: List[Chain[a]], rem_idx: Int) -> b:
+      loop rem:
+        case _ if cmp_Int(rem, 0) matches LT | EQ:
+          on_missing()
+        case _:
+          match stack:
+            case []:
+              on_missing()
+            case [Empty, *tail]:
+              loop_find(rem.sub(1), tail, rem_idx)
+            case [Singleton(item), *tail]:
+              if rem_idx.eq_Int(0):
+                on_found(item)
+              else:
+                loop_find(rem.sub(1), tail, rem_idx.sub(1))
+            case [WrapArray(items), *tail]:
+              cnt = size_Array(items)
+              if cmp_Int(rem_idx, cnt) matches LT:
+                match get_Array(items, rem_idx):
+                  case Some(item):
+                    on_found(item)
+                  case None:
+                    on_missing()
+              else:
+                loop_find(rem.sub(1), tail, rem_idx.sub(cnt))
+            case [WrapList(items), *tail]:
+              cnt = size_List(items)
+              if cmp_Int(rem_idx, cnt) matches LT:
+                match get_List(items, rem_idx):
+                  case Some(item):
+                    on_found(item)
+                  case None:
+                    on_missing()
+              else:
+                loop_find(rem.sub(1), tail, rem_idx.sub(cnt))
+            case [Concat(_, left, right), *tail]:
+              loop_find(rem.sub(1), [left, right, *tail], rem_idx)
+    loop_find(traversal_fuel(chain), [chain], idx)
+
+# Option-returning lookup.
+def get(chain: Chain[a], idx: Int) -> Option[a]:
+  find_with(chain, idx, () -> None, item -> Some(item))
+
+# Index lookup with fallback thunk.
+def get_or(chain: Chain[a], idx: Int, fn: () -> a) -> a:
+  find_with(chain, idx, fn, item -> item)
+
+def exists(chain: Chain[a], pred: a -> Bool) -> Bool:
+  foldl(chain, False, (state, item) -> (
+    if state:
+      True
+    else:
+      pred(item)
+  ))
+
+def any(chain: Chain[Bool]) -> Bool:
+  exists(chain, item -> item)
+
+def for_all(chain: Chain[a], pred: a -> Bool) -> Bool:
+  if exists(chain, item -> (
+    if pred(item):
+      False
+    else:
+      True
+  )):
+    False
+  else:
+    True
+
+def split_last_List(items: List[a]) -> Option[(List[a], a)]:
+  def loop_split(rem: List[a], rev_init: List[a]) -> Option[(List[a], a)]:
+    loop rem:
+      case []:
+        None
+      case [last]:
+        Some((rev_init.reverse(), last))
+      case [head, *tail]:
+        loop_split(tail, [head, *rev_init])
+  loop_split(items, [])
+
+def uncons_left(chain: Chain[a]) -> Option[(a, Chain[a])]:
+  def loop_uncons(current: Chain[a], suffix: Chain[a]) -> Option[(a, Chain[a])]:
+    loop current:
+      case Empty:
+        None
+      case Singleton(item):
+        Some((item, suffix))
+      case WrapArray(items):
+        match get_Array(items, 0):
+          case Some(head):
+            tail = from_Array(slice_Array(items, 1, size_Array(items)))
+            Some((head, concat(tail, suffix)))
+          case None:
+            None
+      case WrapList(items):
+        match items:
+          case [head, *tail]:
+            Some((head, concat(from_List(tail), suffix)))
+          case _:
+            None
+      case Concat(_, left, right):
+        loop_uncons(left, concat(right, suffix))
+  loop_uncons(chain, empty)
+
+def uncons_right(chain: Chain[a]) -> Option[(Chain[a], a)]:
+  def loop_uncons(current: Chain[a], prefix: Chain[a]) -> Option[(Chain[a], a)]:
+    loop current:
+      case Empty:
+        None
+      case Singleton(item):
+        Some((prefix, item))
+      case WrapArray(items):
+        last_idx = size_Array(items).sub(1)
+        match get_Array(items, last_idx):
+          case Some(last):
+            init = from_Array(slice_Array(items, 0, last_idx))
+            Some((concat(prefix, init), last))
+          case None:
+            None
+      case WrapList(items):
+        match split_last_List(items):
+          case Some((init, last)):
+            Some((concat(prefix, from_List(init)), last))
+          case None:
+            None
+      case Concat(_, left, right):
+        loop_uncons(right, concat(prefix, left))
+  loop_uncons(chain, empty)
+
+# Map over all elements.
+def map(chain: Chain[a], fn: a -> b) -> Chain[b]:
+  foldr(chain, empty, (item, acc) -> concat(singleton(fn(item)), acc))
+
+# Traverse all elements left-to-right.
+def traverse_Chain_fn[g: * -> *, a, b](chain: Chain[a], app: Applicative[g], fn: a -> g[b]) -> g[Chain[b]]:
+  rev_mapped = foldl(
+    chain,
+    app.pure([]),
+    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+  )
+  rev_mapped.map_app(app, rev_items -> from_List(rev_items.reverse()))
+
+# Keep only elements satisfying pred.
+def filter(chain: Chain[a], pred: a -> Bool) -> Chain[a]:
+  foldr(chain, empty, (item, acc) -> concat(singleton(item), acc) if pred(item) else acc)
+
+# Map each element to a chain and concatenate.
+def flat_map(chain: Chain[a], fn: a -> Chain[b]) -> Chain[b]:
+  foldr(chain, empty, (item, acc) -> concat(fn(item), acc))
+
+foldable_Chain: Foldable[Chain] = foldable_specialized(
+  foldl,
+  foldr,
+  fold_map,
+  foldl_iter,
+  foldr_iter,
+  is_empty,
+  size,
+  to_List,
+)
+
+traverse_Chain: Traverse[Chain] = traverse_specialized(
+  traverse_Chain_fn,
+  map,
+  foldable_Chain,
+)
+
+def eq_Chain(eq_item: Eq[a]) -> Eq[Chain[a]]:
+  eq_by(eq_List_inst(eq_item), to_List)
+
+def ord_Chain(ord_item: Ord[a]) -> Ord[Chain[a]]:
+  ord_by(ord_List_inst(ord_item), to_List)
+
+def hash_Chain(hash_item: Hash[a]) -> Hash[Chain[a]]:
+  hash_by(hash_List_inst(hash_item), to_List)
+
+############################
+# Property tests
+############################
+
+def eq_Option(eq_fn)(left: Option[a], right: Option[a]) -> Bool:
+  match (left, right):
+    case (Some(lv), Some(rv)):
+      eq_fn(lv, rv)
+    case (None, None):
+      True
+    case _:
+      False
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
+  match value:
+    case Some(item):
+      Some(fn(item))
+    case None:
+      None
+
+def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]:
+  match (left, right):
+    case (Some(left_value), Some(right_value)):
+      Some(fn(left_value, right_value))
+    case _:
+      None
+
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+
+def keep_even_Option_Int(value: Int) -> Option[Int]:
+  if cmp_Int(mod_Int(value, 2), 0) matches EQ:
+    Some(value)
+  else:
+    None
+
+def get_or_List(list: List[a], idx: Int, fn: () -> a) -> a:
+  match get_List(list, idx):
+    case Some(item):
+      item
+    case None:
+      fn()
+
+def uncons_left_List(list: List[a]) -> Option[(a, List[a])]:
+  match list:
+    case []:
+      None
+    case [head, *tail]:
+      Some((head, tail))
+
+def uncons_right_List(list: List[a]) -> Option[(List[a], a)]:
+  rev = list.reverse()
+  match rev:
+    case []:
+      None
+    case [last, *init_rev]:
+      Some((init_rev.reverse(), last))
+
+def eq_uncons_left(
+  actual: Option[(Int, Chain[Int])],
+  expected: Option[(Int, List[Int])]
+) -> Bool:
+  match (actual, expected):
+    case (None, None):
+      True
+    case (Some((actual_head, actual_tail)), Some((expected_head, expected_tail))):
+      and_Bool(
+        actual_head.eq_Int(expected_head),
+        eq_List(eq_Int)(to_List(actual_tail), expected_tail))
+    case _:
+      False
+
+def eq_uncons_right(
+  actual: Option[(Chain[Int], Int)],
+  expected: Option[(List[Int], Int)]
+) -> Bool:
+  match (actual, expected):
+    case (None, None):
+      True
+    case (Some((actual_init, actual_last)), Some((expected_init, expected_last))):
+      and_Bool(
+        actual_last.eq_Int(expected_last),
+        eq_List(eq_Int)(to_List(actual_init), expected_init))
+    case _:
+      False
+
+def foldr_list_model(list: List[Int], init: Int) -> Int:
+  list.reverse().foldl_List(init, (acc, item) -> item.sub(acc))
+
+def flat_map_model(list: List[Int]) -> List[Int]:
+  rev = list.foldl_List([], (acc, item) -> [item.add(1), item, *acc])
+  rev.reverse()
+
+def deep_concat_chain(size: Int) -> Chain[Int]:
+  def loop_deep(rem: Int, acc: Chain[Int]) -> Chain[Int]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        loop_deep(rem.sub(1), concat(acc, singleton(rem)))
+  loop_deep(size, empty)
+
+rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
+
+rand_list_int: Rand[List[Int]] = flat_map_Rand(
+  geometric_Int,
+  len -> sequence_Rand(replicate_List(rand_int, len))
+)
+
+rand_list_with_index: Rand[(List[Int], Int)] = flat_map_Rand(rand_list_int, list -> (
+  upper = size_List(list).add(3)
+  map_Rand(int_range(upper), i -> (list, i.sub(1)))
+))
+
+rand_list_with_idx_and_fb: Rand[(List[Int], Int, Int)] = flat_map_Rand(
+  rand_list_with_index,
+  ((list, idx)) -> map_Rand(rand_int, fb -> (list, idx, fb))
+)
+
+rand_list_pair: Rand[(List[Int], List[Int])] = prod_Rand(rand_list_int, rand_list_int)
+
+rand_list_of_lists_int: Rand[List[List[Int]]] = flat_map_Rand(
+  geometric_Int,
+  len -> sequence_Rand(replicate_List(rand_list_int, len))
+)
+
+roundtrip_prop: Prop = forall_Prop(
+  rand_list_int,
+  "to_List(from_List(list)) == list",
+  list -> (
+    actual = to_List(from_List(list))
+    Assertion(eq_List(eq_Int)(actual, list), "roundtrip")
+  ))
+
+size_prop: Prop = forall_Prop(
+  rand_list_int,
+  "size agrees with list_size",
+  list -> (
+    chain = from_List(list)
+    Assertion(size(chain).eq_Int(size_List(list)), "size law")
+  ))
+
+singleton_prop: Prop = forall_Prop(
+  rand_int,
+  "singleton has exactly one item",
+  item -> (
+    chain = singleton(item)
+    as_list = to_List(chain)
+    Assertion(eq_List(eq_Int)(as_list, [item]), "singleton law")
+  ))
+
+get_prop: Prop = forall_Prop(
+  rand_list_with_index,
+  "get matches list indexing",
+  ((list, idx)) -> (
+    chain = from_List(list)
+    expected = get_List(list, idx)
+    actual = get(chain, idx)
+    Assertion(eq_Option(eq_Int)(actual, expected), "get law")
+  ))
+
+get_or_prop: Prop = forall_Prop(
+  rand_list_with_idx_and_fb,
+  "get_or matches list get_or model",
+  ((list, idx, fb)) -> (
+    chain = from_List(list)
+    expected = get_or_List(list, idx, () -> fb)
+    actual = get_or(chain, idx, () -> fb)
+    Assertion(actual.eq_Int(expected), "get_or law")
+  ))
+
+uncons_left_prop: Prop = forall_Prop(
+  rand_list_int,
+  "uncons_left matches list uncons left",
+  list -> (
+    chain = from_List(list)
+    expected = uncons_left_List(list)
+    actual = uncons_left(chain)
+    Assertion(eq_uncons_left(actual, expected), "uncons_left law")
+  ))
+
+uncons_right_prop: Prop = forall_Prop(
+  rand_list_int,
+  "uncons_right matches list uncons right",
+  list -> (
+    chain = from_List(list)
+    expected = uncons_right_List(list)
+    actual = uncons_right(chain)
+    Assertion(eq_uncons_right(actual, expected), "uncons_right law")
+  ))
+
+concat_prop: Prop = forall_Prop(
+  rand_list_pair,
+  "concat matches list concat",
+  ((left, right)) -> (
+    left_chain = from_List(left)
+    right_chain = from_List(right)
+    actual = to_List(concat(left_chain, right_chain))
+    expected = [*left, *right]
+    Assertion(eq_List(eq_Int)(actual, expected), "concat law")
+  ))
+
+concat_all_prop: Prop = forall_Prop(
+  rand_list_of_lists_int,
+  "concat_all matches list concat over all inputs",
+  lists -> (
+    chains = lists.map_List(from_List)
+    expected = lists.foldl_List([], (acc, list) -> [*acc, *list])
+    actual = to_List(concat_all(chains))
+    Assertion(eq_List(eq_Int)(actual, expected), "concat_all law")
+  ))
+
+prepend_prop: Prop = forall_Prop(
+  prod_Rand(rand_int, rand_list_int),
+  "prepend matches list prepend",
+  ((item, list)) -> (
+    chain = from_List(list)
+    actual = to_List(prepend(item, chain))
+    expected = [item, *list]
+    Assertion(eq_List(eq_Int)(actual, expected), "prepend law")
+  ))
+
+append_prop: Prop = forall_Prop(
+  prod_Rand(rand_list_int, rand_int),
+  "append matches list append",
+  ((list, item)) -> (
+    chain = from_List(list)
+    actual = to_List(append(chain, item))
+    expected = [*list, item]
+    Assertion(eq_List(eq_Int)(actual, expected), "append law")
+  ))
+
+foldl_prop: Prop = forall_Prop(
+  rand_list_int,
+  "foldl agrees with list foldl",
+  list -> (
+    chain = from_List(list)
+    expected = list.foldl_List(0, add)
+    actual = foldl(chain, 0, add)
+    Assertion(actual.eq_Int(expected), "foldl law")
+  ))
+
+foldr_prop: Prop = forall_Prop(
+  rand_list_int,
+  "foldr agrees with list foldr model",
+  list -> (
+    chain = from_List(list)
+    expected = foldr_list_model(list, 0)
+    actual = foldr(chain, 0, (item, acc) -> item.sub(acc))
+    Assertion(actual.eq_Int(expected), "foldr law")
+  ))
+
+map_prop: Prop = forall_Prop(
+  rand_list_int,
+  "map agrees with list map",
+  list -> (
+    chain = from_List(list)
+    fn = i -> i.add(1)
+    expected = list.map_List(fn)
+    actual = to_List(map(chain, fn))
+    Assertion(eq_List(eq_Int)(actual, expected), "map law")
+  ))
+
+filter_prop: Prop = forall_Prop(
+  rand_list_int,
+  "filter agrees with list filter",
+  list -> (
+    chain = from_List(list)
+    keep_even = i -> mod_Int(i, 2).eq_Int(0)
+    expected = [i for i in list if keep_even(i)]
+    actual = to_List(filter(chain, keep_even))
+    Assertion(eq_List(eq_Int)(actual, expected), "filter law")
+  ))
+
+flat_map_prop: Prop = forall_Prop(
+  rand_list_int,
+  "flat_map agrees with list model",
+  list -> (
+    chain = from_List(list)
+    fn = i -> from_List([i, i.add(1)])
+    expected = flat_map_model(list)
+    actual = to_List(chain.flat_map(fn))
+    Assertion(eq_List(eq_Int)(actual, expected), "flat_map law")
+  ))
+
+chain_props: Prop = suite_Prop(
+  "Chain properties",
+  [
+    roundtrip_prop,
+    size_prop,
+    singleton_prop,
+    get_prop,
+    get_or_prop,
+    uncons_left_prop,
+    uncons_right_prop,
+    concat_prop,
+    concat_all_prop,
+    prepend_prop,
+    append_prop,
+    foldl_prop,
+    foldr_prop,
+    map_prop,
+    filter_prop,
+    flat_map_prop,
+  ])
+
+tests = TestSuite("Chain tests", [
+  Assertion(size(empty).eq_Int(0), "empty size"),
+  Assertion(is_empty(empty), "empty is_empty"),
+  Assertion(is_empty(singleton(1)) matches False, "singleton non-empty"),
+  Assertion(from_Array(from_List_Array([1])).to_List() matches [1], "array singleton to singleton"),
+  Assertion(to_List(empty) matches [], "empty to list"),
+  Assertion(get(empty, 0) matches None, "empty get"),
+  Assertion(get_or(empty, 0, () -> 11).eq_Int(11), "empty get_or fallback"),
+  Assertion(any(from_List([False, True, False])), "any sanity"),
+  Assertion(any(from_List([False])) matches False, "any all false"),
+  Assertion(exists(from_List([1, 2, 3]), i -> i.eq_Int(2)), "exists sanity"),
+  Assertion(exists(from_List([1, 2, 3]), i -> i.eq_Int(9)) matches False, "exists miss"),
+  Assertion(for_all(from_List([2, 4, 6]), i -> mod_Int(i, 2).eq_Int(0)), "for_all sanity"),
+  Assertion(for_all(from_List([2, 3, 6]), i -> mod_Int(i, 2).eq_Int(0)) matches False, "for_all miss"),
+  Assertion(uncons_left(empty) matches None, "uncons_left empty"),
+  Assertion(uncons_right(empty) matches None, "uncons_right empty"),
+  Assertion(
+    match uncons_left(from_List([1, 2, 3])):
+      case Some((head, tail)):
+        and_Bool(head.eq_Int(1), tail.to_List() matches [2, 3])
+      case None:
+        False,
+    "uncons_left sanity"),
+  Assertion(
+    match uncons_right(from_List([1, 2, 3])):
+      case Some((init, last)):
+        and_Bool(last.eq_Int(3), init.to_List() matches [1, 2])
+      case None:
+        False,
+    "uncons_right sanity"),
+  Assertion(
+    match uncons_left(from_Array(from_List_Array([1, 2, 3]))):
+      case Some((head, tail)):
+        and_Bool(head.eq_Int(1), tail.to_List() matches [2, 3])
+      case None:
+        False,
+    "uncons_left array sanity"),
+  Assertion(
+    match uncons_right(from_Array(from_List_Array([1, 2, 3]))):
+      case Some((init, last)):
+        and_Bool(last.eq_Int(3), init.to_List() matches [1, 2])
+      case None:
+        False,
+    "uncons_right array sanity"),
+  Assertion(concat(empty, singleton(1)).to_List() matches [1], "concat left empty"),
+  Assertion(concat(singleton(1), empty).to_List() matches [1], "concat right empty"),
+  Assertion(prepend(1, from_List([2, 3])).to_List() matches [1, 2, 3], "prepend sanity"),
+  Assertion(append(from_List([1, 2]), 3).to_List() matches [1, 2, 3], "append sanity"),
+  Assertion(concat_all([]).to_List() matches [], "concat_all empty"),
+  Assertion(concat_all([from_List([1]), from_List([2, 3])]).to_List() matches [1, 2, 3], "concat_all sanity"),
+  Assertion(foldl(from_List([1, 2, 3]), 0, add).eq_Int(6), "foldl sanity"),
+  Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
+  Assertion(combine_all(empty, semigroup_specialized((_, _) -> 999, (value, _) -> value, (_, _, _) -> 0)) matches None, "combine_all empty"),
+  Assertion(combine_all(from_List([1, 2, 3]), semigroup_specialized(
+    (_, _) -> 999,
+    (value, _) -> value,
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> add(acc, fn(item))),
+  )) matches Some(6), "combine_all uses list combine_map_all"),
+  Assertion(map(from_List([1, 2]), i -> i.add(10)).to_List() matches [11, 12], "map sanity"),
+  (
+    chain = from_List([1, 2, 3])
+    match chain.traverse(traverse_Chain, applicative_Option, i -> Some(i.add(10))):
+      case Some(mapped):
+        Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Chain Some")
+      case None:
+        Assertion(False, "traverse_Chain Some")
+  ),
+  Assertion(
+    from_List([1, 2, 3, 4]).traverse(
+      traverse_Chain,
+      applicative_Option,
+      keep_even_Option_Int,
+    ) matches None,
+    "traverse_Chain short-circuits",
+  ),
+  Assertion(filter(from_List([1, 2, 3, 4]), i -> mod_Int(i, 2).eq_Int(0)).to_List() matches [2, 4], "filter sanity"),
+  Assertion(from_List([1, 2]).flat_map(i -> from_List([i, i.add(1)])).to_List() matches [1, 2, 2, 3], "flat_map sanity"),
+  (
+    deep = deep_concat_chain(20000)
+    expected_sum = 20000.mul(20001).div(2)
+    deep_list = to_List(deep)
+    deep_uncons_left_ok =
+      match uncons_left(deep):
+        case Some((head, tail)):
+          and_Bool(
+            head.eq_Int(20000),
+            size(tail).eq_Int(19999))
+        case None:
+          False
+    deep_uncons_right_ok =
+      match uncons_right(deep):
+        case Some((init, last)):
+          and_Bool(
+            last.eq_Int(1),
+            size(init).eq_Int(19999))
+        case None:
+          False
+    Assertion(and_Bool(
+      and_Bool(
+        size(deep).eq_Int(20000),
+        size_List(deep_list).eq_Int(20000)),
+      and_Bool(
+        and_Bool(
+          foldl(deep, 0, add).eq_Int(expected_sum),
+          foldr(deep, 0, (item, acc) -> item.add(acc)).eq_Int(expected_sum)),
+        and_Bool(
+          deep_uncons_left_ok,
+          deep_uncons_right_ok))),
+      "deep stack-safe operations")
+  ),
+  run_Prop(chain_props, 200, 20260303),
+])

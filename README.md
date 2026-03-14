@@ -4,7 +4,7 @@ Useful Bosatsu code, starting with a `Vector` implementation.
 
 ## Layout
 
-- `src/Zafu/Vector.bosatsu`: vector implementation and property tests.
+- `src/Zafu/Collection/Vector.bosatsu`: vector implementation and property tests.
 - `src/zafu_conf.json`: Bosatsu library configuration.
 - `bosatsu_libs.json`: maps library name to source root.
 - `scripts/test.sh`: runs `lib check`, `lib test`, and dry-run `lib publish`.
@@ -29,6 +29,31 @@ This runs:
 2. `./bosatsu lib test`
 3. Dry-run style publish via `scripts/publish_bosatsu_libs.sh --dry-run` with `URI_BASE=https://example.invalid/`
 
+## Benchmarking vector
+
+Run the vector microbenchmarks with:
+
+```bash
+scripts/benchmark_vector.sh
+```
+
+The script prints two sections:
+
+1. `JVM benchmarks:` from `./bosatsu lib eval --main Zafu/Benchmark/Vector::main --run`
+2. `C benchmarks:` from a built native executable via `./bosatsu lib build --main_pack Zafu/Benchmark/Vector --exe_out ...`
+
+Or directly:
+
+```bash
+./bosatsu lib eval --main Zafu/Benchmark/Vector::main --run
+```
+
+The benchmark prints CSV with header:
+
+`case,size,iterations,ops,elapsed_us,ops_per_us,sink`
+
+`ops_per_us` is most useful for comparing runs of the same `case` across different sizes.
+
 ## CI, docs, and release
 
 - CI (`.github/workflows/ci.yml`) runs check/test/dry-run publish and validates docs generation plus markdown-to-HTML conversion with Pandoc on pull requests.
@@ -37,5 +62,4 @@ This runs:
 
 ## API docs
 
-- GitHub Pages index: [johnynek.github.io/zafu](https://johnynek.github.io/zafu/)
-- Current module docs: [Zafu/Vector](https://johnynek.github.io/zafu/Zafu/Vector.html)
+- [Zafu library docs](https://johnynek.github.io/zafu/)

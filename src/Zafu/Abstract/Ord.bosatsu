@@ -1,0 +1,194 @@
+package Zafu/Abstract/Ord
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_specialized,
+  laws_Eq,
+  eq as eq_Eq,
+)
+
+export (
+  Ord,
+  ord_from_cmp,
+  ord_specialized,
+  cmp,
+  eq,
+  lt,
+  lteq,
+  gt,
+  gteq,
+  min,
+  max,
+  reverse,
+  ord_by,
+  ord_to_eq,
+  laws_Ord,
+)
+
+struct Ord[a](
+  cmp_fn: (a, a) -> Comparison,
+  lt_fn: (a, a) -> Bool,
+  lteq_fn: (a, a) -> Bool,
+  gt_fn: (a, a) -> Bool,
+  gteq_fn: (a, a) -> Bool,
+  min_fn: (a, a) -> a,
+  max_fn: (a, a) -> a,
+)
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def or_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    True
+  else:
+    right
+
+def eq_Comparison(left: Comparison, right: Comparison) -> Bool:
+  (left, right) matches (LT, LT) | (EQ, EQ) | (GT, GT)
+
+def inverse_Comparison(value: Comparison) -> Comparison:
+  match value:
+    case LT:
+      GT
+    case EQ:
+      EQ
+    case GT:
+      LT
+
+# Constructor for cases where specialized operations are provided.
+def ord_specialized(
+  cmp_fn: (a, a) -> Comparison,
+  lt_fn: (a, a) -> Bool,
+  lteq_fn: (a, a) -> Bool,
+  gt_fn: (a, a) -> Bool,
+  gteq_fn: (a, a) -> Bool,
+  min_fn: (a, a) -> a,
+  max_fn: (a, a) -> a,
+) -> Ord[a]:
+  Ord(cmp_fn, lt_fn, lteq_fn, gt_fn, gteq_fn, min_fn, max_fn)
+
+# Constructor from comparison function; all other operations are derived.
+def ord_from_cmp(cmp_fn: (a, a) -> Comparison) -> Ord[a]:
+  lt_fn = (left, right) -> cmp_fn(left, right) matches LT
+  lteq_fn = (left, right) -> cmp_fn(left, right) matches LT | EQ
+  gt_fn = (left, right) -> cmp_fn(left, right) matches GT
+  gteq_fn = (left, right) -> cmp_fn(left, right) matches GT | EQ
+  min_fn = (left, right) -> (
+    match cmp_fn(left, right):
+      case GT:
+        right
+      case LT | EQ:
+        left
+  )
+  max_fn = (left, right) -> (
+    match cmp_fn(left, right):
+      case LT:
+        right
+      case GT | EQ:
+        left
+  )
+  ord_specialized(cmp_fn, lt_fn, lteq_fn, gt_fn, gteq_fn, min_fn, max_fn)
+
+def cmp(inst: Ord[a], left: a, right: a) -> Comparison:
+  Ord { cmp_fn, ... } = inst
+  cmp_fn(left, right)
+
+def eq(inst: Ord[a], left: a, right: a) -> Bool:
+  cmp(inst, left, right) matches EQ
+
+def lt(inst: Ord[a], left: a, right: a) -> Bool:
+  Ord { lt_fn, ... } = inst
+  lt_fn(left, right)
+
+def lteq(inst: Ord[a], left: a, right: a) -> Bool:
+  Ord { lteq_fn, ... } = inst
+  lteq_fn(left, right)
+
+def gt(inst: Ord[a], left: a, right: a) -> Bool:
+  Ord { gt_fn, ... } = inst
+  gt_fn(left, right)
+
+def gteq(inst: Ord[a], left: a, right: a) -> Bool:
+  Ord { gteq_fn, ... } = inst
+  gteq_fn(left, right)
+
+def min(inst: Ord[a], left: a, right: a) -> a:
+  Ord { min_fn, ... } = inst
+  min_fn(left, right)
+
+def max(inst: Ord[a], left: a, right: a) -> a:
+  Ord { max_fn, ... } = inst
+  max_fn(left, right)
+
+def reverse(inst: Ord[a]) -> Ord[a]:
+  Ord { cmp_fn, lt_fn, lteq_fn, gt_fn, gteq_fn, min_fn, max_fn, ... } = inst
+  ord_specialized(
+    (left, right) -> cmp_fn(right, left),
+    (left, right) -> gt_fn(left, right),
+    (left, right) -> gteq_fn(left, right),
+    (left, right) -> lt_fn(left, right),
+    (left, right) -> lteq_fn(left, right),
+    (left, right) -> max_fn(left, right),
+    (left, right) -> min_fn(left, right),
+  )
+
+def ord_by(inst: Ord[b], project: a -> b) -> Ord[a]:
+  ord_from_cmp((left, right) -> cmp(inst, project(left), project(right)))
+
+def ord_to_eq(inst: Ord[a]) -> Eq[a]:
+  Ord { cmp_fn, ... } = inst
+  eq_specialized(
+    (left, right) -> cmp_fn(left, right) matches EQ,
+    (left, right) -> cmp_fn(left, right) matches LT | GT,
+  )
+
+# Basic Ord law checker for three sample values.
+def laws_Ord(inst: Ord[a], x: a, y: a, z: a) -> Test:
+  reflexive = Assertion(eq(inst, x, x), "reflexive")
+  antisymmetric = Assertion(
+    eq_Comparison(cmp(inst, x, y), inverse_Comparison(cmp(inst, y, x))),
+    "antisymmetric",
+  )
+  transitive = Assertion(
+    if and_Bool(lteq(inst, x, y), lteq(inst, y, z)):
+      lteq(inst, x, z)
+    else:
+      True,
+    "transitive",
+  )
+  total = Assertion(or_Bool(lteq(inst, x, y), lteq(inst, y, x)), "total")
+  eq_laws = laws_Eq(ord_to_eq(inst), x, y, z)
+  TestSuite("Ord laws", [eq_laws, reflexive, antisymmetric, transitive, total])
+
+tests = TestSuite("Ord tests", [
+  (
+    int_ord = ord_from_cmp(cmp_Int)
+    Assertion(lt(int_ord, 1, 2), "lt derived")
+  ),
+  (
+    int_ord = ord_from_cmp(cmp_Int)
+    Assertion(gteq(int_ord, 2, 2), "gteq derived")
+  ),
+  (
+    int_ord = ord_from_cmp(cmp_Int)
+    Assertion(min(int_ord, 2, 1).eq_Int(1), "min derived")
+  ),
+  (
+    int_ord = ord_from_cmp(cmp_Int)
+    int_eq = ord_to_eq(int_ord)
+    Assertion(eq_Eq(int_eq, 3, 3), "ord_to_eq")
+  ),
+  (
+    int_ord = ord_from_cmp(cmp_Int)
+    laws_Ord(int_ord, 1, 2, 3)
+  ),
+  (
+    int_ord = ord_from_cmp(cmp_Int)
+    first_ord = ord_by(int_ord, ((Tuple2(first, _)) -> first))
+    Assertion(cmp(first_ord, Tuple2(1, "x"), Tuple2(2, "y")) matches LT, "ord_by")
+  ),
+])

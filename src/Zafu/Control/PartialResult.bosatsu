@@ -1,0 +1,840 @@
+package Zafu/Control/PartialResult
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_from_fn,
+  eq as eq_Eq,
+)
+
+from Zafu/Abstract/Ord import (
+  Ord,
+  ord_from_cmp,
+  cmp as cmp_Ord,
+)
+
+from Zafu/Abstract/Hash import (
+  Hash,
+  hash_from_fn,
+  hash_specialized,
+  hash as hash_Hash,
+  hash_to_Eq,
+  mix_61,
+  finish_61,
+)
+
+from Zafu/Abstract/Semigroup import (
+  Semigroup,
+  combine,
+  semigroup_from_combine,
+)
+from Zafu/Abstract/Applicative import (
+  Applicative,
+  applicative_from_pure_map_map2,
+  pure,
+  map as map_app,
+)
+from Zafu/Abstract/Monad import (
+  Monad,
+  monad_from_applicative_flat_map_tailrec_steps,
+  tailrec_steps,
+  laws_Monad,
+)
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_from_folds,
+)
+from Zafu/Abstract/Traverse import (
+  Traverse,
+  traverse,
+  traverse_specialized,
+)
+
+from Zafu/Control/Result import (
+  Result,
+  Err,
+  Ok,
+)
+from Zafu/Control/IterState import (
+  IterState,
+  Continue,
+  Done,
+  continue,
+  done,
+)
+
+export (
+  PartialResult(),
+  is_total_err,
+  is_partial_err,
+  is_total_ok,
+  has_err,
+  has_ok,
+  err,
+  ok,
+  to_Option,
+  map,
+  map_err,
+  and_then,
+  flat_map,
+  or_else,
+  fold,
+  unwrap_or,
+  unwrap_or_else,
+  unwrap,
+  from_Option,
+  from_Result,
+  to_Result_fail_fast,
+  combine_product,
+  combine_map2,
+  combine_product_l,
+  combine_product_r,
+  monad_PartialResult,
+  traverse_PartialResult,
+  eq,
+  ord,
+  hash,
+)
+
+enum PartialResult[e, a]:
+  TotalErr(err: e)
+  PartialErr(err: e, partial: a)
+  TotalOk(ok: a)
+
+def is_total_err(result: PartialResult[e, a]) -> Bool:
+  result matches TotalErr(_)
+
+def is_partial_err(result: PartialResult[e, a]) -> Bool:
+  result matches PartialErr(_, _)
+
+def is_total_ok(result: PartialResult[e, a]) -> Bool:
+  result matches TotalOk(_)
+
+def has_err(result: PartialResult[e, a]) -> Bool:
+  result matches TotalErr(_) | PartialErr(_, _)
+
+def has_ok(result: PartialResult[e, a]) -> Bool:
+  result matches PartialErr(_, _) | TotalOk(_)
+
+def err(result: PartialResult[e, a]) -> Option[e]:
+  match result:
+    case TotalErr(err_value):
+      Some(err_value)
+    case PartialErr(err_value, _):
+      Some(err_value)
+    case TotalOk(_):
+      None
+
+def ok(result: PartialResult[e, a]) -> Option[a]:
+  match result:
+    case TotalErr(_):
+      None
+    case PartialErr(_, partial_value):
+      Some(partial_value)
+    case TotalOk(ok_value):
+      Some(ok_value)
+
+def to_Option(result: PartialResult[e, a]) -> Option[a]:
+  ok(result)
+
+def map(result: PartialResult[e, a], fn: a -> b) -> PartialResult[e, b]:
+  match result:
+    case TotalErr(err_value):
+      TotalErr(err_value)
+    case PartialErr(err_value, partial_value):
+      PartialErr(err_value, fn(partial_value))
+    case TotalOk(ok_value):
+      TotalOk(fn(ok_value))
+
+def map_err(result: PartialResult[e, a], fn: e -> f) -> PartialResult[f, a]:
+  match result:
+    case TotalErr(err_value):
+      TotalErr(fn(err_value))
+    case PartialErr(err_value, partial_value):
+      PartialErr(fn(err_value), partial_value)
+    case TotalOk(ok_value):
+      TotalOk(ok_value)
+
+def and_then(result: PartialResult[e, a], semi: Semigroup[e], fn: a -> PartialResult[e, b]) -> PartialResult[e, b]:
+  match result:
+    case TotalErr(err_value):
+      TotalErr(err_value)
+    case TotalOk(ok_value):
+      fn(ok_value)
+    case PartialErr(err_value, partial_value):
+      # Preserve the existing error while continuing on the partial value.
+      next = fn(partial_value)
+      match next:
+        case TotalErr(next_err):
+          TotalErr(semi.combine(err_value, next_err))
+        case PartialErr(next_err, next_partial):
+          PartialErr(semi.combine(err_value, next_err), next_partial)
+        case TotalOk(next_ok):
+          PartialErr(err_value, next_ok)
+
+def flat_map(result: PartialResult[e, a], semi: Semigroup[e], fn: a -> PartialResult[e, b]) -> PartialResult[e, b]:
+  result.and_then(semi, fn)
+
+def or_else(result: PartialResult[e, a], fn: e -> PartialResult[e, a]) -> PartialResult[e, a]:
+  match result:
+    case TotalErr(err_value):
+      fn(err_value)
+    case _:
+      result
+
+def fold(
+  result: PartialResult[e, a],
+  on_total_err: e -> b,
+  on_partial_err: (e, a) -> b,
+  on_total_ok: a -> b,
+) -> b:
+  match result:
+    case TotalErr(err_value):
+      on_total_err(err_value)
+    case PartialErr(err_value, partial_value):
+      on_partial_err(err_value, partial_value)
+    case TotalOk(ok_value):
+      on_total_ok(ok_value)
+
+def unwrap_or(result: PartialResult[e, a], fallback: a) -> a:
+  match result:
+    case TotalErr(_):
+      fallback
+    case PartialErr(_, partial_value):
+      partial_value
+    case TotalOk(ok_value):
+      ok_value
+
+def unwrap_or_else(result: PartialResult[e, a], on_total_err: e -> a) -> a:
+  match result:
+    case TotalErr(err_value):
+      on_total_err(err_value)
+    case PartialErr(_, partial_value):
+      partial_value
+    case TotalOk(ok_value):
+      ok_value
+
+def unwrap(ok: forall e. PartialResult[e, a]) -> a:
+  TotalOk(value) = ok
+  value
+
+def from_Option(value: Option[a], on_none: () -> e) -> PartialResult[e, a]:
+  match value:
+    case None:
+      TotalErr(on_none())
+    case Some(item):
+      TotalOk(item)
+
+def from_Result(value: Result[e, a]) -> PartialResult[e, a]:
+  match value:
+    case Err(err_value):
+      TotalErr(err_value)
+    case Ok(ok_value):
+      TotalOk(ok_value)
+
+def to_Result_fail_fast(value: PartialResult[e, a]) -> Result[e, a]:
+  match value:
+    case TotalErr(err_value):
+      Err(err_value)
+    case PartialErr(err_value, _):
+      Err(err_value)
+    case TotalOk(ok_value):
+      Ok(ok_value)
+
+def combine_product(
+  semi: Semigroup[e],
+  left: PartialResult[e, a],
+  right: PartialResult[e, b],
+) -> PartialResult[e, (a, b)]:
+  # Product composition preserves every available error while keeping any usable values.
+  match left:
+    case TotalErr(left_err):
+      match right:
+        case TotalErr(right_err):
+          TotalErr(semi.combine(left_err, right_err))
+        case PartialErr(right_err, _):
+          TotalErr(semi.combine(left_err, right_err))
+        case TotalOk(_):
+          TotalErr(left_err)
+    case PartialErr(left_err, left_value):
+      match right:
+        case TotalErr(right_err):
+          TotalErr(semi.combine(left_err, right_err))
+        case PartialErr(right_err, right_value):
+          PartialErr(semi.combine(left_err, right_err), (left_value, right_value))
+        case TotalOk(right_value):
+          PartialErr(left_err, (left_value, right_value))
+    case TotalOk(left_value):
+      match right:
+        case TotalErr(right_err):
+          TotalErr(right_err)
+        case PartialErr(right_err, right_value):
+          PartialErr(right_err, (left_value, right_value))
+        case TotalOk(right_value):
+          TotalOk((left_value, right_value))
+
+def combine_map2(
+  semi: Semigroup[e],
+  left: PartialResult[e, a],
+  right: PartialResult[e, b],
+  fn: (a, b) -> c,
+) -> PartialResult[e, c]:
+  map(combine_product(semi, left, right), ((left_value, right_value)) -> fn(left_value, right_value))
+
+def combine_product_l(
+  semi: Semigroup[e],
+  left: PartialResult[e, a],
+  right: PartialResult[e, b],
+) -> PartialResult[e, a]:
+  combine_map2(semi, left, right, (left_value, _) -> left_value)
+
+def combine_product_r(
+  semi: Semigroup[e],
+  left: PartialResult[e, a],
+  right: PartialResult[e, b],
+) -> PartialResult[e, b]:
+  combine_map2(semi, left, right, (_, right_value) -> right_value)
+
+def map2_monad_PartialResult(
+  semi: Semigroup[e],
+  left: PartialResult[e, a],
+  right: PartialResult[e, b],
+  fn: (a, b) -> c,
+) -> PartialResult[e, c]:
+  left.and_then(semi, left_value -> map(right, right_value -> fn(left_value, right_value)))
+
+def applicative_monad_PartialResult(semi: Semigroup[e]) -> Applicative[PartialResult[e]]:
+  applicative_from_pure_map_map2(
+    TotalOk,
+    map,
+    (left, right, fn) -> map2_monad_PartialResult(semi, left, right, fn),
+  )
+
+def tailrec_steps_PartialResult(
+  semi: Semigroup[e],
+  max_steps: Int,
+  init: a,
+  step: a -> PartialResult[e, IterState[a, b]],
+) -> PartialResult[e, IterState[a, b]]:
+  def attach_error(acc_err: Option[e], state: IterState[a, b]) -> PartialResult[e, IterState[a, b]]:
+    match acc_err:
+      case None:
+        TotalOk(state)
+      case Some(err_value):
+        PartialErr(err_value, state)
+
+  def go(rem: Int, seed: a, acc_err: Option[e]) -> PartialResult[e, IterState[a, b]]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        # Mirror Monad.tailrec_steps semantics: no fuel yields Continue(seed).
+        attach_error(acc_err, continue(seed))
+      case _:
+        match step(seed):
+          case TotalErr(err_value):
+            match acc_err:
+              case None:
+                TotalErr(err_value)
+              case Some(prev_err):
+                TotalErr(semi.combine(prev_err, err_value))
+          case TotalOk(iter_state):
+            match iter_state:
+              case Done(done_value):
+                attach_error(acc_err, done(done_value))
+              case Continue(next_seed):
+                go(rem.sub(1), next_seed, acc_err)
+          case PartialErr(err_value, iter_state):
+            next_err = (
+              match acc_err:
+                case None:
+                  err_value
+                case Some(prev_err):
+                  semi.combine(prev_err, err_value)
+            )
+            match iter_state:
+              case Done(done_value):
+                PartialErr(next_err, done(done_value))
+              case Continue(next_seed):
+                go(rem.sub(1), next_seed, Some(next_err))
+  go(max_steps, init, None)
+
+def monad_PartialResult(semi: Semigroup[e]) -> Monad[PartialResult[e]]:
+  monad_from_applicative_flat_map_tailrec_steps(
+    applicative_monad_PartialResult(semi),
+    (value, fn) -> value.and_then(semi, fn),
+    (max_steps, init, step) -> tailrec_steps_PartialResult(semi, max_steps, init, step),
+  )
+
+foldable_PartialResult: forall e. Foldable[PartialResult[e]] = foldable_from_folds(
+  (value, init, fn) -> (
+    match value:
+      case TotalErr(_):
+        init
+      case PartialErr(_, partial_value):
+        fn(init, partial_value)
+      case TotalOk(ok_value):
+        fn(init, ok_value)
+  ),
+  (value, init, fn) -> (
+    match value:
+      case TotalErr(_):
+        init
+      case PartialErr(_, partial_value):
+        fn(partial_value, init)
+      case TotalOk(ok_value):
+        fn(ok_value, init)
+  ),
+)
+
+def traverse_PartialResult_fn[g: * -> *, e, a, b](
+  value: PartialResult[e, a],
+  app: Applicative[g],
+  fn: a -> g[b],
+) -> g[PartialResult[e, b]]:
+  match value:
+    case TotalErr(err_value):
+      app.pure(TotalErr(err_value))
+    case PartialErr(err_value, partial_value):
+      fn(partial_value).map_app(app, mapped -> PartialErr(err_value, mapped))
+    case TotalOk(ok_value):
+      fn(ok_value).map_app(app, TotalOk)
+
+traverse_PartialResult: forall e. Traverse[PartialResult[e]] = traverse_specialized(
+  traverse_PartialResult_fn,
+  map,
+  foldable_PartialResult,
+)
+
+def eq(eq_err: Eq[e], eq_ok: Eq[a]) -> Eq[PartialResult[e, a]]:
+  eq_from_fn((left, right) -> (
+    match (left, right):
+      case (TotalErr(left_err), TotalErr(right_err)):
+        eq_Eq(eq_err, left_err, right_err)
+      case (PartialErr(left_err, left_ok), PartialErr(right_err, right_ok)):
+        if eq_Eq(eq_err, left_err, right_err):
+          eq_Eq(eq_ok, left_ok, right_ok)
+        else:
+          False
+      case (TotalOk(left_ok), TotalOk(right_ok)):
+        eq_Eq(eq_ok, left_ok, right_ok)
+      case _:
+        False
+  ))
+
+def cmp_then(first: Comparison, next: () -> Comparison) -> Comparison:
+  if first matches EQ:
+    next()
+  else:
+    first
+
+def ord(ord_err: Ord[e], ord_ok: Ord[a]) -> Ord[PartialResult[e, a]]:
+  ord_from_cmp((left, right) -> (
+    match (left, right):
+      case (TotalErr(left_err), TotalErr(right_err)):
+        cmp_Ord(ord_err, left_err, right_err)
+      case (PartialErr(left_err, left_ok), PartialErr(right_err, right_ok)):
+        cmp_then(cmp_Ord(ord_err, left_err, right_err), () -> cmp_Ord(ord_ok, left_ok, right_ok))
+      case (TotalOk(left_ok), TotalOk(right_ok)):
+        cmp_Ord(ord_ok, left_ok, right_ok)
+      case (TotalErr(_), _):
+        LT
+      case (PartialErr(_, _), TotalErr(_)):
+        GT
+      case (PartialErr(_, _), TotalOk(_)):
+        LT
+      case (TotalOk(_), _):
+        GT
+  ))
+
+# Distinct seeds/tags keep constructors in separate hash domains.
+hash_seed_total_err: Int = 1481
+hash_tag_total_err: Int = 1483
+hash_seed_partial_err: Int = 1487
+hash_tag_partial_err: Int = 1489
+hash_seed_total_ok: Int = 1493
+hash_tag_total_ok: Int = 1499
+
+def hash(hash_err: Hash[e], hash_ok: Hash[a]) -> Hash[PartialResult[e, a]]:
+  eq_err = hash_to_Eq(hash_err)
+  eq_ok = hash_to_Eq(hash_ok)
+  hash_specialized((value) -> (
+    match value:
+      case TotalErr(err_value):
+        finish_61(mix_61(hash_seed_total_err, hash_Hash(hash_err, err_value)), 1, hash_tag_total_err)
+      case PartialErr(err_value, partial_value):
+        acc1 = mix_61(hash_seed_partial_err, hash_Hash(hash_err, err_value))
+        acc2 = mix_61(acc1, hash_Hash(hash_ok, partial_value))
+        finish_61(acc2, 2, hash_tag_partial_err)
+      case TotalOk(ok_value):
+        finish_61(mix_61(hash_seed_total_ok, hash_Hash(hash_ok, ok_value)), 1, hash_tag_total_ok)
+  ), eq(eq_err, eq_ok))
+
+def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
+  match value:
+    case Some(item):
+      Some(fn(item))
+    case None:
+      None
+
+def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]:
+  match (left, right):
+    case (Some(left_value), Some(right_value)):
+      Some(fn(left_value, right_value))
+    case _:
+      None
+
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+
+int_add_semigroup: Semigroup[Int] = semigroup_from_combine((left, right) -> left.add(right))
+list_semigroup: Semigroup[List[Int]] = semigroup_from_combine((left, right) -> left.concat(right))
+
+eq_Int_inst: Eq[Int] = eq_from_fn(eq_Int)
+ord_Int_inst: Ord[Int] = ord_from_cmp(cmp_Int)
+hash_Int_inst: Hash[Int] = hash_from_fn(value -> value, eq_Int_inst)
+eq_IterState_Int_Int: Eq[IterState[Int, Int]] = eq_from_fn((left, right) -> (
+  match (left, right):
+    case (Continue(left_cont), Continue(right_cont)):
+      eq_Int(left_cont, right_cont)
+    case (Done(left_done), Done(right_done)):
+      eq_Int(left_done, right_done)
+    case _:
+      False
+))
+eq_PartialResult_IterState_Int_Int: Eq[PartialResult[Int, IterState[Int, Int]]] = eq(eq_Int_inst, eq_IterState_Int_Int)
+
+tests = TestSuite("PartialResult tests", [
+  Assertion(is_total_err(TotalErr(1)), "is_total_err TotalErr"),
+  Assertion(
+    if is_total_err(PartialErr(1, 2)):
+      False
+    else:
+      True,
+    "is_total_err PartialErr",
+  ),
+  Assertion(is_partial_err(PartialErr(1, 2)), "is_partial_err PartialErr"),
+  Assertion(
+    if is_partial_err(TotalOk(2)):
+      False
+    else:
+      True,
+    "is_partial_err TotalOk",
+  ),
+  Assertion(is_total_ok(TotalOk(1)), "is_total_ok TotalOk"),
+  Assertion(
+    if is_total_ok(TotalErr(1)):
+      False
+    else:
+      True,
+    "is_total_ok TotalErr",
+  ),
+  Assertion(has_err(TotalErr(1)), "has_err TotalErr"),
+  Assertion(has_err(PartialErr(1, 2)), "has_err PartialErr"),
+  Assertion(
+    if has_err(TotalOk(2)):
+      False
+    else:
+      True,
+    "has_err TotalOk",
+  ),
+  Assertion(
+    if has_ok(TotalErr(1)):
+      False
+    else:
+      True,
+    "has_ok TotalErr",
+  ),
+  Assertion(has_ok(PartialErr(1, 2)), "has_ok PartialErr"),
+  Assertion(has_ok(TotalOk(2)), "has_ok TotalOk"),
+  Assertion(err(TotalErr(1)) matches Some(1), "err TotalErr"),
+  Assertion(err(PartialErr(1, 2)) matches Some(1), "err PartialErr"),
+  Assertion(err(TotalOk(2)) matches None, "err TotalOk"),
+  Assertion(ok(TotalErr(1)) matches None, "ok TotalErr"),
+  Assertion(ok(PartialErr(1, 2)) matches Some(2), "ok PartialErr"),
+  Assertion(ok(TotalOk(2)) matches Some(2), "ok TotalOk"),
+  Assertion(to_Option(TotalErr(1)) matches None, "to_Option TotalErr"),
+  Assertion(to_Option(PartialErr(1, 2)) matches Some(2), "to_Option PartialErr"),
+  Assertion(to_Option(TotalOk(2)) matches Some(2), "to_Option TotalOk"),
+  Assertion(map(TotalErr(1), x -> x.add(1)) matches TotalErr(1), "map TotalErr"),
+  Assertion(map(PartialErr(1, 2), x -> x.add(1)) matches PartialErr(1, 3), "map PartialErr"),
+  Assertion(map(TotalOk(2), x -> x.add(1)) matches TotalOk(3), "map TotalOk"),
+  Assertion(
+    (TotalErr(1)).traverse(traverse_PartialResult, applicative_Option, value -> Some(value.add(1))) matches Some(TotalErr(1)),
+    "traverse_PartialResult TotalErr",
+  ),
+  Assertion(
+    (PartialErr(1, 2)).traverse(traverse_PartialResult, applicative_Option, value -> Some(value.add(1))) matches Some(PartialErr(1, 3)),
+    "traverse_PartialResult PartialErr",
+  ),
+  Assertion(
+    (TotalOk(2)).traverse(traverse_PartialResult, applicative_Option, value -> Some(value.add(1))) matches Some(TotalOk(3)),
+    "traverse_PartialResult TotalOk",
+  ),
+  Assertion(
+    (TotalOk(2)).traverse(traverse_PartialResult, applicative_Option, _ -> None) matches None,
+    "traverse_PartialResult propagates effect failure",
+  ),
+  Assertion(map_err(TotalErr(1), x -> x.add(1)) matches TotalErr(2), "map_err TotalErr"),
+  Assertion(map_err(PartialErr(1, 2), x -> x.add(1)) matches PartialErr(2, 2), "map_err PartialErr"),
+  Assertion(map_err(TotalOk(2), x -> x.add(1)) matches TotalOk(2), "map_err TotalOk"),
+  Assertion(
+    (TotalErr(2)).and_then(int_add_semigroup, x -> TotalOk(x.add(1))) matches TotalErr(2),
+    "and_then TotalErr short-circuits",
+  ),
+  Assertion(
+    (TotalOk(2)).and_then(int_add_semigroup, x -> TotalOk(x.add(1))) matches TotalOk(3),
+    "and_then TotalOk",
+  ),
+  Assertion(
+    (PartialErr(10, 2)).and_then(int_add_semigroup, x -> TotalOk(x.add(1))) matches PartialErr(10, 3),
+    "and_then PartialErr then TotalOk",
+  ),
+  Assertion(
+    (PartialErr(10, 2)).and_then(int_add_semigroup, x -> PartialErr(20, x.add(1))) matches PartialErr(30, 3),
+    "and_then PartialErr then PartialErr",
+  ),
+  Assertion(
+    (PartialErr(10, 2)).and_then(int_add_semigroup, x -> TotalErr(x.add(100))) matches TotalErr(112),
+    "and_then PartialErr then TotalErr",
+  ),
+  Assertion(
+    (PartialErr(1, 2)).flat_map(int_add_semigroup, x -> TotalOk(x.add(3))) matches PartialErr(1, 5),
+    "flat_map alias",
+  ),
+  Assertion(
+    or_else(TotalErr(2), x -> TotalOk(x.add(3))) matches TotalOk(5),
+    "or_else recovers TotalErr",
+  ),
+  Assertion(
+    or_else(PartialErr(2, 9), _ -> TotalOk(0)) matches PartialErr(2, 9),
+    "or_else keeps PartialErr",
+  ),
+  Assertion(
+    or_else(TotalOk(9), _ -> TotalErr(0)) matches TotalOk(9),
+    "or_else keeps TotalOk",
+  ),
+  Assertion(
+    fold(TotalErr(2), x -> x.add(1), (_, _) -> 0, _ -> 0).eq_Int(3),
+    "fold TotalErr",
+  ),
+  Assertion(
+    fold(PartialErr(2, 9), _ -> 0, (x, y) -> x.add(y), _ -> 0).eq_Int(11),
+    "fold PartialErr",
+  ),
+  Assertion(
+    fold(TotalOk(9), _ -> 0, (_, _) -> 0, x -> x.add(1)).eq_Int(10),
+    "fold TotalOk",
+  ),
+  Assertion(unwrap_or(TotalErr(1), 10).eq_Int(10), "unwrap_or TotalErr"),
+  Assertion(unwrap_or(PartialErr(1, 2), 10).eq_Int(2), "unwrap_or PartialErr"),
+  Assertion(unwrap_or(TotalOk(2), 10).eq_Int(2), "unwrap_or TotalOk"),
+  Assertion(unwrap_or_else(TotalErr(1), x -> x.add(7)).eq_Int(8), "unwrap_or_else TotalErr"),
+  Assertion(unwrap_or_else(PartialErr(1, 2), _ -> 10).eq_Int(2), "unwrap_or_else PartialErr"),
+  Assertion(unwrap_or_else(TotalOk(2), _ -> 10).eq_Int(2), "unwrap_or_else TotalOk"),
+  Assertion(unwrap(TotalOk(3)).eq_Int(3), "unwrap polymorphic TotalOk"),
+  Assertion(from_Option(Some(2), () -> 0) matches TotalOk(2), "from_Option Some"),
+  Assertion(from_Option(None, () -> 0) matches TotalErr(0), "from_Option None"),
+  Assertion(from_Result(Ok(2)) matches TotalOk(2), "from_Result Ok"),
+  Assertion(from_Result(Err(2)) matches TotalErr(2), "from_Result Err"),
+  Assertion(to_Result_fail_fast(TotalOk(2)) matches Ok(2), "to_Result_fail_fast TotalOk"),
+  Assertion(to_Result_fail_fast(TotalErr(2)) matches Err(2), "to_Result_fail_fast TotalErr"),
+  Assertion(to_Result_fail_fast(PartialErr(2, 9)) matches Err(2), "to_Result_fail_fast PartialErr"),
+  Assertion(
+    combine_product(int_add_semigroup, TotalErr(1), TotalErr(2)) matches TotalErr(3),
+    "combine_product total_err/total_err",
+  ),
+  Assertion(
+    combine_product(int_add_semigroup, TotalErr(1), PartialErr(2, 200)) matches TotalErr(3),
+    "combine_product total_err/partial_err",
+  ),
+  Assertion(
+    combine_product(int_add_semigroup, TotalErr(1), TotalOk(2000)) matches TotalErr(1),
+    "combine_product total_err/total_ok",
+  ),
+  Assertion(
+    combine_product(int_add_semigroup, PartialErr(10, 100), TotalErr(2)) matches TotalErr(12),
+    "combine_product partial_err/total_err",
+  ),
+  Assertion(
+    combine_product(int_add_semigroup, PartialErr(10, 100), PartialErr(20, 200)) matches PartialErr(30, (100, 200)),
+    "combine_product partial_err/partial_err",
+  ),
+  Assertion(
+    combine_product(int_add_semigroup, PartialErr(10, 100), TotalOk(2000)) matches PartialErr(10, (100, 2000)),
+    "combine_product partial_err/total_ok",
+  ),
+  Assertion(
+    combine_product(int_add_semigroup, TotalOk(1000), TotalErr(2)) matches TotalErr(2),
+    "combine_product total_ok/total_err",
+  ),
+  Assertion(
+    combine_product(int_add_semigroup, TotalOk(1000), PartialErr(20, 200)) matches PartialErr(20, (1000, 200)),
+    "combine_product total_ok/partial_err",
+  ),
+  Assertion(
+    combine_product(int_add_semigroup, TotalOk(1000), TotalOk(2000)) matches TotalOk((1000, 2000)),
+    "combine_product total_ok/total_ok",
+  ),
+  Assertion(
+    combine_map2(int_add_semigroup, PartialErr(1, 2), TotalOk(3), add) matches PartialErr(1, 5),
+    "combine_map2 maps product",
+  ),
+  (
+    inst = eq(eq_Int_inst, eq_Int_inst)
+    left = PartialErr(1, 2)
+    right = PartialErr(3, 4)
+    via_map2 = combine_map2(int_add_semigroup, left, right, add)
+    via_product = map(combine_product(int_add_semigroup, left, right), ((left_value, right_value)) -> add(left_value, right_value))
+    Assertion(eq_Eq(inst, via_map2, via_product), "combine_map2 consistent with combine_product")
+  ),
+  Assertion(
+    combine_product_l(int_add_semigroup, PartialErr(1, 2), TotalOk(3)) matches PartialErr(1, 2),
+    "combine_product_l",
+  ),
+  Assertion(
+    combine_product_r(int_add_semigroup, PartialErr(1, 2), TotalOk(3)) matches PartialErr(1, 3),
+    "combine_product_r",
+  ),
+  (
+    m = PartialErr([10], 2)
+    f = (x) -> PartialErr([x], x.add(1))
+    g = (x) -> TotalErr([x.mul(10)])
+    left_assoc = m.and_then(list_semigroup, f).and_then(list_semigroup, g)
+    right_assoc = m.and_then(list_semigroup, x -> f(x).and_then(list_semigroup, g))
+    Assertion(
+      if left_assoc matches TotalErr([10, 2, 30]):
+        right_assoc matches TotalErr([10, 2, 30])
+      else:
+        False,
+      "and_then associativity",
+    )
+  ),
+  Assertion(
+    (TotalOk(5)).and_then(list_semigroup, x -> PartialErr([x], x.add(1))) matches PartialErr([5], 6),
+    "and_then left identity",
+  ),
+  Assertion(
+    (PartialErr([1, 2], 7)).and_then(list_semigroup, x -> TotalOk(x)) matches PartialErr([1, 2], 7),
+    "and_then right identity",
+  ),
+  Assertion(
+    monad_PartialResult(int_add_semigroup).tailrec_steps(0, 9, seed -> TotalOk(Continue(seed.add(1)))) matches TotalOk(Continue(9)),
+    "monad_PartialResult tailrec_steps max_steps <= 0",
+  ),
+  Assertion(
+    monad_PartialResult(int_add_semigroup).tailrec_steps(5, 0, seed -> (
+      if cmp_Int(seed, 2) matches LT:
+        PartialErr(1, Continue(seed.add(1)))
+      else:
+        TotalOk(Done(seed))
+    )) matches PartialErr(2, Done(2)),
+    "monad_PartialResult tailrec_steps reaches Done with accumulated partial errors",
+  ),
+  Assertion(
+    monad_PartialResult(int_add_semigroup).tailrec_steps(2, 0, seed -> PartialErr(1, Continue(seed.add(1)))) matches PartialErr(2, Continue(2)),
+    "monad_PartialResult tailrec_steps fuel exhaustion",
+  ),
+  Assertion(
+    monad_PartialResult(int_add_semigroup).tailrec_steps(5, 0, seed -> TotalErr(seed.add(100))) matches TotalErr(100),
+    "monad_PartialResult tailrec_steps short-circuits TotalErr",
+  ),
+  (
+    eq_inst = eq(eq_Int_inst, eq_Int_inst)
+    laws_Monad(
+      monad_PartialResult(int_add_semigroup),
+      eq_inst,
+      eq_inst,
+      eq_inst,
+      eq_PartialResult_IterState_Int_Int,
+      PartialErr(1, 2),
+      7,
+      value -> PartialErr(3, value.add(1)),
+      value -> TotalOk(value.mul(2)),
+      value -> value.add(5),
+      0,
+      seed -> (
+        if cmp_Int(seed, 2) matches LT:
+          TotalOk(Continue(seed.add(1)))
+        else:
+          TotalOk(Done(seed))
+      ),
+    )
+  ),
+  (
+    eq_inst = eq(eq_Int_inst, eq_Int_inst)
+    laws_Monad(
+      monad_PartialResult(int_add_semigroup),
+      eq_inst,
+      eq_inst,
+      eq_inst,
+      eq_PartialResult_IterState_Int_Int,
+      TotalErr(9),
+      4,
+      value -> TotalOk(value.add(1)),
+      value -> PartialErr(2, value.mul(2)),
+      value -> value.add(10),
+      1,
+      seed -> TotalOk(Continue(seed.add(1))),
+    )
+  ),
+  Assertion(
+    map(PartialErr(1, 2), x -> x) matches PartialErr(1, 2),
+    "map identity",
+  ),
+  (
+    inst = eq(eq_Int_inst, eq_Int_inst)
+    mapped_twice = map(map(PartialErr(1, 2), x -> x.add(1)), x -> x.mul(2))
+    mapped_once = map(PartialErr(1, 2), x -> x.add(1).mul(2))
+    Assertion(eq_Eq(inst, mapped_twice, mapped_once), "map composition")
+  ),
+  Assertion(
+    map_err(PartialErr(1, 2), x -> x) matches PartialErr(1, 2),
+    "map_err identity",
+  ),
+  (
+    inst = eq(eq_Int_inst, eq_Int_inst)
+    mapped_twice = map_err(map_err(PartialErr(1, 2), x -> x.add(1)), x -> x.mul(2))
+    mapped_once = map_err(PartialErr(1, 2), x -> x.add(1).mul(2))
+    Assertion(eq_Eq(inst, mapped_twice, mapped_once), "map_err composition")
+  ),
+  (
+    inst = eq(eq_Int_inst, eq_Int_inst)
+    Assertion(eq_Eq(inst, PartialErr(1, 2), PartialErr(1, 2)), "eq PartialErr payload")
+  ),
+  (
+    inst = eq(eq_Int_inst, eq_Int_inst)
+    Assertion(
+      if eq_Eq(inst, TotalErr(1), TotalOk(1)):
+        False
+      else:
+        True,
+      "eq constructor-sensitive",
+    )
+  ),
+  (
+    inst = ord(ord_Int_inst, ord_Int_inst)
+    Assertion(cmp_Ord(inst, TotalErr(1), PartialErr(1, 0)) matches LT, "ord TotalErr < PartialErr")
+  ),
+  (
+    inst = ord(ord_Int_inst, ord_Int_inst)
+    Assertion(cmp_Ord(inst, PartialErr(1, 0), TotalOk(1)) matches LT, "ord PartialErr < TotalOk")
+  ),
+  (
+    inst = ord(ord_Int_inst, ord_Int_inst)
+    Assertion(cmp_Ord(inst, PartialErr(1, 2), PartialErr(1, 3)) matches LT, "ord PartialErr payload")
+  ),
+  (
+    hash_inst = hash(hash_Int_inst, hash_Int_inst)
+    hash_eq = eq_Int(hash_Hash(hash_inst, TotalErr(1)), hash_Hash(hash_inst, PartialErr(1, 1)))
+    Assertion(
+      if hash_eq:
+        False
+      else:
+        True,
+      "hash tags constructors",
+    )
+  ),
+  (
+    hash_inst = hash(hash_Int_inst, hash_Int_inst)
+    hx = hash_Hash(hash_inst, PartialErr(2, 3))
+    hy = hash_Hash(hash_inst, PartialErr(2, 3))
+    Assertion(eq_Int(hx, hy), "hash equal values equal hashes")
+  ),
+])

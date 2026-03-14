@@ -1,15 +1,20 @@
 {
   "name": "zafu",
   "repo_uri": "https://github.com/johnynek/zafu/",
+  "doc_base_url": "https://johnynek.github.io/zafu",
   "next_version": "0.0.1",
   "exported_packages": [],
-  "all_packages": [ ".*" ],
+  "all_packages": [
+    ".*"
+  ],
   "private_deps": {
     "core_alpha": {
-      "version": "4.1.0",
-      "hashes": [ "blake3:8b7b12951a35990fbcabfb57b582eebee72ae57a67faa2d47734c424810df70c" ],
+      "version": "4.4.0",
+      "hashes": [
+        "blake3:6c81056c51e62a50e1e9e92454750304f719220d3478c10f45d9d0c3e7f59f8a"
+      ],
       "uris": [
-        "https://github.com/johnynek/bosatsu/releases/download/v0.0.39/core_alpha-v4.1.0.bosatsu_lib"
+        "https://github.com/johnynek/bosatsu/releases/download/v0.0.52/core_alpha-v4.4.0.bosatsu_lib"
       ]
     }
   }

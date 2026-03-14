@@ -1,0 +1,164 @@
+package Zafu/Text/Parse/Error
+
+from Bosatsu/Char import cmp_Char
+
+from Zafu/Abstract/Eq import eq_from_fn
+
+from Zafu/Abstract/Hash import (
+  Hash,
+  hash_from_fn,
+  hash as hash_Hash,
+  mix_61,
+  finish_61,
+)
+
+from Zafu/Abstract/Instances/Predef import (
+  hash_Char,
+  hash_String,
+)
+
+from Zafu/Collection/HashSet import (
+  HashSet,
+  empty as empty_HashSet,
+  contains as contains_HashSet,
+  updated as updated_HashSet,
+)
+
+export (
+  Expectation(),
+  Caret(),
+  Error(),
+  expectation_eq,
+  merge_expectations,
+  merge_contexts,
+  merge_errors,
+  push_context,
+  replace_expected,
+)
+
+enum Expectation:
+  ExpectedChar(ch: Char)
+  ExpectedString(value: String)
+  InRange(lower: Char, upper: Char)
+  ExpectedEnd
+  ExpectedPredicate(label: String)
+  FailWith(message: String)
+  InContext(label: String)
+
+struct Caret(
+  offset: Int,
+  line: Int,
+  column: Int,
+)
+
+struct Error(
+  input: String,
+  failed_at: Int,
+  expected: List[Expectation],
+  contexts: List[String],
+)
+
+struct DistinctList[a](
+  member: HashSet[a],
+  items: List[a],
+)
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def string_eq(left: String, right: String) -> Bool:
+  cmp_String(left, right) matches EQ
+
+def char_eq(left: Char, right: Char) -> Bool:
+  cmp_Char(left, right) matches EQ
+
+def expectation_eq(left: Expectation, right: Expectation) -> Bool:
+  match (left, right):
+    case (ExpectedChar(ch_left), ExpectedChar(ch_right)):
+      char_eq(ch_left, ch_right)
+    case (ExpectedString(value_left), ExpectedString(value_right)):
+      string_eq(value_left, value_right)
+    case (InRange(low_left, high_left), InRange(low_right, high_right)):
+      and_Bool(char_eq(low_left, low_right), char_eq(high_left, high_right))
+    case (ExpectedEnd, ExpectedEnd):
+      True
+    case (ExpectedPredicate(label_left), ExpectedPredicate(label_right)):
+      string_eq(label_left, label_right)
+    case (FailWith(msg_left), FailWith(msg_right)):
+      string_eq(msg_left, msg_right)
+    case (InContext(ctx_left), InContext(ctx_right)):
+      string_eq(ctx_left, ctx_right)
+    case _:
+      False
+
+def hash_expectation(value: Expectation) -> Int:
+  match value:
+    case ExpectedChar(ch):
+      finish_61(hash_Hash(hash_Char, ch), 1, 1)
+    case ExpectedString(text):
+      finish_61(hash_Hash(hash_String, text), 1, 2)
+    case InRange(lower, upper):
+      finish_61(mix_61(hash_Hash(hash_Char, lower), hash_Hash(hash_Char, upper)), 2, 3)
+    case ExpectedEnd:
+      finish_61(0, 0, 4)
+    case ExpectedPredicate(label):
+      finish_61(hash_Hash(hash_String, label), 1, 5)
+    case FailWith(message):
+      finish_61(hash_Hash(hash_String, message), 1, 6)
+    case InContext(label):
+      finish_61(hash_Hash(hash_String, label), 1, 7)
+
+expectation_hash: Hash[Expectation] = hash_from_fn(hash_expectation, eq_from_fn(expectation_eq))
+
+def distinct_empty(hash_item: Hash[a]) -> DistinctList[a]:
+  DistinctList(empty_HashSet(hash_item), [])
+
+def distinct_add(items: DistinctList[a], item: a) -> DistinctList[a]:
+  DistinctList(members, rev_items) = items
+  if contains_HashSet(members, item):
+    items
+  else:
+    DistinctList(updated_HashSet(members, item), [item, *rev_items])
+
+def distinct_to_List(items: DistinctList[a]) -> List[a]:
+  DistinctList(_, rev_items) = items
+  rev_items.reverse()
+
+def concat_distinct(hash_item: Hash[a], first: List[a], second: List[a]) -> List[a]:
+  seeded = first.foldl_List(distinct_empty(hash_item), distinct_add)
+  merged = second.foldl_List(seeded, distinct_add)
+  distinct_to_List(merged)
+
+def merge_expectations(left: List[Expectation], right: List[Expectation]) -> List[Expectation]:
+  concat_distinct(expectation_hash, left, right)
+
+def merge_contexts(left: List[String], right: List[String]) -> List[String]:
+  concat_distinct(hash_String, left, right)
+
+
+def merge_errors(left: Error, right: Error) -> Error:
+  Error(input_left, failed_left, expected_left, contexts_left) = left
+  Error(_, failed_right, expected_right, contexts_right) = right
+  match cmp_Int(failed_left, failed_right):
+    case GT:
+      left
+    case LT:
+      right
+    case EQ:
+      Error(
+        input_left,
+        failed_left,
+        merge_expectations(expected_left, expected_right),
+        merge_contexts(contexts_left, contexts_right),
+      )
+
+def push_context(err: Error, ctx: String) -> Error:
+  Error(input, failed_at, expected, contexts) = err
+  Error(input, failed_at, expected, [ctx, *contexts])
+
+def replace_expected(err: Error, expected_label: String) -> Error:
+  Error(input, failed_at, _, contexts) = err
+  Error(input, failed_at, [ExpectedPredicate(expected_label)], contexts)

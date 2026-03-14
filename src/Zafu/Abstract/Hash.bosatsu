@@ -1,0 +1,141 @@
+package Zafu/Abstract/Hash
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_by,
+  laws_Eq,
+  eq as eq_Eq,
+  eq_from_fn,
+)
+
+export (
+  Hash,
+  hash_from_fn,
+  hash_specialized,
+  hash_by,
+  hash,
+  hash_to_Eq,
+  normalize_61,
+  mix_61,
+  finish_61,
+  laws_Hash,
+)
+
+struct Hash[a](
+  hash_fn: a -> Int,
+  eq_inst: Eq[a],
+)
+
+# 2^61 - 1, the Mersenne prime requested in issue #34.
+hash_modulus: Int = 2305843009213693951
+# 64-bit FNV constants used as fixed non-cryptographic mix parameters.
+mix_prime: Int = 1099511628211
+mix_add: Int = 1469598103934665603
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def in_range_61(value: Int) -> Bool:
+  non_negative = cmp_Int(value, 0) matches EQ | GT
+  below_modulus = cmp_Int(value, hash_modulus) matches LT
+  and_Bool(non_negative, below_modulus)
+
+def normalize_61(raw: Int) -> Int:
+  modded = mod_Int(raw, hash_modulus)
+  if cmp_Int(modded, 0) matches LT:
+    modded.add(hash_modulus)
+  else:
+    modded
+
+def reduce_61(value: Int) -> Int:
+  normalize_61(value)
+
+def mix_61(acc: Int, next: Int) -> Int:
+  reduce_61(acc.mul(mix_prime).add(next).add(mix_add))
+
+def finish_61(acc: Int, size_or_arity: Int, tag: Int) -> Int:
+  mix_61(mix_61(acc, size_or_arity), tag)
+
+# Constructor for hash functions that already return 61-bit values.
+def hash_specialized(hash_fn: a -> Int, eq_inst: Eq[a]) -> Hash[a]:
+  Hash(hash_fn, eq_inst)
+
+# Constructor from a potentially out-of-range hash function.
+def hash_from_fn(hash_fn: a -> Int, eq_inst: Eq[a]) -> Hash[a]:
+  hash_specialized((value) -> normalize_61(hash_fn(value)), eq_inst)
+
+def hash(inst: Hash[a], value: a) -> Int:
+  Hash(hash_fn, _) = inst
+  hash_fn(value)
+
+def hash_to_Eq(inst: Hash[a]) -> Eq[a]:
+  Hash(_, eq_inst) = inst
+  eq_inst
+
+def hash_by(inst: Hash[b], project: a -> b) -> Hash[a]:
+  hash_specialized((value) -> hash(inst, project(value)), eq_by(hash_to_Eq(inst), project))
+
+# Law checker: Eq laws, Eq/Hash coherence, and 61-bit range invariant.
+def laws_Hash(inst: Hash[a], x: a, y: a, z: a) -> Test:
+  eq_inst = hash_to_Eq(inst)
+  eq_laws = laws_Eq(eq_inst, x, y, z)
+  hx = hash(inst, x)
+  hy = hash(inst, y)
+  hz = hash(inst, z)
+  in_range = Assertion(
+    and_Bool(and_Bool(in_range_61(hx), in_range_61(hy)), in_range_61(hz)),
+    "range invariant",
+  )
+  coherent_xy = Assertion(
+    if eq_Eq(eq_inst, x, y):
+      eq_Int(hx, hy)
+    else:
+      True,
+    "coherent x y",
+  )
+  coherent_yz = Assertion(
+    if eq_Eq(eq_inst, y, z):
+      eq_Int(hy, hz)
+    else:
+      True,
+    "coherent y z",
+  )
+  coherent_xz = Assertion(
+    if eq_Eq(eq_inst, x, z):
+      eq_Int(hx, hz)
+    else:
+      True,
+    "coherent x z",
+  )
+  TestSuite("Hash laws", [eq_laws, in_range, coherent_xy, coherent_yz, coherent_xz])
+
+def tuple2_first(value: Tuple2[a, b]) -> a:
+  match value:
+    case Tuple2(first, _):
+      first
+
+tests = TestSuite("Hash tests", [
+  (
+    int_hash = hash_from_fn(x -> x, eq_from_fn(eq_Int))
+    Assertion(hash(int_hash, -1).eq_Int(hash_modulus.sub(1)), "hash_from_fn normalizes negatives")
+  ),
+  (
+    mixed = mix_61(hash_modulus.sub(1), hash_modulus.sub(1))
+    Assertion(in_range_61(mixed), "mix_61 stays in range")
+  ),
+  (
+    int_hash = hash_from_fn(x -> x, eq_from_fn(eq_Int))
+    laws_Hash(int_hash, 1, 1, 2)
+  ),
+  (
+    int_hash = hash_from_fn(x -> x, eq_from_fn(eq_Int))
+    first_hash = hash_by(int_hash, tuple2_first)
+    Assertion(
+      eq_Int(hash(first_hash, Tuple2(1, "x")), hash(first_hash, Tuple2(1, "y"))),
+      "hash_by",
+    )
+  ),
+])

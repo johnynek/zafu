@@ -1,0 +1,60 @@
+package Zafu/Text/Parse/Rfc5234
+
+from Bosatsu/Char import (
+  is_ascii_alpha,
+  is_ascii_digit,
+  is_ascii_hex,
+)
+
+from Zafu/Control/Result import Ok
+
+from Zafu/Text/Parse import (
+  parse,
+  char_where,
+  string,
+)
+
+export (
+  alpha,
+  digit,
+  hexdig,
+  sp,
+  htab,
+  wsp,
+  cr,
+  lf,
+  crlf,
+  dquote,
+)
+
+def or_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    True
+  else:
+    right
+
+def is_space_or_tab(ch: Char) -> Bool:
+  code = char_to_Int(ch)
+  or_Bool(code.eq_Int(32), code.eq_Int(9))
+
+alpha = char_where(is_ascii_alpha, "ALPHA")
+digit = char_where(is_ascii_digit, "DIGIT")
+hexdig = char_where(is_ascii_hex, "HEXDIG")
+sp = string(" ")
+htab = string("\t")
+wsp = char_where(is_space_or_tab, "WSP")
+cr = string("\r")
+lf = string("\n")
+crlf = string("\r\n")
+dquote = string("\"")
+
+tests = TestSuite("Zafu/Text/Parse/Rfc5234 tests", [
+  Assertion(parse(alpha, "A") matches Ok(_), "alpha"),
+  Assertion(parse(digit, "7") matches Ok(_), "digit"),
+  Assertion(parse(hexdig, "f") matches Ok(_), "hexdig"),
+  Assertion(parse(sp, " ") matches Ok(Unit), "sp"),
+  Assertion(parse(htab, "\t") matches Ok(Unit), "htab"),
+  Assertion(parse(wsp, "\t") matches Ok(_), "wsp tab"),
+  Assertion(parse(crlf, "\r\n") matches Ok(Unit), "crlf"),
+  Assertion(parse(dquote, "\"") matches Ok(Unit), "dquote"),
+])

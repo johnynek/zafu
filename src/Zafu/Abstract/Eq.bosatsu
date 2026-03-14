@@ -1,0 +1,87 @@
+package Zafu/Abstract/Eq
+
+export (
+  Eq,
+  eq_from_fn,
+  eq_specialized,
+  eq_by,
+  eq,
+  neq,
+  laws_Eq,
+)
+
+struct Eq[a](
+  eq_fn: (a, a) -> Bool,
+  neq_fn: (a, a) -> Bool,
+)
+
+def not_Bool(value: Bool) -> Bool:
+  if value:
+    False
+  else:
+    True
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def eq_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    not_Bool(right)
+
+# Constructor that allows supplying both operations.
+def eq_specialized(eq_fn: (a, a) -> Bool, neq_fn: (a, a) -> Bool) -> Eq[a]:
+  Eq(eq_fn, neq_fn)
+
+# Constructor from equality; inequality is derived.
+def eq_from_fn(eq_fn: (a, a) -> Bool) -> Eq[a]:
+  Eq(eq_fn, (left, right) -> not_Bool(eq_fn(left, right)))
+
+def eq(inst: Eq[a], left: a, right: a) -> Bool:
+  Eq(eq_fn, _) = inst
+  eq_fn(left, right)
+
+def neq(inst: Eq[a], left: a, right: a) -> Bool:
+  Eq(_, neq_fn) = inst
+  neq_fn(left, right)
+
+def eq_by(inst: Eq[b], project: a -> b) -> Eq[a]:
+  eq_from_fn((left, right) -> eq(inst, project(left), project(right)))
+
+# Eq law checker for three sample values.
+def laws_Eq(inst: Eq[a], x: a, y: a, z: a) -> Test:
+  reflexive = Assertion(eq(inst, x, x), "reflexive")
+  symmetric = Assertion(eq_Bool(eq(inst, x, y), eq(inst, y, x)), "symmetric")
+  transitive = Assertion(
+    if and_Bool(eq(inst, x, y), eq(inst, y, z)):
+      eq(inst, x, z)
+    else:
+      True,
+    "transitive",
+  )
+  neq_consistent = Assertion(eq_Bool(neq(inst, x, y), not_Bool(eq(inst, x, y))), "neq consistent")
+  TestSuite("Eq laws", [reflexive, symmetric, transitive, neq_consistent])
+
+tests = TestSuite("Eq tests", [
+  (
+    int_eq = eq_from_fn(eq_Int)
+    Assertion(eq(int_eq, 1, 1), "eq_from_fn true")
+  ),
+  (
+    int_eq = eq_from_fn(eq_Int)
+    Assertion(neq(int_eq, 1, 2), "neq derived")
+  ),
+  (
+    int_eq = eq_from_fn(eq_Int)
+    laws_Eq(int_eq, 1, 1, 2)
+  ),
+  (
+    int_eq = eq_from_fn(eq_Int)
+    first_eq = eq_by(int_eq, ((Tuple2(first, _)) -> first))
+    Assertion(eq(first_eq, Tuple2(1, "x"), Tuple2(1, "y")), "eq_by")
+  ),
+])

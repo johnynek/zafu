@@ -1,0 +1,168 @@
+package Zafu/Abstract/Monoid
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq as eq_Eq,
+  eq_from_fn,
+)
+
+from Zafu/Abstract/Semigroup import (
+  Semigroup,
+  semigroup_from_combine,
+  semigroup_specialized,
+  combine as combine_semigroup,
+  combine_map_all as combine_map_all_semigroup,
+  combine_n as combine_n_semigroup,
+  reverse as reverse_semigroup,
+  laws_Semigroup,
+)
+
+export (
+  Monoid,
+  monoid_from_semigroup,
+  monoid_from_combine,
+  monoid_specialized,
+  empty,
+  combine,
+  combine_n,
+  combine_map_all,
+  combine_all,
+  is_empty,
+  reverse,
+  monoid_to_semigroup,
+  laws_Monoid,
+)
+
+struct Monoid[a](
+  empty_value: a,
+  semigroup_inst: Semigroup[a],
+)
+
+# Constructor that reuses an existing semigroup dictionary as-is.
+def monoid_from_semigroup(empty_value: a, semigroup_inst: Semigroup[a]) -> Monoid[a]:
+  Monoid(empty_value, semigroup_inst)
+
+# Constructor from combine with helper operations derived via semigroup_from_combine.
+def monoid_from_combine(empty_value: a, combine_fn: (a, a) -> a) -> Monoid[a]:
+  monoid_from_semigroup(empty_value, semigroup_from_combine(combine_fn))
+
+# Constructor for specialized implementations.
+def monoid_specialized(
+  empty_value: a,
+  combine_fn: (a, a) -> a,
+  combine_n_positive_fn: (a, Int) -> a,
+  combine_map_all_fn: forall b. (b, List[b], b -> a) -> a,
+) -> Monoid[a]:
+  monoid_from_semigroup(
+    empty_value,
+    semigroup_specialized(combine_fn, combine_n_positive_fn, combine_map_all_fn),
+  )
+
+# Projection keeps all semigroup specialization by returning the stored dictionary.
+def monoid_to_semigroup(inst: Monoid[a]) -> Semigroup[a]:
+  Monoid(_, semigroup_inst) = inst
+  semigroup_inst
+
+def empty(inst: Monoid[a]) -> a:
+  Monoid(empty_value, _) = inst
+  empty_value
+
+def combine(inst: Monoid[a], left: a, right: a) -> a:
+  combine_semigroup(monoid_to_semigroup(inst), left, right)
+
+def combine_n(inst: Monoid[a], value: a, n: Int) -> a:
+    match combine_n_semigroup(monoid_to_semigroup(inst), value, n):
+      case Some(combined):
+        combined
+      case None:
+        inst.empty()
+
+def combine_map_all(inst: Monoid[a], items: List[b], fn: b -> a) -> a:
+  match items:
+    case []:
+      inst.empty()
+    case [head, *tail]:
+      combine_map_all_semigroup(monoid_to_semigroup(inst), head, tail, fn)
+
+def combine_all(inst: Monoid[a], items: List[a]) -> a:
+  combine_map_all(inst, items, item -> item)
+
+def is_empty(inst: Monoid[a], eq_inst: Eq[a], value: a) -> Bool:
+  eq_Eq(eq_inst, value, inst.empty())
+
+def reverse(inst: Monoid[a]) -> Monoid[a]:
+  monoid_from_semigroup(
+    inst.empty(),
+    reverse_semigroup(monoid_to_semigroup(inst)),
+  )
+
+def laws_Monoid(inst: Monoid[a], eq_inst: Eq[a], x: a, y: a, z: a) -> Test:
+  semigroup_laws = laws_Semigroup(monoid_to_semigroup(inst), eq_inst, x, y, z)
+  left_identity = Assertion(eq_Eq(eq_inst, inst.combine(inst.empty(), x), x), "left identity")
+  right_identity = Assertion(eq_Eq(eq_inst, inst.combine(x, inst.empty()), x), "right identity")
+  TestSuite("Monoid laws", [semigroup_laws, left_identity, right_identity])
+
+tests = TestSuite("Monoid tests", [
+  (
+    int_add = monoid_from_combine(0, (left, right) -> left.add(right))
+    Assertion(int_add.combine(int_add.empty(), 3).eq_Int(3), "identity")
+  ),
+  (
+    int_add = monoid_from_combine(0, (left, right) -> left.add(right))
+    Assertion(int_add.combine_n(5, 0).eq_Int(0), "combine_n non-positive")
+  ),
+  (
+    int_add = monoid_from_combine(0, (left, right) -> left.add(right))
+    Assertion(int_add.combine_n(5, -2).eq_Int(0), "combine_n negative")
+  ),
+  (
+    int_add = monoid_from_combine(0, (left, right) -> left.add(right))
+    Assertion(int_add.combine_all([]).eq_Int(0), "combine_all empty")
+  ),
+  (
+    int_add = monoid_from_combine(0, (left, right) -> left.add(right))
+    Assertion(int_add.combine_map_all([1, 2, 3], x -> x.mul(2)).eq_Int(12), "combine_map_all")
+  ),
+  (
+    int_add = monoid_from_combine(0, (left, right) -> left.add(right))
+    Assertion(
+      int_add.combine_all([1, 2, 3]).eq_Int(int_add.combine_map_all([1, 2, 3], item -> item)),
+      "combine_all coherence",
+    )
+  ),
+  (
+    list_monoid = monoid_from_combine([], (left, right) -> left.concat(right))
+    reversed = list_monoid.reverse()
+    Assertion(reversed.combine([1], [2, 3]) matches [2, 3, 1], "reverse combine order")
+  ),
+  (
+    int_add = monoid_from_combine(0, (left, right) -> left.add(right))
+    int_eq = eq_from_fn(eq_Int)
+    Assertion(int_add.is_empty(int_eq, 0), "is_empty")
+  ),
+  (
+    int_add = monoid_from_combine(0, (left, right) -> left.add(right))
+    int_eq = eq_from_fn(eq_Int)
+    laws_Monoid(int_add, int_eq, 1, 2, 3)
+  ),
+  (
+    specialized = monoid_specialized(
+      0,
+      (left, right) -> left.add(right),
+      (_, n) -> n.add(1000),
+      (_, _, _) -> 777,
+    )
+    projected = monoid_to_semigroup(specialized)
+    Assertion(combine_n_semigroup(projected, 1, 3) matches Some(1003), "monoid_to_semigroup keeps combine_n")
+  ),
+  (
+    specialized = monoid_specialized(
+      0,
+      (left, right) -> left.add(right),
+      (_, n) -> n.add(1000),
+      (_, _, _) -> 777,
+    )
+    projected = monoid_to_semigroup(specialized)
+    Assertion(combine_map_all_semigroup(projected, 1, [2, 3], x -> x).eq_Int(777), "monoid_to_semigroup keeps combine_map_all")
+  ),
+])

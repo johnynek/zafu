@@ -1,0 +1,594 @@
+package Zafu/Collection/Deque
+
+from Bosatsu/List import eq_List
+from Bosatsu/Rand import (
+  Rand,
+  int_range,
+  geometric_Int,
+  map_Rand,
+  flat_map_Rand,
+  prod_Rand,
+  sequence_Rand,
+)
+from Bosatsu/Testing/Properties import (
+  Prop,
+  forall_Prop,
+  suite_Prop,
+  run_Prop,
+)
+from Zafu/Abstract/Foldable import (
+  Foldable,
+  foldable_specialized,
+)
+from Zafu/Abstract/Monoid import (
+  empty as empty_monoid,
+  combine as combine_monoid,
+)
+from Zafu/Abstract/Applicative import (
+  Applicative,
+  applicative_from_pure_map_map2,
+  pure,
+  map as map_app,
+  map2,
+)
+from Zafu/Abstract/Traverse import (
+  Traverse,
+  traverse,
+  traverse_specialized,
+)
+from Zafu/Collection/List import size as size_List
+from Zafu/Control/IterState import (
+  IterState,
+  Done,
+  Continue,
+  foldl_List as foldl_state_List,
+  foldr_List as foldr_state_List,
+)
+
+export (
+  Queue,
+  empty,
+  size,
+  is_empty,
+  peek,
+  enqueue,
+  dequeue,
+  push_stack,
+  unqueue,
+  concat,
+  from_List,
+  to_List,
+  foldl,
+  foldr,
+  eq,
+  cmp,
+  foldable_Queue,
+  traverse_Queue,
+)
+
+# Banker's deque represented by a front list and a reversed back list.
+enum Queue[a: +*]:
+  Queue(size: Int, front: List[a], back_rev: List[a])
+
+# Canonical empty value.
+empty: forall a. Queue[a] = Queue(0, [], [])
+
+def normalize(size: Int, front: List[a], back_rev: List[a]) -> Queue[a]:
+  if cmp_Int(size, 0) matches LT | EQ:
+    empty
+  else:
+    match front:
+      case []:
+        rotated = back_rev.reverse()
+        match rotated:
+          case []:
+            empty
+          case _:
+            Queue(size, rotated, [])
+      case _:
+        Queue(size, front, back_rev)
+
+def normalize_queue(queue: Queue[a]) -> Queue[a]:
+  match queue:
+    case Queue(size, _, _) if cmp_Int(size, 0) matches LT | EQ:
+      empty
+    case Queue(_, [], []):
+      empty
+    case Queue(size, [], back_rev):
+      Queue(size, back_rev.reverse(), [])
+    case _:
+      queue
+
+# Builds a deque from a list in iteration order.
+def from_List(list: List[a]) -> Queue[a]:
+  normalize(size_List(list), list, [])
+
+# Returns items in iteration order.
+def to_List(queue: Queue[a]) -> List[a]:
+  Queue(_, front, back_rev) = normalize_queue(queue)
+  front.concat(back_rev.reverse())
+
+# Returns the number of items.
+def size(queue: Queue[a]) -> Int:
+  Queue(sz, _, _) = normalize_queue(queue)
+  sz
+
+# True when the deque has no elements.
+def is_empty(queue: Queue[a]) -> Bool:
+  size(queue).eq_Int(0)
+
+# Returns the front item without removing it.
+def peek(queue: Queue[a]) -> Option[a]:
+  match normalize_queue(queue):
+    case Queue(_, [], _):
+      None
+    case Queue(_, [head, *_], _):
+      Some(head)
+
+# Pushes an item to the back.
+def enqueue(queue: Queue[a], item: a) -> Queue[a]:
+  Queue(size, front, back_rev) = normalize_queue(queue)
+  normalize(size.add(1), front, [item, *back_rev])
+
+# Pushes an item to the front.
+def push_stack(queue: Queue[a], item: a) -> Queue[a]:
+  Queue(size, front, back_rev) = normalize_queue(queue)
+  normalize(size.add(1), [item, *front], back_rev)
+
+# Pops the front item.
+def dequeue(queue: Queue[a]) -> Option[(a, Queue[a])]:
+  match normalize_queue(queue):
+    case Queue(0, _, _):
+      None
+    case Queue(size, [head, *tail], back_rev):
+      Some((head, normalize(size.sub(1), tail, back_rev)))
+    case Queue(_, [], _):
+      None
+
+def unqueue_List(list: List[a]) -> Option[(List[a], a)]:
+  rev = list.reverse()
+  match rev:
+    case []:
+      None
+    case [last, *init_rev]:
+      Some((init_rev.reverse(), last))
+
+# Pops the back item.
+def unqueue(queue: Queue[a]) -> Option[(Queue[a], a)]:
+  match normalize_queue(queue):
+    case Queue(0, _, _):
+      None
+    case Queue(size, front, [last, *rest_back]):
+      Some((normalize(size.sub(1), front, rest_back), last))
+    case Queue(size, front, []):
+      match unqueue_List(front):
+        case Some((init, last)):
+          Some((normalize(size.sub(1), init, []), last))
+        case None:
+          None
+
+# Left fold in iteration order.
+def foldl(queue: Queue[a], init: b, fn: (b, a) -> b) -> b:
+  Queue(size, front, back_rev) = normalize_queue(queue)
+  if size.eq_Int(0):
+    init
+  else:
+    front_acc = front.foldl_List(init, fn)
+    back_rev.reverse().foldl_List(front_acc, fn)
+
+# Right fold in iteration order.
+def foldr(queue: Queue[a], init: b, fn: (a, b) -> b) -> b:
+  Queue(size, front, back_rev) = normalize_queue(queue)
+  if size.eq_Int(0):
+    init
+  else:
+    back_acc = back_rev.foldl_List(init, (acc, item) -> fn(item, acc))
+    front.reverse().foldl_List(back_acc, (acc, item) -> fn(item, acc))
+
+def foldl_iter(queue: Queue[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
+  Queue(size, front, back_rev) = normalize_queue(queue)
+  if size.eq_Int(0):
+    Continue(init)
+  else:
+    match foldl_state_List(front, init, fn):
+      case Done(done_value):
+        Done(done_value)
+      case Continue(front_acc):
+        match foldr_state_List(back_rev, front_acc, (item, acc) -> fn(acc, item)):
+          case Done(done_value):
+            Done(done_value)
+          case Continue(total):
+            Continue(total)
+
+def foldr_iter(queue: Queue[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
+  Queue(size, front, back_rev) = normalize_queue(queue)
+  if size.eq_Int(0):
+    Continue(init)
+  else:
+    match foldl_state_List(back_rev, init, (acc, item) -> fn(item, acc)):
+      case Done(done_value):
+        Done(done_value)
+      case Continue(back_acc):
+        match foldr_state_List(front, back_acc, fn):
+          case Done(done_value):
+            Done(done_value)
+          case Continue(total):
+            Continue(total)
+
+# Concatenates two deques in iteration order.
+def concat(left: Queue[a], right: Queue[a]) -> Queue[a]:
+  foldl(right, normalize_queue(left), (acc, item) -> enqueue(acc, item))
+
+foldable_Queue: Foldable[Queue] = foldable_specialized(
+  foldl,
+  foldr,
+  (queue, monoid, fn) -> foldl(queue, empty_monoid(monoid), (acc, item) -> combine_monoid(monoid, acc, fn(item))),
+  foldl_iter,
+  foldr_iter,
+  is_empty,
+  size,
+  to_List,
+)
+
+def map_Queue(queue: Queue[a], fn: a -> b) -> Queue[b]:
+  foldl(queue, empty, (acc, item) -> enqueue(acc, fn(item)))
+
+def traverse_Queue_fn[g: * -> *, a, b](queue: Queue[a], app: Applicative[g], fn: a -> g[b]) -> g[Queue[b]]:
+  rev_mapped = foldl(
+    queue,
+    app.pure([]),
+    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
+  )
+  rev_mapped.map_app(app, rev_items -> from_List(rev_items.reverse()))
+
+traverse_Queue: Traverse[Queue] = traverse_specialized(
+  traverse_Queue_fn,
+  map_Queue,
+  foldable_Queue,
+)
+
+def eq_list(fn: (a, b) -> Bool, left: List[a], right: List[b]) -> Bool:
+  def go(left: List[a], right: List[b]) -> Bool:
+    loop (left, right):
+      case ([], []):
+        True
+      case ([left_h, *left_t], [right_h, *right_t]):
+        if fn(left_h, right_h):
+          go(left_t, right_t)
+        else:
+          False
+      case _:
+        False
+  go(left, right)
+
+def cmp_list(fn: (a, b) -> Comparison, left: List[a], right: List[b]) -> Comparison:
+  def go(left: List[a], right: List[b]) -> Comparison:
+    loop (left, right):
+      case ([], []):
+        EQ
+      case ([], [_, *_]):
+        LT
+      case ([_, *_], []):
+        GT
+      case ([left_h, *left_t], [right_h, *right_t]):
+        match fn(left_h, right_h):
+          case LT:
+            LT
+          case GT:
+            GT
+          case EQ:
+            go(left_t, right_t)
+  go(left, right)
+
+def eq(fn: (a, b) -> Bool)(q1: Queue[a], q2: Queue[b]) -> Bool:
+  eq_list(fn, to_List(q1), to_List(q2))
+
+def cmp(fn: (a, b) -> Comparison)(q1: Queue[a], q2: Queue[b]) -> Comparison:
+  cmp_list(fn, to_List(q1), to_List(q2))
+
+############################
+# Property tests
+############################
+
+def eq_Option(eq_fn)(left: Option[a], right: Option[a]) -> Bool:
+  match (left, right):
+    case (Some(left_v), Some(right_v)):
+      eq_fn(left_v, right_v)
+    case (None, None):
+      True
+    case _:
+      False
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
+  match value:
+    case Some(item):
+      Some(fn(item))
+    case None:
+      None
+
+def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]:
+  match (left, right):
+    case (Some(left_value), Some(right_value)):
+      Some(fn(left_value, right_value))
+    case _:
+      None
+
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
+
+def keep_even_Option_Int(value: Int) -> Option[Int]:
+  if cmp_Int(mod_Int(value, 2), 0) matches EQ:
+    Some(value)
+  else:
+    None
+
+def eq_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    if right:
+      False
+    else:
+      True
+
+def eq_Comparison(left: Comparison, right: Comparison) -> Bool:
+  (left, right) matches (LT, LT) | (EQ, EQ) | (GT, GT)
+
+def peek_List(list: List[a]) -> Option[a]:
+  match list:
+    case []:
+      None
+    case [head, *_]:
+      Some(head)
+
+def dequeue_List(list: List[a]) -> Option[(a, List[a])]:
+  match list:
+    case []:
+      None
+    case [head, *tail]:
+      Some((head, tail))
+
+def eq_dequeue_result(actual: Option[(Int, Queue[Int])], expected: Option[(Int, List[Int])]) -> Bool:
+  match (actual, expected):
+    case (None, None):
+      True
+    case (Some((actual_head, actual_tail)), Some((expected_head, expected_tail))):
+      and_Bool(
+        actual_head.eq_Int(expected_head),
+        eq_List(eq_Int)(to_List(actual_tail), expected_tail)
+      )
+    case _:
+      False
+
+def eq_unqueue_result(actual: Option[(Queue[Int], Int)], expected: Option[(List[Int], Int)]) -> Bool:
+  match (actual, expected):
+    case (None, None):
+      True
+    case (Some((actual_init, actual_last)), Some((expected_init, expected_last))):
+      and_Bool(
+        actual_last.eq_Int(expected_last),
+        eq_List(eq_Int)(to_List(actual_init), expected_init)
+      )
+    case _:
+      False
+
+def foldr_list_model(list: List[Int], init: Int) -> Int:
+  list.reverse().foldl_List(init, (acc, item) -> item.sub(acc))
+
+def deep_enqueue(size: Int) -> Queue[Int]:
+  def loop_deep(rem: Int, acc: Queue[Int]) -> Queue[Int]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        loop_deep(rem.sub(1), enqueue(acc, rem))
+  loop_deep(size, empty)
+
+rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
+
+rand_list_int: Rand[List[Int]] = flat_map_Rand(
+  geometric_Int,
+  len -> sequence_Rand(replicate_List(rand_int, len))
+)
+
+rand_list_pair: Rand[(List[Int], List[Int])] = prod_Rand(rand_list_int, rand_list_int)
+
+roundtrip_prop: Prop = forall_Prop(
+  rand_list_int,
+  "to_List(from_List(list)) == list",
+  list -> (
+    queue = from_List(list)
+    Assertion(eq_List(eq_Int)(to_List(queue), list), "roundtrip")
+  ))
+
+size_prop: Prop = forall_Prop(
+  rand_list_int,
+  "size agrees with list size",
+  list -> (
+    queue = from_List(list)
+    Assertion(size(queue).eq_Int(size_List(list)), "size law")
+  ))
+
+is_empty_prop: Prop = forall_Prop(
+  rand_list_int,
+  "is_empty agrees with list emptiness",
+  list -> (
+    queue = from_List(list)
+    expected = size_List(list).eq_Int(0)
+    Assertion(eq_Bool(is_empty(queue), expected), "is_empty law")
+  ))
+
+peek_prop: Prop = forall_Prop(
+  rand_list_int,
+  "peek matches list head option",
+  list -> (
+    queue = from_List(list)
+    expected = peek_List(list)
+    actual = peek(queue)
+    Assertion(eq_Option(eq_Int)(actual, expected), "peek law")
+  ))
+
+enqueue_prop: Prop = forall_Prop(
+  prod_Rand(rand_list_int, rand_int),
+  "enqueue appends to the back",
+  ((list, item)) -> (
+    queue = from_List(list)
+    expected = [*list, item]
+    actual = to_List(enqueue(queue, item))
+    Assertion(eq_List(eq_Int)(actual, expected), "enqueue law")
+  ))
+
+push_stack_prop: Prop = forall_Prop(
+  prod_Rand(rand_list_int, rand_int),
+  "push_stack prepends to the front",
+  ((list, item)) -> (
+    queue = from_List(list)
+    expected = [item, *list]
+    actual = to_List(push_stack(queue, item))
+    Assertion(eq_List(eq_Int)(actual, expected), "push_stack law")
+  ))
+
+dequeue_prop: Prop = forall_Prop(
+  rand_list_int,
+  "dequeue matches list uncons",
+  list -> (
+    queue = from_List(list)
+    expected = dequeue_List(list)
+    actual = dequeue(queue)
+    Assertion(eq_dequeue_result(actual, expected), "dequeue law")
+  ))
+
+unqueue_prop: Prop = forall_Prop(
+  rand_list_int,
+  "unqueue matches list uncons-right",
+  list -> (
+    queue = from_List(list)
+    expected = unqueue_List(list)
+    actual = unqueue(queue)
+    Assertion(eq_unqueue_result(actual, expected), "unqueue law")
+  ))
+
+concat_prop: Prop = forall_Prop(
+  rand_list_pair,
+  "concat matches list concat",
+  ((left, right)) -> (
+    left_queue = from_List(left)
+    right_queue = from_List(right)
+    expected = [*left, *right]
+    actual = to_List(concat(left_queue, right_queue))
+    Assertion(eq_List(eq_Int)(actual, expected), "concat law")
+  ))
+
+foldl_prop: Prop = forall_Prop(
+  rand_list_int,
+  "foldl agrees with list foldl",
+  list -> (
+    queue = from_List(list)
+    expected = list.foldl_List(0, add)
+    actual = foldl(queue, 0, add)
+    Assertion(actual.eq_Int(expected), "foldl law")
+  ))
+
+foldr_prop: Prop = forall_Prop(
+  rand_list_int,
+  "foldr agrees with list foldr model",
+  list -> (
+    queue = from_List(list)
+    expected = foldr_list_model(list, 0)
+    actual = foldr(queue, 0, (item, acc) -> item.sub(acc))
+    Assertion(actual.eq_Int(expected), "foldr law")
+  ))
+
+eq_prop: Prop = forall_Prop(
+  rand_list_pair,
+  "eq agrees with list equality",
+  ((left, right)) -> (
+    actual = eq(eq_Int)(from_List(left), from_List(right))
+    expected = eq_List(eq_Int)(left, right)
+    Assertion(eq_Bool(actual, expected), "eq law")
+  ))
+
+cmp_prop: Prop = forall_Prop(
+  rand_list_pair,
+  "cmp agrees with list lexicographic comparison",
+  ((left, right)) -> (
+    actual = cmp(cmp_Int)(from_List(left), from_List(right))
+    expected = cmp_list(cmp_Int, left, right)
+    Assertion(eq_Comparison(actual, expected), "cmp law")
+  ))
+
+queue_props: Prop = suite_Prop(
+  "Deque properties",
+  [
+    roundtrip_prop,
+    size_prop,
+    is_empty_prop,
+    peek_prop,
+    enqueue_prop,
+    push_stack_prop,
+    dequeue_prop,
+    unqueue_prop,
+    concat_prop,
+    foldl_prop,
+    foldr_prop,
+    eq_prop,
+    cmp_prop,
+  ])
+
+tests = TestSuite("Deque tests", [
+  Assertion(size(empty).eq_Int(0), "empty size"),
+  Assertion(is_empty(empty), "empty is_empty"),
+  Assertion(peek(empty) matches None, "empty peek"),
+  Assertion(dequeue(empty) matches None, "empty dequeue"),
+  Assertion(unqueue(empty) matches None, "empty unqueue"),
+  Assertion(to_List(from_List([1, 2, 3])) matches [1, 2, 3], "from/to list sanity"),
+  Assertion(to_List(push_stack(from_List([2, 3]), 1)) matches [1, 2, 3], "push_stack sanity"),
+  Assertion(
+    match unqueue(from_List([1, 2, 3])):
+      case Some((init, last)):
+        and_Bool(last.eq_Int(3), to_List(init) matches [1, 2])
+      case None:
+        False,
+    "unqueue sanity"
+  ),
+  Assertion(
+    to_List(concat(from_List([1, 2]), from_List([3, 4]))) matches [1, 2, 3, 4],
+    "concat sanity"
+  ),
+  Assertion(foldl(from_List([1, 2, 3]), 0, add).eq_Int(6), "foldl sanity"),
+  Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
+  (
+    queue = from_List([1, 2, 3])
+    match queue.traverse(traverse_Queue, applicative_Option, i -> Some(i.add(10))):
+      case Some(mapped):
+        Assertion(to_List(mapped) matches [11, 12, 13], "traverse_Queue Some")
+      case None:
+        Assertion(False, "traverse_Queue Some")
+  ),
+  Assertion(
+    from_List([1, 2, 3, 4]).traverse(
+      traverse_Queue,
+      applicative_Option,
+      keep_even_Option_Int,
+    ) matches None,
+    "traverse_Queue short-circuits",
+  ),
+  (
+    deep = deep_enqueue(20000)
+    expected_sum = 20000.mul(20001).div(2)
+    deep_list = to_List(deep)
+    Assertion(
+      and_Bool(
+        and_Bool(size(deep).eq_Int(20000), size_List(deep_list).eq_Int(20000)),
+        and_Bool(foldl(deep, 0, add).eq_Int(expected_sum), foldr(deep, 0, (item, acc) -> item.add(acc)).eq_Int(expected_sum))
+      ),
+      "deep stack-safe operations"
+    )
+  ),
+  run_Prop(queue_props, 200, 20260307),
+])

@@ -1,0 +1,1304 @@
+package Zafu/Text/Pretty
+
+from Bosatsu/Lazy import (
+  get_Lazy,
+  lazy,
+)
+from Bosatsu/Num/Float64 import (
+  float64_bits_to_Int,
+  float64_to_String,
+  int_bits_to_Float64,
+  is_infinite,
+  is_nan,
+)
+from Zafu/Abstract/Hash import Hash
+from Zafu/Abstract/Instances/Predef import hash_Char, monoid_String
+from Zafu/Abstract/Monoid import combine_n, Monoid, monoid_specialized
+from Zafu/Abstract/Semigroup import combine_tree_option
+from Zafu/Collection/HashSet import (
+  HashSet,
+  contains as contains_HashSet,
+  from_List as from_List_HashSet,
+)
+from Zafu/Collection/LazyList import (
+  LazyList,
+  Empty as Empty_LazyList,
+  Cons as Cons_LazyList,
+  cons,
+  empty_LazyList,
+  foldl as foldl_LazyList,
+  to_List as lazyList_to_List
+)
+
+export (
+  Doc,
+  Document,
+  empty,
+  space,
+  comma,
+  line,
+  line_break,
+  hard_line,
+  line_or,
+  line_or_space,
+  line_or_empty,
+  char,
+  text,
+  text_with_line,
+  int,
+  float,
+  spaces,
+  zero_width,
+  ansi_control,
+  append,
+  prepend_text,
+  append_text,
+  repeat,
+  append_line,
+  append_line_text,
+  append_space,
+  append_space_text,
+  append_line_or_space,
+  append_line_or_space_text,
+  hang,
+  indent,
+  nested,
+  aligned,
+  bracket_by,
+  tight_bracket_by,
+  grouped,
+  flatten,
+  flatten_option,
+  unzero,
+  is_empty,
+  non_empty,
+  max_width,
+  representation,
+  render,
+  render_trim,
+  render_stream,
+  render_stream_trim,
+  render_wide_stream,
+  render_String,
+  split,
+  paragraph,
+  fill,
+  fold_docs,
+  intercalate,
+  cat,
+  spread,
+  stack,
+  tabulate,
+  tabulate_with,
+  document_from_fn,
+  to_Doc,
+  by,
+  document_String,
+  document_Char,
+  document_Unit,
+  document_Bool,
+  document_Int,
+  document_Float64,
+  document_List,
+  document_Option,
+  monoid_Doc,
+)
+
+enum Doc:
+  Empty
+  Text(value: String)
+  ZeroWidth(value: String)
+  Line
+  FlatAlt(node_size: Int, default: Doc, when_flat: Doc)
+  Concat(node_size: Int, left: Doc, right: Doc)
+  Nest(indent: Int, doc: Doc)
+  Align(doc: Doc)
+  Union(node_size: Int, flattened: Doc, fallback: Doc)
+
+# Typeclass-style dictionary for rendering `a` values into `Doc`.
+# Input: `to_doc_fn` converts one `a` value to a document.
+# Output: a reusable renderer instance for type `a`.
+struct Document[a](to_doc_fn: a -> Doc)
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def or_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    True
+  else:
+    right
+
+def not_Bool(value: Bool) -> Bool:
+  if value:
+    False
+  else:
+    True
+
+def max_Int(a: Int, b: Int) -> Int:
+  match cmp_Int(a, b):
+    case LT:
+      b
+    case EQ | GT:
+      a
+
+def doc_size(doc: Doc) -> Int:
+    def go(doc: Doc, acc: Int) -> Int:
+        loop doc:
+            case Empty | Text(_) | ZeroWidth(_) | Line:
+              acc
+            case Nest(_, inner) | Align(inner):
+              go(inner, acc.add(1))
+            case FlatAlt(size, _, _) | Concat(size, _, _) | Union(size, _, _):
+              acc.add(size)
+
+    go(doc, 0)
+
+def doc_branch_size(left: Doc, right: Doc) -> Int:
+  doc_size(left).add(doc_size(right)).add(1)
+
+# Concatenates two documents in O(1).
+# Input: left and right documents.
+# Output: combined document preserving both layouts.
+def append(left: Doc, right: Doc) -> Doc:
+  match (left, right):
+    case (Empty, _):
+      right
+    case (_, Empty):
+      left
+    case _:
+      Concat(doc_branch_size(left, right), left, right)
+
+def traversal_fuel(doc: Doc, width_hint: Int) -> Int:
+  size = doc_size(doc)
+  size.mul(max_Int(width_hint, 0).add(32)).add(1024)
+
+def string_is_empty(value: String) -> Bool:
+  value matches ""
+
+space_char: Char = .' '
+newline_char: Char = .'\n'
+
+def is_space_char(ch: Char) -> Bool:
+  ch matches .' '
+
+def ascii_char(code: Int) -> Char:
+  match int_to_Char(code):
+    case Some(ch):
+      ch
+    case None:
+      # This branch is unreachable for the ASCII constants used below.
+      space_char
+
+whitespace_chars: HashSet[Char] = from_List_HashSet(hash_Char, [
+  space_char,
+  ascii_char(9),
+  newline_char,
+  ascii_char(11),
+  ascii_char(12),
+  ascii_char(13),
+])
+
+def is_whitespace_char(ch: Char) -> Bool:
+  contains_HashSet(whitespace_chars, ch)
+
+def small_spaces(rem: Int) -> String:
+  match rem:
+    case 1:
+      " "
+    case 2:
+      "  "
+    case 3:
+      "   "
+    case 4:
+      "    "
+    case 5:
+      "     "
+    case 6:
+      "      "
+    case 7:
+      "       "
+    case 8:
+      "        "
+    case 9:
+      "         "
+    case 10:
+      "          "
+    case 11:
+      "           "
+    case 12:
+      "            "
+    case 13:
+      "             "
+    case 14:
+      "              "
+    case 15:
+      "               "
+    case _:
+      ""
+
+space_16: String = "                "
+
+def spaces_string(width: Int) -> String:
+    if cmp_Int(width, 0) matches LT | EQ: ""
+    else:
+        d = width.div(16)
+        m = width.mod_Int(16)
+        smod = small_spaces(m)
+        if d matches 0: smod
+        else:
+            sdiv = combine_n(monoid_String, space_16, d)
+            "${sdiv}${smod}"
+
+def line_to_string(indent: Int) -> String:
+  actual_indent = max_Int(indent, 0)
+  concat_String(["\n", spaces_string(actual_indent)])
+
+def join_strings_with_sep(parts: List[String], sep: String) -> String:
+  match parts:
+    case []:
+      ""
+    case [head, *tail]:
+      def loop(rem: List[String], rev: List[String]) -> String:
+        recur rem:
+          case []:
+            concat_String(rev.reverse())
+          case [next, *rest]:
+            loop(rest, [next, sep, *rev])
+
+      loop(tail, [head])
+
+# The empty document.
+# Output: renders as the empty string and acts as append identity.
+empty: Doc = Empty
+
+def text_raw(value: String) -> Doc:
+  if string_is_empty(value):
+    Empty
+  else:
+    Text(value)
+
+# Single space text document.
+# Output: a one-character space `Doc`.
+space: Doc = text_raw(" ")
+# Comma text document.
+# Output: a one-character comma `Doc`.
+comma: Doc = text_raw(",")
+
+# Soft line break that becomes a space in flattened layouts.
+# Output: newline in broken mode, `" "` in flat mode.
+line: Doc = FlatAlt(doc_branch_size(Line, space), Line, space)
+# Soft line break that disappears in flattened layouts.
+# Output: newline in broken mode, empty in flat mode.
+line_break: Doc = FlatAlt(doc_branch_size(Line, Empty), Line, Empty)
+# Mandatory line break.
+# Output: always renders as newline plus current indentation.
+hard_line: Doc = Line
+
+
+def lines(value: String) -> List[String]:
+  def loop(fuel: Int, rem: String, rev_lines: List[String]) -> List[String]:
+    recur fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        [rem, *rev_lines].reverse()
+      case _:
+        match partition_String(rem, "\n"):
+          case None:
+            [rem, *rev_lines].reverse()
+          case Some((before, after)):
+            loop(fuel.sub(1), after, [before, *rev_lines])
+
+  loop(length_String(value), value, [])
+
+def intercalate_docs(sep: Doc, docs: List[Doc]) -> Doc:
+  sep_v = sep
+  match docs.reverse():
+    case []:
+      empty
+    case [head, *tail]:
+      def loop(rem: List[Doc], acc: Doc) -> Doc:
+        recur rem:
+          case []:
+            acc
+          case [next, *rest]:
+            loop(rest, append(next, append(sep_v, acc)))
+
+      loop(tail, head)
+
+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+
+# Exported constructors and combinators
+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+#+
+
+# Converts `value` into a `Doc`, replacing each `\n` with `line_doc`.
+# Input: `value` string and `line_doc` separator used between split lines.
+# Output: concatenated document preserving empty leading/trailing lines.
+def text_with_line(value: String, line_doc: Doc) -> Doc:
+  intercalate_docs(line_doc, lines(value).map_List(text_raw))
+
+# Converts `value` into a `Doc` where `\n` uses `line`.
+# Input: any string, including embedded newlines.
+# Output: a width-sensitive document equivalent to `text_with_line(value, line)`.
+def text(value: String) -> Doc:
+  text_with_line(value, line)
+
+# Converts one character to a document.
+# Input: a character value.
+# Output: `line` when the character is newline, otherwise a single-character text doc.
+def char(value: Char) -> Doc:
+  if value matches .'\n':
+    line
+  else:
+    text_raw(char_to_String(value))
+
+# Renders an integer in canonical base-10 form.
+# Input: an `Int`.
+# Output: decimal text with optional leading `-`.
+def int(value: Int) -> Doc:
+  text_raw(int_to_String(value))
+
+sign_bit_64: Int = 9223372036854775808
+
+def has_negative_sign(value: Float64) -> Bool:
+  bits = float64_bits_to_Int(value)
+  cmp_Int(bits, sign_bit_64) matches GT | EQ
+
+# Renders a float with deterministic parseable output.
+# Input: a `Float64`.
+# Output: `NaN`, `Infinity`, `-Infinity`, or the runtime shortest round-trippable decimal.
+def float(value: Float64) -> Doc:
+  if is_nan(value):
+    text_raw("NaN")
+  elif is_infinite(value):
+    if has_negative_sign(value):
+      text_raw("-Infinity")
+    else:
+      text_raw("Infinity")
+  else:
+    text_raw(float64_to_String(value))
+
+# Repeats `doc` `count` times using a logarithmic doubling strategy.
+# Input: document `doc` and repeat count `count`.
+# Output: `empty` for non-positive counts, else left-associated repetition of `doc`.
+def repeat(doc: Doc, count: Int) -> Doc:
+  if cmp_Int(count, 0) matches LT | EQ:
+    empty
+  else:
+    def loop(rem: Int, chunk: Doc, acc: Doc) -> Doc:
+      recur rem:
+        case _ if cmp_Int(rem, 0) matches LT | EQ:
+          acc
+        case _:
+          half = rem.div(2)
+          next_acc =
+            if cmp_Int(rem, half.mul(2)) matches GT:
+              append(acc, chunk)
+            else:
+              acc
+          loop(half, append(chunk, chunk), next_acc)
+
+    loop(count, doc, Empty)
+
+# Creates a document containing `width` spaces.
+# Input: number of spaces to emit.
+# Output: `repeat(space, width)`.
+def spaces(width: Int) -> Doc:
+  repeat(space, width)
+
+# Monoid on Doc where append is the combine
+monoid_Doc: Monoid[Doc] =
+    monoid_specialized(
+        Empty,
+        append,
+        repeat,
+        (head, tail, fn) -> (
+          mapped_head = fn(head)
+          docs = tail.foldl_List([mapped_head], (acc, item) -> [fn(item), *acc]).reverse()
+          match combine_tree_option(append, docs):
+            case Some(combined):
+              combined
+            case None:
+              mapped_head
+        ))
+
+# Inserts zero-width text into output.
+# Input: `value` bytes to emit without affecting layout width.
+# Output: `empty` when `value` is empty, else a zero-width node.
+def zero_width(value: String) -> Doc:
+  if string_is_empty(value):
+    empty
+  else:
+    ZeroWidth(value)
+
+# Builds ANSI escape output as zero-width control text.
+# Input: list of numeric ANSI codes.
+# Output: zero-width `\u001b[<codes>m` sequence.
+def ansi_control(codes: List[Int]) -> Doc:
+  codes_str = join_strings_with_sep(codes.map_List(int_to_String), ";")
+  zero_width(concat_String(["\u001b[", codes_str, "m"]))
+
+# Prepends plain text before `doc`.
+# Input: string prefix and document suffix.
+# Output: `text(value)` followed by `doc`.
+def prepend_text(value: String, doc: Doc) -> Doc:
+  append(text(value), doc)
+
+# Appends plain text after `doc`.
+# Input: document prefix and string suffix.
+# Output: `doc` followed by `text(value)`.
+def append_text(doc: Doc, value: String) -> Doc:
+  append(doc, text(value))
+
+# Concatenates with a soft line break between operands.
+# Input: left and right documents.
+# Output: `left + line + right`.
+def append_line(left: Doc, right: Doc) -> Doc:
+  append(left, append(line, right))
+
+# Concatenates with a soft line break before text.
+# Input: left document and right string.
+# Output: `left + line + text(right)`.
+def append_line_text(left: Doc, right: String) -> Doc:
+  append_line(left, text(right))
+
+# Concatenates with a space between operands.
+# Input: left and right documents.
+# Output: `left + space + right`.
+def append_space(left: Doc, right: Doc) -> Doc:
+  append(left, append(space, right))
+
+# Concatenates with a space before text.
+# Input: left document and right string.
+# Output: `left + space + text(right)`.
+def append_space_text(left: Doc, right: String) -> Doc:
+  append_space(left, text(right))
+
+def flatten_boolean(root: Doc) -> (Doc, Bool):
+  def loop(fuel: Int, node: Doc) -> (Doc, Bool):
+    recur fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        (node, False)
+      case _:
+        next_fuel = fuel.sub(1)
+        match node:
+          case Empty | Text(_) | Line | ZeroWidth(_):
+            (node, False)
+          case FlatAlt(_, _, when_flat):
+            (flat_doc, _) = loop(next_fuel, when_flat)
+            (flat_doc, True)
+          case Concat(_, left, right):
+            (left_flat, left_changed) = loop(next_fuel, left)
+            (right_flat, right_changed) = loop(next_fuel, right)
+            (append(left_flat, right_flat), or_Bool(left_changed, right_changed))
+          case Nest(indent, inner):
+            (flat_doc, changed) = loop(next_fuel, inner)
+            (Nest(indent, flat_doc), changed)
+          case Align(inner):
+            (flat_doc, changed) = loop(next_fuel, inner)
+            (Align(flat_doc), changed)
+          case Union(_, flattened, _):
+            (flat_doc, _) = loop(next_fuel, flattened)
+            (flat_doc, True)
+
+  loop(doc_size(root).mul(4).add(64), root)
+
+# Attempts to flatten `doc` and returns `None` when flattening is a no-op.
+# Input: any document.
+# Output: `Some(flat_doc)` if structure changes, else `None`.
+def flatten_option(doc: Doc) -> Option[Doc]:
+  (flat_doc, changed) = flatten_boolean(doc)
+  if changed:
+    Some(flat_doc)
+  else:
+    None
+
+# Flattens all `FlatAlt`/`Union` behavior to single-line alternatives.
+# Input: any document.
+# Output: flattened document.
+def flatten(doc: Doc) -> Doc:
+  (flat_doc, _) = flatten_boolean(doc)
+  flat_doc
+
+# Adds an optimistic flat layout branch for `doc`.
+# Input: a document with potential line breaks.
+# Output: `doc` wrapped in `Union(flatten(doc), doc)` when flattening changes it.
+def grouped(doc: Doc) -> Doc:
+  orig = doc
+  (flat, changed) = flatten_boolean(orig)
+  if changed:
+    Union(doc_branch_size(flat, orig), flat, orig)
+  else:
+    flat
+
+# Chooses between a real line break and flattened `doc`.
+# Input: fallback document used in flat mode.
+# Output: document that renders as newline or flattened fallback based on grouping.
+def line_or(doc: Doc) -> Doc:
+  flat_doc = flatten(doc)
+  flat_node = flat_doc
+  match flat_node:
+    case Line:
+      hard_line
+    case _:
+      grouped(FlatAlt(doc_branch_size(Line, flat_node), Line, flat_node))
+
+# Line-or-space convenience value.
+# Output: newline in broken layouts, space in flat layouts.
+line_or_space: Doc = line_or(space)
+# Line-or-empty convenience value.
+# Output: newline in broken layouts, empty in flat layouts.
+line_or_empty: Doc = line_or(empty)
+
+# Concatenates with `line_or_space` between operands.
+# Input: left and right documents.
+# Output: `left + line_or_space + right`.
+def append_line_or_space(left: Doc, right: Doc) -> Doc:
+  append(left, append(line_or_space, right))
+
+# Concatenates with `line_or_space` before text.
+# Input: left document and right string.
+# Output: `left + line_or_space + text(right)`.
+def append_line_or_space_text(left: Doc, right: String) -> Doc:
+  append_line_or_space(left, text(right))
+
+# Increases indentation level for `doc`.
+# Input: document and indent amount.
+# Output: a nested document with added indentation.
+def nested(doc: Doc, amount: Int) -> Doc:
+  node = doc
+  match node:
+    case Nest(indent, inner):
+      Nest(indent.add(amount), inner)
+    case _:
+      Nest(amount, node)
+
+# Aligns `doc` to the current rendering column.
+# Input: any document.
+# Output: aligned document node.
+def aligned(doc: Doc) -> Doc:
+  Align(doc)
+
+# Applies `nested` and then `aligned`.
+# Input: document and indent amount.
+# Output: hanging-indented document.
+def hang(doc: Doc, amount: Int) -> Doc:
+  aligned(nested(doc, amount))
+
+# Prefixes `doc` with `amount` spaces and hangs subsequent lines.
+# Input: document and indent amount.
+# Output: indented document.
+def indent(doc: Doc, amount: Int) -> Doc:
+  hang(append(spaces(amount), doc), amount)
+
+# Wraps `doc` between `left` and `right` with soft line spacing.
+# Input: body doc, left delimiter, right delimiter, and nesting amount.
+# Output: grouped bracketed document.
+def bracket_by(doc: Doc, left: Doc, right: Doc, amount: Int) -> Doc:
+  middle = append(nested(append(line, doc), amount), append(line, right))
+  append(left, grouped(middle))
+
+# Wraps `doc` between `left` and `right` without flat-mode interior spaces.
+# Input: body doc, left delimiter, right delimiter, and nesting amount.
+# Output: grouped tightly bracketed document.
+def tight_bracket_by(doc: Doc, left: Doc, right: Doc, amount: Int) -> Doc:
+  middle = append(nested(append(line_break, doc), amount), append(line_break, right))
+  append(left, grouped(middle))
+
+# Removes all zero-width nodes from `doc`.
+# Input: any document.
+# Output: document with `ZeroWidth` replaced by `empty`.
+def unzero(doc: Doc) -> Doc:
+  def loop(fuel: Int, node: Doc) -> Doc:
+    recur fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        node
+      case _:
+        next_fuel = fuel.sub(1)
+        match node:
+          case ZeroWidth(_):
+            Empty
+          case FlatAlt(_, default, when_flat):
+            (
+              new_default = loop(next_fuel, default)
+              new_when_flat = loop(next_fuel, when_flat)
+              FlatAlt(doc_branch_size(new_default, new_when_flat), new_default, new_when_flat)
+            )
+          case Concat(_, left, right):
+            append(loop(next_fuel, left), loop(next_fuel, right))
+          case Nest(indent, inner):
+            Nest(indent, loop(next_fuel, inner))
+          case Align(inner):
+            Align(loop(next_fuel, inner))
+          case Union(_, flattened, fallback):
+            (
+              new_flattened = loop(next_fuel, flattened)
+              new_fallback = loop(next_fuel, fallback)
+              Union(doc_branch_size(new_flattened, new_fallback), new_flattened, new_fallback)
+            )
+          case other:
+            other
+
+  loop(doc_size(doc).mul(4).add(64), doc)
+
+# Checks whether `doc` has no visible output.
+# Input: any document.
+# Output: `True` only when rendering produces no text or line breaks.
+def is_empty(doc: Doc) -> Bool:
+  def loop(fuel: Int, stack: List[Doc]) -> Bool:
+    recur fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        False
+      case _:
+        match stack:
+          case []:
+            True
+          case [head, *tail]:
+            next_fuel = fuel.sub(1)
+            match head:
+              case Empty:
+                loop(next_fuel, tail)
+              case FlatAlt(_, default, when_flat):
+                loop(next_fuel, [default, when_flat, *tail])
+              case Concat(_, _, Line):
+                False
+              case Concat(_, left, right):
+                loop(next_fuel, [left, right, *tail])
+              case Nest(_, inner):
+                loop(next_fuel, [inner, *tail])
+              case Align(inner):
+                loop(next_fuel, [inner, *tail])
+              case Text(value):
+                if string_is_empty(value):
+                  loop(next_fuel, tail)
+                else:
+                  False
+              case ZeroWidth(value):
+                if string_is_empty(value):
+                  loop(next_fuel, tail)
+                else:
+                  False
+              case Line:
+                False
+              case Union(_, flattened, _):
+                loop(next_fuel, [flattened, *tail])
+
+  root = doc
+  loop(doc_size(root).mul(8).add(64), [root])
+
+# Negation of `is_empty`.
+# Input: any document.
+# Output: `True` when `doc` has visible output.
+def non_empty(doc: Doc) -> Bool:
+  not_Bool(is_empty(doc))
+
+# Computes the maximum rendered line width of `doc`.
+# Input: any document.
+# Output: maximum column width reached across all lines.
+def max_width(doc: Doc) -> Int:
+  def loop(fuel: Int, pos: Int, stack: List[(Int, Doc)], widest: Int) -> Int:
+    recur fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        max_Int(widest, pos)
+      case _:
+        match stack:
+          case []:
+            max_Int(widest, pos)
+          case [(indent, next), *tail]:
+            next_fuel = fuel.sub(1)
+            match next:
+              case Empty:
+                loop(next_fuel, pos, tail, widest)
+              case FlatAlt(_, default, _):
+                loop(next_fuel, pos, [(indent, default), *tail], widest)
+              case Concat(_, left, right):
+                loop(next_fuel, pos, [(indent, left), (indent, right), *tail], widest)
+              case Nest(extra, inner):
+                loop(next_fuel, pos, [(indent.add(extra), inner), *tail], widest)
+              case Align(inner):
+                loop(next_fuel, pos, [(pos, inner), *tail], widest)
+              case Text(value):
+                loop(next_fuel, pos.add(length_String(value)), tail, widest)
+              case ZeroWidth(_):
+                loop(next_fuel, pos, tail, widest)
+              case Line:
+                loop(next_fuel, max_Int(indent, 0), tail, max_Int(widest, pos))
+              case Union(_, flattened, _):
+                loop(next_fuel, pos, [(indent, flattened), *tail], widest)
+
+  root = doc
+  loop(traversal_fuel(doc, 0), 0, [(0, root)], 0)
+
+enum ReprItem:
+  ReprDoc(node: Doc)
+  ReprText(text: String)
+
+# Returns a structural debug representation of `doc`.
+# Input: any document.
+# Output: text document describing internal node structure.
+def representation(doc: Doc) -> Doc:
+  def loop(fuel: Int, stack: List[ReprItem], rev: List[String]) -> String:
+    recur fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        concat_String(["...", *rev].reverse())
+      case _:
+        match stack:
+          case []:
+            concat_String(rev.reverse())
+          case [head, *tail]:
+            next_fuel = fuel.sub(1)
+            match head:
+              case ReprText(txt):
+                loop(next_fuel, tail, [txt, *rev])
+              case ReprDoc(node):
+                match node:
+                  case Empty:
+                    loop(next_fuel, tail, ["Empty", *rev])
+                  case Text(value):
+                    loop(next_fuel, tail, [")", value, "Text(", *rev])
+                  case ZeroWidth(value):
+                    loop(next_fuel, tail, [")", value, "ZeroWidth(", *rev])
+                  case Line:
+                    loop(next_fuel, tail, ["Line", *rev])
+                  case FlatAlt(_, default, when_flat):
+                    loop(
+                      next_fuel,
+                      [ReprText("FlatAlt("), ReprDoc(default), ReprText(", "), ReprDoc(when_flat), ReprText(")"), *tail],
+                      rev
+                    )
+                  case Concat(_, left, right):
+                    loop(
+                      next_fuel,
+                      [ReprText("Concat("), ReprDoc(left), ReprText(", "), ReprDoc(right), ReprText(")"), *tail],
+                      rev
+                    )
+                  case Nest(indent, inner):
+                    loop(
+                      next_fuel,
+                      [ReprText("Nest("), ReprText(int_to_String(indent)), ReprText(", "), ReprDoc(inner), ReprText(")"), *tail],
+                      rev
+                    )
+                  case Align(inner):
+                    loop(next_fuel, [ReprText("Align("), ReprDoc(inner), ReprText(")"), *tail], rev)
+                  case Union(_, flattened, fallback):
+                    loop(
+                      next_fuel,
+                      [ReprText("Union("), ReprDoc(flattened), ReprText(", "), ReprDoc(fallback), ReprText(")"), *tail],
+                      rev
+                    )
+
+  text_raw(loop(traversal_fuel(doc, 0), [ReprDoc(doc)], []))
+
+def fits(fuel: Int, width: Int, pos: Int, stack: List[(Int, Doc)]) -> Bool:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      False
+    case _ if cmp_Int(pos, width) matches GT:
+      False
+    case _:
+      match stack:
+        case []:
+          True
+        case [(indent, next), *tail]:
+          next_fuel = fuel.sub(1)
+          match next:
+            case Empty:
+              fits(next_fuel, width, pos, tail)
+            case FlatAlt(_, default, _):
+              fits(next_fuel, width, pos, [(indent, default), *tail])
+            case Concat(_, left, right):
+              fits(next_fuel, width, pos, [(indent, left), (indent, right), *tail])
+            case Nest(extra, inner):
+              fits(next_fuel, width, pos, [(indent.add(extra), inner), *tail])
+            case Align(inner):
+              fits(next_fuel, width, pos, [(pos, inner), *tail])
+            case Text(value):
+              fits(next_fuel, width, pos.add(length_String(value)), tail)
+            case ZeroWidth(_):
+              fits(next_fuel, width, pos, tail)
+            case Line:
+              True
+            case Union(_, flattened, fallback):
+              first = [(indent, flattened), *tail]
+              if fits(next_fuel, width, pos, first):
+                True
+              else:
+                fits(next_fuel, width, pos, [(indent, fallback), *tail])
+
+def render_stream_core(width: Int, doc: Doc, wide: Bool) -> LazyList[String]:
+  non_neg_width = max_Int(width, 0)
+  base_fuel = traversal_fuel(doc, non_neg_width)
+
+  def loop_stream(fuel: Int, pos: Int, stack: List[(Int, Doc)]) -> LazyList[String]:
+    recur fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        empty_LazyList
+      case _:
+        match stack:
+          case []:
+            empty_LazyList
+          case [(indent, next), *tail]:
+            next_fuel = fuel.sub(1)
+            match next:
+              case Empty:
+                loop_stream(next_fuel, pos, tail)
+              case FlatAlt(_, default, _):
+                loop_stream(next_fuel, pos, [(indent, default), *tail])
+              case Concat(_, left, right):
+                loop_stream(next_fuel, pos, [(indent, left), (indent, right), *tail])
+              case Nest(extra, inner):
+                loop_stream(next_fuel, pos, [(indent.add(extra), inner), *tail])
+              case Align(inner):
+                loop_stream(next_fuel, pos, [(pos, inner), *tail])
+              case Text(value):
+                cons(
+                  lazy(() -> value),
+                  lazy(() -> loop_stream(next_fuel, pos.add(length_String(value)), tail))
+                )
+              case ZeroWidth(value):
+                cons(
+                  lazy(() -> value),
+                  lazy(() -> loop_stream(next_fuel, pos, tail))
+                )
+              case Line:
+                cons(
+                  lazy(() -> line_to_string(indent)),
+                  lazy(() -> loop_stream(next_fuel, max_Int(indent, 0), tail))
+                )
+              case Union(_, flattened, fallback):
+                if wide:
+                  loop_stream(next_fuel, pos, [(indent, flattened), *tail])
+                else:
+                  first = [(indent, flattened), *tail]
+                  if fits(base_fuel, non_neg_width, pos, first):
+                    loop_stream(next_fuel, pos, first)
+                  else:
+                    loop_stream(next_fuel, pos, [(indent, fallback), *tail])
+
+  loop_stream(base_fuel, 0, [(0, doc)])
+
+def prepend_stream_parts(parts: List[String], rest_fn: () -> LazyList[String]) -> LazyList[String]:
+  recur parts:
+    case []:
+      rest_fn()
+    case [head, *tail]:
+      cons(
+        lazy(() -> head),
+        lazy(() -> prepend_stream_parts(tail, rest_fn))
+      )
+
+def trim_chunk(chunk: String, pending_spaces: Int) -> (Int, List[String]):
+  def loop_chunk(fuel: Int, rem: String, pending: Int, rev: List[String]) -> (Int, List[String]):
+    recur fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        (pending, rev.reverse())
+      case _:
+        match uncons_String(rem):
+          case None:
+            (pending, rev.reverse())
+          case Some((ch, tail)):
+            if is_space_char(ch):
+              loop_chunk(fuel.sub(1), tail, pending.add(1), rev)
+            elif ch matches .'\n':
+              loop_chunk(fuel.sub(1), tail, 0, ["\n", *rev])
+            else:
+              prefix =
+                if cmp_Int(pending, 0) matches GT:
+                  spaces_string(pending)
+                else:
+                  ""
+              piece =
+                if string_is_empty(prefix):
+                  char_to_String(ch)
+                else:
+                  concat_String([prefix, char_to_String(ch)])
+              loop_chunk(fuel.sub(1), tail, 0, [piece, *rev])
+
+  loop_chunk(length_String(chunk), chunk, pending_spaces, [])
+
+def trim_stream(chunks: LazyList[String]) -> LazyList[String]:
+  def loop_stream(source: LazyList[String], pending_spaces: Int) -> LazyList[String]:
+    recur source:
+      case Empty_LazyList:
+        empty_LazyList
+      case Cons_LazyList(head, tail):
+        (next_pending_spaces, parts) = trim_chunk(get_Lazy(head), pending_spaces)
+        prepend_stream_parts(parts, () -> loop_stream(get_Lazy(tail), next_pending_spaces))
+
+  loop_stream(chunks, 0)
+
+# Renders `doc` to a stream of chunks with bounded layout selection.
+# Input: document and target width.
+# Output: lazy chunk stream whose concatenation is the rendered text.
+def render_stream(doc: Doc, width: Int) -> LazyList[String]:
+  render_stream_core(width, doc, False)
+
+def render_String(doc: Doc, width: Int) -> String:
+  concat_String(lazyList_to_List(render_stream(doc, width)))
+
+# Renders `doc` at `width`.
+# Input: document and target width.
+# Output: lazy chunk stream in rendering order.
+def render(doc: Doc, width: Int) -> LazyList[String]:
+  render_stream(doc, width)
+
+# Renders `doc` and trims trailing spaces on each line.
+# Input: document and target width.
+# Output: lazy chunk stream with right-trimmed lines.
+def render_trim(doc: Doc, width: Int) -> LazyList[String]:
+  trim_stream(render(doc, width))
+
+# Chunk-stream form of `render_trim`.
+# Input: document and target width.
+# Output: lazy chunk stream containing trimmed rendering output.
+def render_stream_trim(doc: Doc, width: Int) -> LazyList[String]:
+  render_trim(doc, width)
+
+# Renders without bounded `fits` checks (always picks flattened union branch).
+# Input: document.
+# Output: lazy chunk stream rendered in wide mode.
+def render_wide_stream(doc: Doc) -> LazyList[String]:
+  render_stream_core(0, doc, True)
+
+# Reduces `docs` from left to right using `fn`.
+# Input: list of docs and a binary combine function.
+# Output: reduced document, or `empty` for an empty list.
+def fold_docs(docs: List[Doc], fn: (Doc, Doc) -> Doc) -> Doc:
+  match docs.reverse():
+    case []:
+      empty
+    case [head, *tail]:
+      def loop(rem: List[Doc], acc: Doc) -> Doc:
+        recur rem:
+          case []:
+            acc
+          case [next, *rest]:
+            loop(rest, fn(next, acc))
+
+      loop(tail, head)
+
+# Inserts `sep` between each document in `docs`.
+# Input: separator doc and items.
+# Output: concatenated document with separator between neighbors.
+def intercalate(sep: Doc, docs: List[Doc]) -> Doc:
+  if is_empty(sep):
+    fold_docs(docs, (left, right) -> append(left, right))
+  else:
+    fold_docs(docs, (left, right) -> append(left, append(sep, right)))
+
+# Concatenates docs with no separator.
+# Input: list of docs.
+# Output: all docs appended in order.
+def cat(docs: List[Doc]) -> Doc:
+  intercalate(empty, docs)
+
+# Concatenates docs separated by `space`.
+# Input: list of docs.
+# Output: space-separated document.
+def spread(docs: List[Doc]) -> Doc:
+  intercalate(space, docs)
+
+# Concatenates docs separated by `line`.
+# Input: list of docs.
+# Output: line-separated document.
+def stack(docs: List[Doc]) -> Doc:
+  intercalate(line, docs)
+
+# Width-sensitive separator folding like Paiges `fill`.
+# Input: separator doc and item docs.
+# Output: document that packs items onto lines when possible.
+def fill(sep: Doc, docs: List[Doc]) -> Doc:
+  flat_sep = flatten(sep)
+  match docs.reverse():
+    case []:
+      empty
+    case [last, *rest_rev]:
+      last_orig = grouped(last)
+      last_flat = grouped(flatten(last))
+      # State is (orig, flat_head): recurse([head, ...]) and recurse([flatten(head), ...]).
+      state = rest_rev.foldl_List((last_orig, last_flat), (st, current) -> (
+        (next_orig, next_flat_head) = st
+        current_flat = flatten(current)
+        left_branch = append(current_flat, append(flat_sep, next_flat_head))
+        (
+          orig_fallback = append(current, append(sep, next_orig))
+          flat_head_fallback = append(current_flat, append(sep, next_orig))
+          orig = Union(doc_branch_size(left_branch, orig_fallback), left_branch, orig_fallback)
+          flat_head = Union(doc_branch_size(left_branch, flat_head_fallback), left_branch, flat_head_fallback)
+          (orig, flat_head)
+        )
+      ))
+      (result, _) = state
+      result
+
+def words_from_string(value: String) -> List[String]:
+  def flush_word(word_rev: List[Char], words_rev: List[String]) -> List[String]:
+    match word_rev:
+      case []:
+        words_rev
+      case _:
+        [char_List_to_String(word_rev.reverse()), *words_rev]
+
+  def loop(fuel: Int, rem: String, current_word_rev: List[Char], words_rev: List[String]) -> List[String]:
+    recur fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        flush_word(current_word_rev, words_rev).reverse()
+      case _:
+        match uncons_String(rem):
+          case None:
+            flush_word(current_word_rev, words_rev).reverse()
+          case Some((ch, tail)):
+            if is_whitespace_char(ch):
+              loop(fuel.sub(1), tail, [], flush_word(current_word_rev, words_rev))
+            else:
+              loop(fuel.sub(1), tail, [ch, *current_word_rev], words_rev)
+
+  loop(length_String(value), value, [], [])
+
+# Splits text into words and rejoins with `line_or_space`.
+# Input: source string with arbitrary whitespace.
+# Output: reflowable paragraph document.
+def split(value: String) -> Doc:
+  docs = words_from_string(value).map_List(text)
+  intercalate(line_or_space, docs)
+
+# Alias for `split`.
+# Input: source string paragraph.
+# Output: reflowable paragraph document.
+def paragraph(value: String) -> Doc:
+  split(value)
+
+# Builds aligned key/value rows with configurable fill character and key suffix.
+# Input: key fill character, right-side separator text, and `(key, doc)` rows.
+# Output: multi-line aligned table document.
+def tabulate_with(fill_char: Char, right_sep: String, rows: List[(String, Doc)]) -> Doc:
+  if rows matches []:
+    empty
+  else:
+    max_key = rows.foldl_List(0, (acc, row) -> (
+      (key, _) = row
+      max_Int(acc, length_String(key))
+    ))
+    right_doc = text(right_sep)
+    docs = rows.map_List(row -> (
+      (key, value) = row
+      key_len = length_String(key)
+      key_doc = append(append(text(key), repeat(char(fill_char), max_key.sub(key_len))), right_doc)
+      append(key_doc, aligned(value))
+    ))
+    intercalate(line, docs)
+
+# Convenience `tabulate_with` using space fill and empty key suffix.
+# Input: `(key, doc)` rows.
+# Output: aligned table document.
+def tabulate(rows: List[(String, Doc)]) -> Doc:
+  tabulate_with(space_char, "", rows)
+
+# Builds a `Document[a]` from a rendering function.
+# Input: function from `a` to `Doc`.
+# Output: `Document[a]` dictionary.
+def document_from_fn(fn: a -> Doc) -> Document[a]:
+  Document(fn)
+
+# Applies a `Document[a]` renderer to one value.
+# Input: document dictionary and item value.
+# Output: rendered `Doc` for that value.
+def to_Doc(docu: Document[a], value: a) -> Doc:
+  Document(to_doc_fn) = docu
+  to_doc_fn(value)
+
+# Contramap/project combinator for `Document`.
+# Input: renderer for `b` and projection from `a` to `b`.
+# Output: renderer for `a`.
+def by(docu: Document[b], project: a -> b) -> Document[a]:
+  document_from_fn(value -> to_Doc(docu, project(value)))
+
+# Built-in `Document` for `String`.
+# Output: uses `text`.
+document_String: Document[String] = document_from_fn(text)
+# Built-in `Document` for `Char`.
+# Output: uses `char`.
+document_Char: Document[Char] = document_from_fn(char)
+# Built-in `Document` for `Unit`.
+# Output: literal `()`.
+document_Unit: Document[Unit] = document_from_fn(_ -> text_raw("()"))
+true_Doc: Doc = text_raw("True")
+false_Doc: Doc = text_raw("False")
+# Built-in `Document` for `Bool`.
+# Output: `True` or `False`.
+document_Bool: Document[Bool] = document_from_fn(value -> true_Doc if value else false_Doc)
+# Built-in `Document` for `Int`.
+# Output: uses `int`.
+document_Int: Document[Int] = document_from_fn(int)
+# Built-in `Document` for `Float64`.
+# Output: uses `float`.
+document_Float64: Document[Float64] = document_from_fn(float)
+
+# Builds a `Document` instance for lists.
+# Input: item renderer.
+# Output: bracketed list document using `fill(comma + line, ...)`.
+def document_List(item_doc: Document[a]) -> Document[List[a]]:
+  document_from_fn(items -> (
+    item_docs = items.map_List(item -> to_Doc(item_doc, item))
+    body = fill(append(comma, line), item_docs)
+    tight_bracket_by(body, text_raw("["), text_raw("]"), 2)
+  ))
+
+# Builds a `Document` instance for options.
+# Input: item renderer.
+# Output: `None` or grouped `Some(<item>)`.
+def document_Option(item_doc: Document[a]) -> Document[Option[a]]:
+  document_from_fn(opt -> (
+    match opt:
+      case None:
+        text_raw("None")
+      case Some(value):
+        grouped(append(text_raw("Some("), append(to_Doc(item_doc, value), text_raw(")"))))
+  ))
+
+
+def eq_String(left: String, right: String) -> Bool:
+  cmp_String(left, right) matches EQ
+
+def rendered_to_string(chunks: LazyList[String]) -> String:
+  rev = foldl_LazyList(chunks, [], (acc, chunk) -> [chunk, *acc])
+  concat_String(rev.reverse())
+
+def eq_rendered(actual: LazyList[String], expected: String) -> Bool:
+  eq_String(rendered_to_string(actual), expected)
+
+def deep_doc(size: Int) -> Doc:
+  def loop(rem: Int, acc: Doc) -> Doc:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        loop(rem.sub(1), append(int(rem), append(line_or_space, acc)))
+
+  loop(size, empty)
+
+tests = TestSuite("Pretty tests", [
+  Assertion(eq_rendered(render(append(text("hello"), text("world")), 80), "helloworld"), "append text"),
+  Assertion(
+    eq_rendered(
+      render(
+        grouped(append_line(grouped(append_line(grouped(append_line(text("hello"), text("a"))), text("b"))), text("c"))),
+        5
+      ),
+      "hello\na\nb\nc"
+    ),
+    "paper example narrow"
+  ),
+  Assertion(
+    eq_rendered(
+      render(
+        grouped(append_line(grouped(append_line(grouped(append_line(text("hello"), text("a"))), text("b"))), text("c"))),
+        11
+      ),
+      "hello a b c"
+    ),
+    "paper example wide"
+  ),
+  Assertion(
+    eq_rendered(
+      render(split("This  is      some crazy\n text that should       look normal"), 10),
+      "This is\nsome crazy\ntext that\nshould\nlook\nnormal"
+    ),
+    "split paragraph wraps"
+  ),
+  Assertion(
+    eq_rendered(render(fill(append(comma, line), [text("1"), text("2"), text("3")]), 0), "1,\n2,\n3"),
+    "fill narrow"
+  ),
+  Assertion(
+    eq_rendered(render(fill(append(comma, line), [text("1"), text("2"), text("3")]), 6), "1, 2,\n3"),
+    "fill medium"
+  ),
+  Assertion(
+    eq_rendered(render(fill(append(comma, line), [text("1"), text("2"), text("3")]), 10), "1, 2, 3"),
+    "fill wide"
+  ),
+  Assertion(
+    eq_rendered(
+      render(
+        bracket_by(
+          fill(append(comma, line), [text("0"), text("1"), text("2"), text("3")]),
+          text("["),
+          text("]"),
+          2
+        ),
+        80
+      ),
+      "[ 0, 1, 2, 3 ]"
+    ),
+    "bracket_by wide"
+  ),
+  Assertion(
+    eq_rendered(
+      render(
+        tight_bracket_by(
+          fill(append(comma, line), [text("0"), text("1"), text("2"), text("3")]),
+          text("["),
+          text("]"),
+          2
+        ),
+        80
+      ),
+      "[0, 1, 2, 3]"
+    ),
+    "tight_bracket_by wide"
+  ),
+  Assertion(
+    eq_rendered(
+      render(
+        append(text("("), intercalate(grouped(append(comma, line_break)), [int(1), int(2), int(3), int(4)])),
+        80
+      ),
+      "(1,2,3,4"
+    ),
+    "line_break flatten"
+  ),
+  Assertion(
+    eq_rendered(
+      render_trim(nested(stack([empty, text("a"), empty, empty, text("b")]), 2), 100),
+      "\n  a\n\n\n  b"
+    ),
+    "render_trim dangling spaces"
+  ),
+  Assertion(eq_rendered(render(float(0.0), 80), "0.0"), "float zero"),
+  Assertion(eq_rendered(render(float(int_bits_to_Float64(9223372036854775808)), 80), "-0.0"), "float negative zero"),
+  Assertion(eq_rendered(render(float(int_bits_to_Float64(9221120237041090561)), 80), "NaN"), "float nan"),
+  Assertion(eq_rendered(render(float(int_bits_to_Float64(9218868437227405312)), 80), "Infinity"), "float infinity"),
+  Assertion(eq_rendered(render(float(int_bits_to_Float64(18442240474082181120)), 80), "-Infinity"), "float neg infinity"),
+  (
+    docu = by(document_Int, ((Tuple2(a, _)) -> a))
+    Assertion(eq_rendered(render(to_Doc(docu, Tuple2(7, "x")), 80), "7"), "Document.by")
+  ),
+  (
+    docu = document_List(document_Int)
+    rendered = render(to_Doc(docu, [1, 2, 3, 4]), 80)
+    Assertion(eq_rendered(rendered, "[1, 2, 3, 4]"), "document_List wide")
+  ),
+  (
+    docu = document_Option(document_Int)
+    Assertion(
+      and_Bool(
+        eq_rendered(render(to_Doc(docu, None), 80), "None"),
+        eq_rendered(render(to_Doc(docu, Some(9)), 80), "Some(9)")
+      ),
+      "document_Option"
+    )
+  ),
+  (
+    deep = deep_doc(20000)
+    wide_text = rendered_to_string(render_wide_stream(deep))
+    Assertion(
+      and_Bool(
+        cmp_Int(max_width(deep), 0) matches GT | EQ,
+        cmp_Int(length_String(wide_text), 0) matches GT
+      ),
+      "deep max_width/render_wide stack-safe"
+    )
+  ),
+])
