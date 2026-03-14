@@ -6,11 +6,6 @@ from Bosatsu/Char import (
   string_to_Int_List,
   int_List_to_String,
 )
-from Bosatsu/Lazy import (
-  Lazy,
-  lazy,
-  get_Lazy,
-)
 from Bosatsu/List import eq_List
 from Bosatsu/Num/Float64 import (
   abs,
@@ -32,6 +27,29 @@ from Bosatsu/Rand import (
   prod_Rand,
   sequence_Rand,
   run_Rand,
+)
+from Zafu/Testing/HedgeHog/LazyList import (
+  LazyList,
+  empty_LazyList,
+  singleton as singleton_LazyList,
+  from_List as from_List_LazyList,
+  to_List as to_List_LazyList,
+  first as first_LazyList,
+  uncons as uncons_LazyList,
+)
+from Zafu/Testing/HedgeHog/Range import (
+  linear_Range,
+  sample_Int,
+  one_of_Int,
+  int8_signed_Range,
+  int16_signed_Range,
+  int32_signed_Range,
+  int64_signed_Range,
+  int128_signed_Range,
+  uint32_Range,
+  pos_int8_Range,
+  pos_int16_Range,
+  pos_int32_Range,
 )
 
 export (
@@ -63,18 +81,18 @@ export (
   run_Prop,
 )
 
-struct Gen(rand: Rand[a], shrink: a -> Lazy[List[a]])
+struct Gen(rand: Rand[a], shrink: a -> LazyList[a])
 
 def gen_Rand(gen: Gen[a]) -> Rand[a]:
   Gen(rand, _) = gen
   rand
 
-def shrink_Gen(gen: Gen[a]) -> a -> Lazy[List[a]]:
+def shrink_Gen(gen: Gen[a]) -> a -> LazyList[a]:
   Gen(_, shrink) = gen
   shrink
 
 def no_shrink_Gen(rand: Rand[a]) -> Gen[a]:
-  Gen(rand, _ -> lazy(() -> []))
+  Gen(rand, _ -> empty_LazyList)
 
 def const_Gen(value: a) -> Gen[a]:
   no_shrink_Gen(const_Rand(value))
@@ -83,11 +101,11 @@ def const_Gen(value: a) -> Gen[a]:
 def map_Gen(gen: Gen[a], to: a -> b, from: b -> a) -> Gen[b]:
   Gen(
     map_Rand(gen.gen_Rand(), to),
-    b -> lazy(() -> gen.shrink_Gen()(from(b)).get_Lazy().map_List(to)),
+    b -> from_List_LazyList(to_List_LazyList(gen.shrink_Gen()(from(b))).map_List(to)),
   )
 
 # Preserve shrinking for flat_map by requiring the result shrinker.
-def flat_map_Gen(gen: Gen[a], fn: a -> Gen[b], shrink: b -> Lazy[List[b]]) -> Gen[b]:
+def flat_map_Gen(gen: Gen[a], fn: a -> Gen[b], shrink: b -> LazyList[b]) -> Gen[b]:
   Gen(
     flat_map_Rand(gen.gen_Rand(), a -> fn(a).gen_Rand()),
     shrink,
@@ -106,44 +124,76 @@ def not_Bool(value: Bool) -> Bool:
     True
 
 def test_passes(test: Test) -> Bool:
-  match test:
-    case Assertion(value, _):
-      value
-    case TestSuite(_, _):
-      False
+  def loop_tests(steps: List[Unit], todo: List[Test]) -> Bool:
+    loop steps:
+      case []:
+        False
+      case [_, *tail_steps]:
+        match todo:
+          case []:
+            True
+          case [head, *tail]:
+            match head:
+              case Assertion(value, _):
+                if value:
+                  loop_tests(tail_steps, tail)
+                else:
+                  False
+              case TestSuite(_, tests):
+                loop_tests(tail_steps, tests.concat(tail))
+
+  loop_tests(replicate_List(Unit, 65536), [test])
 
 def first_failure_message(test: Test) -> Option[String]:
-  match test:
-    case Assertion(value, message):
-      if value:
-        None
-      else:
-        Some(message)
-    case TestSuite(_, _):
-      None
+  def loop_tests(steps: List[Unit], todo: List[Test]) -> Option[String]:
+    loop steps:
+      case []:
+        Some("test traversal exceeded step budget")
+      case [_, *tail_steps]:
+        match todo:
+          case []:
+            None
+          case [head, *tail]:
+            match head:
+              case Assertion(value, message):
+                if value:
+                  loop_tests(tail_steps, tail)
+                else:
+                  Some(message)
+              case TestSuite(_, tests):
+                loop_tests(tail_steps, tests.concat(tail))
 
-def first_failing(values: List[a], test_fn: a -> Test) -> Option[a]:
-  loop values:
+  loop_tests(replicate_List(Unit, 65536), [test])
+
+def first_failing_steps(values: LazyList[a], test_fn: a -> Test, steps: List[Unit]) -> Option[a]:
+  loop steps:
     case []:
       None
-    case [head, *tail]:
-      if test_fn(head).test_passes():
-        first_failing(tail, test_fn)
-      else:
-        Some(head)
+    case [_, *tail]:
+      match uncons_LazyList(values):
+        case None:
+          None
+        case Some((head, rest)):
+          if test_fn(head).test_passes():
+            first_failing_steps(rest, test_fn, tail)
+          else:
+            Some(head)
 
-def shrink_to_smallest_steps(steps: List[Unit], current: a, shrink: a -> Lazy[List[a]], test_fn: a -> Test) -> a:
+def first_failing(values: LazyList[a], test_fn: a -> Test) -> Option[a]:
+  first_failing_steps(values, test_fn, replicate_List(Unit, 4096))
+
+def shrink_to_smallest_steps(steps: List[Unit], current: a, shrink: a -> LazyList[a], test_fn: a -> Test) -> a:
   loop steps:
     case []:
       current
     case [_, *tail]:
-      match first_failing(get_Lazy(shrink(current)), test_fn):
+      match first_failing(shrink(current), test_fn):
         case None:
           current
         case Some(next):
           shrink_to_smallest_steps(tail, next, shrink, test_fn)
 
-def shrink_to_smallest(start: a, shrink: a -> Lazy[List[a]], test_fn: a -> Test) -> a:
+def shrink_to_smallest(start: a, shrink: a -> LazyList[a], test_fn: a -> Test) -> a:
   shrink_to_smallest_steps(replicate_List(Unit, 128), start, shrink, test_fn)
 
 def first_failure_and_shrunk_samples(samples: List[a], gen: Gen[a], test_fn: a -> Test) -> Option[(a, a)]:
@@ -203,54 +253,53 @@ def sign_Int(i: Int) -> Int:
   else:
     1
 
-def first_List(list: List[a]) -> Option[a]:
-  match list:
-    case [head, *_]:
-      Some(head)
-    case []:
-      None
+def filter_LazyList(list: LazyList[a], pred: a -> Bool) -> LazyList[a]:
+  from_List_LazyList([value for value in to_List_LazyList(list) if pred(value)])
 
-def shrink_Int(i: Int) -> Lazy[List[Int]]:
+def filter_map_LazyList(list: LazyList[a], fn: a -> Option[b]) -> LazyList[b]:
+  mapped = to_List_LazyList(list).foldl_List([], (acc, item) -> (
+    match fn(item):
+      case Some(value):
+        [value, *acc]
+      case None:
+        acc
+  )).reverse()
+  from_List_LazyList(mapped)
+
+def shrink_Int(i: Int) -> LazyList[Int]:
   if i.eq_Int(0):
-    lazy(() -> [])
+    empty_LazyList
   else:
     half = i.div(2)
     one = sign_Int(i)
-    lazy(() -> (
-      if half.eq_Int(0):
-        [0]
-      elif half.eq_Int(one):
-        [0, one]
-      else:
-        [0, half, one]
-    ))
+    if half.eq_Int(0):
+      singleton_LazyList(0)
+    elif half.eq_Int(one):
+      from_List_LazyList([0, one])
+    else:
+      from_List_LazyList([0, half, one])
 
-def shrink_non_negative(i: Int) -> Lazy[List[Int]]:
-  lazy(() -> [v for v in shrink_Int(i).get_Lazy() if cmp_Int(v, 0) matches GT | EQ])
+def shrink_non_negative(i: Int) -> LazyList[Int]:
+  filter_LazyList(shrink_Int(i), v -> cmp_Int(v, 0) matches GT | EQ)
 
-def shrink_positive(i: Int) -> Lazy[List[Int]]:
+def shrink_positive(i: Int) -> LazyList[Int]:
   if cmp_Int(i, 1) matches LT | EQ:
-    lazy(() -> [])
+    empty_LazyList
   else:
-    lazy(() -> (
-      positive = [v for v in shrink_Int(i).get_Lazy() if cmp_Int(v, 0) matches GT]
-      [1].concat(positive)
-    ))
+    positive = to_List_LazyList(filter_LazyList(shrink_Int(i), v -> cmp_Int(v, 0) matches GT))
+    from_List_LazyList([1].concat(positive))
 
-def shrink_List(shrink_item)(list: List[a]) -> Lazy[List[List[a]]]:
+def shrink_List(shrink_item)(list: List[a]) -> LazyList[List[a]]:
   match list:
     case []:
-      lazy(() -> [])
+      empty_LazyList
     case [head, *tail]:
-      lazy(() -> (
-        head_shrinks = shrink_item(head).get_Lazy()
-        shrunk_head = match first_List(head_shrinks):
-          case Some(h):
-            [[h, *tail]]
-          case None:
-            []
-        [tail, [head]].concat(shrunk_head)
-      ))
+      candidates = match first_LazyList(shrink_item(head)):
+        case Some(h):
+          [tail, [head], [h, *tail]]
+        case None:
+          [tail, [head]]
+      from_List_LazyList(candidates)
 
 def to_ascii_Char(i: Int) -> Char:
   match int_to_Char(i):
@@ -259,17 +308,8 @@ def to_ascii_Char(i: Int) -> Char:
     case None:
       .'a'
 
-def shrink_Char(char: Char) -> Lazy[List[Char]]:
-  lazy(() -> (
-    int_values = shrink_Int(char_to_Int(char)).get_Lazy()
-    int_values.foldl_List([], (acc, i) -> (
-      match int_to_Char(i):
-        case Some(c):
-          [c, *acc]
-        case None:
-          acc
-    )).reverse()
-  ))
+def shrink_Char(char: Char) -> LazyList[Char]:
+  filter_map_LazyList(shrink_Int(char_to_Int(char)), int_to_Char)
 
 def int_List_to_String_or_empty(list: List[Int]) -> String:
   match int_List_to_String(list):
@@ -278,97 +318,80 @@ def int_List_to_String_or_empty(list: List[Int]) -> String:
     case None:
       ""
 
-def shrink_String(str: String) -> Lazy[List[String]]:
+def shrink_String(str: String) -> LazyList[String]:
   ints = string_to_Int_List(str)
-  lazy(() -> (
-    int_candidates = shrink_List(shrink_Int)(ints).get_Lazy()
-    int_candidates.foldl_List([], (acc, int_list) -> (
-      match int_List_to_String(int_list):
-        case Some(s):
-          [s, *acc]
-        case None:
-          acc
-    )).reverse()
-  ))
+  filter_map_LazyList(shrink_List(shrink_Int)(ints), int_List_to_String)
 
-def shrink_Option(shrink_item)(value: Option[a]) -> Lazy[List[Option[a]]]:
+def shrink_Option(shrink_item)(value: Option[a]) -> LazyList[Option[a]]:
   match value:
     case None:
-      lazy(() -> [])
+      empty_LazyList
     case Some(item):
-      lazy(() -> (
-        match first_List(shrink_item(item).get_Lazy()):
-          case Some(next):
-            [None, Some(next)]
-          case None:
-            [None]
-      ))
+      match first_LazyList(shrink_item(item)):
+        case Some(next):
+          from_List_LazyList([None, Some(next)])
+        case None:
+          singleton_LazyList(None)
 
-def shrink_Tuple2(shrink_left, shrink_right)((left, right): (a, b)) -> Lazy[List[(a, b)]]:
-  lazy(() -> (
-    left_candidates = match first_List(shrink_left(left).get_Lazy()):
-      case Some(l):
-        [(l, right)]
-      case None:
-        []
-    right_candidates = match first_List(shrink_right(right).get_Lazy()):
-      case Some(r):
-        [(left, r)]
-      case None:
-        []
-    left_candidates.concat(right_candidates)
-  ))
+def shrink_Tuple2(shrink_left, shrink_right)((left, right): (a, b)) -> LazyList[(a, b)]:
+  left_candidates = match first_LazyList(shrink_left(left)):
+    case Some(l):
+      [(l, right)]
+    case None:
+      []
+  right_candidates = match first_LazyList(shrink_right(right)):
+    case Some(r):
+      [(left, r)]
+    case None:
+      []
+  from_List_LazyList(left_candidates.concat(right_candidates))
 
-def shrink_Tuple3(shrink_a, shrink_b, shrink_c)((a0, b0, c0): (a, b, c)) -> Lazy[List[(a, b, c)]]:
-  lazy(() -> (
-    as = match first_List(shrink_a(a0).get_Lazy()):
-      case Some(a1):
-        [(a1, b0, c0)]
-      case None:
-        []
-    bs = match first_List(shrink_b(b0).get_Lazy()):
-      case Some(b1):
-        [(a0, b1, c0)]
-      case None:
-        []
-    cs = match first_List(shrink_c(c0).get_Lazy()):
-      case Some(c1):
-        [(a0, b0, c1)]
-      case None:
-        []
-    as.concat(bs).concat(cs)
-  ))
+def shrink_Tuple3(shrink_a, shrink_b, shrink_c)((a0, b0, c0): (a, b, c)) -> LazyList[(a, b, c)]:
+  as = match first_LazyList(shrink_a(a0)):
+    case Some(a1):
+      [(a1, b0, c0)]
+    case None:
+      []
+  bs = match first_LazyList(shrink_b(b0)):
+    case Some(b1):
+      [(a0, b1, c0)]
+    case None:
+      []
+  cs = match first_LazyList(shrink_c(c0)):
+    case Some(c1):
+      [(a0, b0, c1)]
+    case None:
+      []
+  from_List_LazyList(as.concat(bs).concat(cs))
 
-def shrink_Tuple4(shrink_a, shrink_b, shrink_c, shrink_d)((a0, b0, c0, d0): (a, b, c, d)) -> Lazy[List[(a, b, c, d)]]:
-  lazy(() -> (
-    as = match first_List(shrink_a(a0).get_Lazy()):
-      case Some(a1):
-        [(a1, b0, c0, d0)]
-      case None:
-        []
-    bs = match first_List(shrink_b(b0).get_Lazy()):
-      case Some(b1):
-        [(a0, b1, c0, d0)]
-      case None:
-        []
-    cs = match first_List(shrink_c(c0).get_Lazy()):
-      case Some(c1):
-        [(a0, b0, c1, d0)]
-      case None:
-        []
-    ds = match first_List(shrink_d(d0).get_Lazy()):
-      case Some(d1):
-        [(a0, b0, c0, d1)]
-      case None:
-        []
-    as.concat(bs).concat(cs).concat(ds)
-  ))
+def shrink_Tuple4(shrink_a, shrink_b, shrink_c, shrink_d)((a0, b0, c0, d0): (a, b, c, d)) -> LazyList[(a, b, c, d)]:
+  as = match first_LazyList(shrink_a(a0)):
+    case Some(a1):
+      [(a1, b0, c0, d0)]
+    case None:
+      []
+  bs = match first_LazyList(shrink_b(b0)):
+    case Some(b1):
+      [(a0, b1, c0, d0)]
+    case None:
+      []
+  cs = match first_LazyList(shrink_c(c0)):
+    case Some(c1):
+      [(a0, b0, c1, d0)]
+    case None:
+      []
+  ds = match first_LazyList(shrink_d(d0)):
+    case Some(d1):
+      [(a0, b0, c0, d1)]
+    case None:
+      []
+  from_List_LazyList(as.concat(bs).concat(cs).concat(ds))
 
 unit_Gen: Gen[Unit] = const_Gen(Unit)
 
 bool_Gen: Gen[Bool] = Gen(
   map_Rand(int_range(2), i -> i.eq_Int(1)),
-  b -> lazy(() -> [False] if b else []),
+  b -> singleton_LazyList(False) if b else empty_LazyList,
 )
 
 comparison_Gen: Gen[Comparison] = Gen(
@@ -380,7 +403,7 @@ comparison_Gen: Gen[Comparison] = Gen(
     else:
       GT
   )),
-  c -> lazy(() -> match c:
+  c -> from_List_LazyList(match c:
     case LT:
       []
     case EQ:
@@ -390,51 +413,39 @@ comparison_Gen: Gen[Comparison] = Gen(
   ),
 )
 
-def signed_int_rand(max_abs: Int) -> Rand[Int]:
-  map_Rand(int_range(max_abs.mul(2)), i -> i.sub(max_abs))
-
-int8_max = shift_left_Int(1, 7)
-int16_max = shift_left_Int(1, 15)
 int32_max = shift_left_Int(1, 31)
-int64_max = shift_left_Int(1, 63)
-int128_max = shift_left_Int(1, 127)
-
-rand_int8: Rand[Int] = signed_int_rand(int8_max)
-rand_int16: Rand[Int] = signed_int_rand(int16_max)
-rand_int32: Rand[Int] = signed_int_rand(int32_max)
-rand_int64: Rand[Int] = signed_int_rand(int64_max)
-rand_int128: Rand[Int] = signed_int_rand(int128_max)
 
 int_Gen: Gen[Int] = Gen(
-  one_of(rand_int8, [rand_int16, rand_int32, rand_int64, rand_int128]),
+  one_of_Int(
+    int8_signed_Range,
+    [int16_signed_Range, int32_signed_Range, int64_signed_Range, int128_signed_Range],
+  ),
   shrink_Int,
 )
 
-int32_Gen: Gen[Int] = Gen(rand_int32, shrink_Int)
+int32_Gen: Gen[Int] = Gen(sample_Int(int32_signed_Range), shrink_Int)
 
-uint32_Gen: Gen[Int] = Gen(
-  int_range(4294967296),
-  shrink_non_negative,
-)
+uint32_Gen: Gen[Int] = Gen(sample_Int(uint32_Range), shrink_non_negative)
 
 pos_Int_Gen: Gen[Int] = Gen(
-  one_of(
-    map_Rand(int_range(255), i -> i.add(1)),
-    [
-      map_Rand(int_range(65535), i -> i.add(1)),
-      map_Rand(int_range(2147483647), i -> i.add(1)),
-    ]
+  one_of_Int(
+    pos_int8_Range,
+    [pos_int16_Range, pos_int32_Range],
   ),
   shrink_positive,
 )
 
+ascii_printable_Range = linear_Range(32, 127)
+short_string_length_Range = linear_Range(0, 24)
+short_list_length_Range = linear_Range(0, 16)
+
 char_Gen: Gen[Char] = Gen(
-  map_Rand(int_range(95), i -> to_ascii_Char(i.add(32))),
+  map_Rand(sample_Int(ascii_printable_Range), to_ascii_Char),
   shrink_Char,
 )
 
 string_Gen: Gen[String] = Gen(
-  flat_map_Rand(int_range(24), len -> (
+  flat_map_Rand(sample_Int(short_string_length_Range), len -> (
     chars = replicate_List(char_Gen.gen_Rand(), len)
     map_Rand(sequence_Rand(chars), list -> (
       int_values = list.map_List(char_to_Int)
@@ -473,18 +484,16 @@ rand_exp_float: Rand[Float64] = map_Rand(
   ),
 )
 
-def shrink_Float64(value: Float64) -> Lazy[List[Float64]]:
+def shrink_Float64(value: Float64) -> LazyList[Float64]:
   if cmp_Float64(value, float_zero) matches EQ:
-    lazy(() -> [])
+    empty_LazyList
   else:
     half = divf(value, int_to_Float64(2))
     mirrored = subf(float_zero, half)
-    lazy(() -> (
-      if cmp_Float64(abs(value), float_one) matches LT:
-        [float_zero, half]
-      else:
-        [float_zero, half, mirrored]
-    ))
+    if cmp_Float64(abs(value), float_one) matches LT:
+      from_List_LazyList([float_zero, half])
+    else:
+      from_List_LazyList([float_zero, half, mirrored])
 
 float64_Gen: Gen[Float64] = Gen(
   one_of(rand_unit_float, [rand_signed_unit_float, rand_exp_float]),
@@ -493,7 +502,7 @@ float64_Gen: Gen[Float64] = Gen(
 
 def option_Gen(gen: Gen[a]) -> Gen[Option[a]]:
   Gen(
-    flat_map_Rand(int_range(4), i -> (
+    flat_map_Rand(sample_Int(linear_Range(0, 4)), i -> (
       if i.eq_Int(0):
         const_Rand(None)
       else:
@@ -504,7 +513,7 @@ def option_Gen(gen: Gen[a]) -> Gen[Option[a]]:
 
 def list_Gen(gen: Gen[a]) -> Gen[List[a]]:
   Gen(
-    flat_map_Rand(int_range(16), len -> sequence_Rand(replicate_List(gen.gen_Rand(), len))),
+    flat_map_Rand(sample_Int(short_list_length_Range), len -> sequence_Rand(replicate_List(gen.gen_Rand(), len))),
     shrink_List(gen.shrink_Gen()),
   )
 
@@ -627,20 +636,31 @@ predef_generators_prop: Prop = suite_Prop("Predef generators", [
   always_valid_prop(tuple4_Gen(int_Gen, bool_Gen, char_Gen, string_Gen), "Tuple4", _ -> "tuple4", ((i, _, c, s)) -> and_Bool(i.eq_Int(i), and_Bool(char_to_Int(c).eq_Int(char_to_Int(c)), int_List_to_String(string_to_Int_List(s)) matches Some(_)))),
 ])
 
+non_one_int_Range = linear_Range(2, 1026)
+non_empty_list_len_Range = linear_Range(1, 9)
+
 def non_one_int_Gen() -> Gen[Int]:
   Gen(
-    map_Rand(int_range(1024), i -> i.add(2)),
+    sample_Int(non_one_int_Range),
     shrink_positive,
   )
 
 def non_empty_int_list_Gen() -> Gen[List[Int]]:
   Gen(
-    flat_map_Rand(int_range(8), len -> (
-      list_len = len.add(1)
-      sequence_Rand(replicate_List(int_Gen.gen_Rand(), list_len))
+    flat_map_Rand(sample_Int(non_empty_list_len_Range), len -> (
+      sequence_Rand(replicate_List(int_Gen.gen_Rand(), len))
     )),
     shrink_List(shrink_Int),
   )
+
+def suite_recursion_witness() -> Test:
+  nested = TestSuite("outer", [
+    Assertion(True, "top passes"),
+    TestSuite("inner", [Assertion(False, "inner fails")]),
+  ])
+  passes = not_Bool(nested.test_passes())
+  has_message = nested.first_failure_message() matches Some("inner fails")
+  Assertion(and_Bool(passes, has_message), "suite recursion should inspect child tests")
 
 def shrink_int_witness() -> Test:
   match first_failure_and_shrunk(non_one_int_Gen(), 20, 99, i -> Assertion(i.add(i).eq_Int(i), "2*x == x")):
@@ -662,6 +682,7 @@ def shrink_list_witness() -> Test:
 
 tests = TestSuite("Zafu/Testing/HedgeHog tests", [
   run_Prop(predef_generators_prop, 60, 4242),
+  suite_recursion_witness(),
   shrink_int_witness(),
   shrink_list_witness(),
 ])

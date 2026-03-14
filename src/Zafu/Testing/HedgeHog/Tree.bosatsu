@@ -1,0 +1,60 @@
+package Zafu/Testing/HedgeHog/Tree
+
+from Zafu/Testing/HedgeHog/LazyList import (
+  LazyList,
+  empty_LazyList,
+  from_List as from_List_LazyList,
+  to_List as to_List_LazyList,
+)
+
+export (
+  Tree,
+  singleton,
+  map_Tree,
+  flat_map_Tree,
+  expand_Tree,
+  prune_Tree,
+)
+
+struct Tree(value: a, children: LazyList[Tree[a]])
+
+def singleton(value: a) -> Tree[a]:
+  Tree(value, empty_LazyList)
+
+def map_Tree(tree: Tree[a], fn: a -> b) -> Tree[b]:
+  Tree(value, children) = tree
+  mapped_children = to_List_LazyList(children).map_List(child -> (
+    Tree(child_value, child_children) = child
+    _ = child_children
+    Tree(fn(child_value), empty_LazyList)
+  ))
+  Tree(
+    fn(value),
+    from_List_LazyList(mapped_children),
+  )
+
+def flat_map_Tree(tree: Tree[a], fn: a -> Tree[b]) -> Tree[b]:
+  Tree(value, children) = tree
+  Tree(mapped_value, mapped_children) = fn(value)
+  mapped_inputs = to_List_LazyList(children).map_List(child -> (
+    Tree(child_value, _) = child
+    fn(child_value)
+  ))
+  all_children = to_List_LazyList(mapped_children).concat(mapped_inputs)
+  Tree(
+    mapped_value,
+    from_List_LazyList(all_children),
+  )
+
+def unfold_Tree(seed: a, fn: a -> List[a]) -> Tree[a]:
+  Tree(seed, from_List_LazyList(fn(seed).map_List(singleton)))
+
+def expand_Tree(tree: Tree[a], fn: a -> List[a]) -> Tree[a]:
+  Tree(value, children) = tree
+  existing = to_List_LazyList(children)
+  unfolded = fn(value).map_List(v -> unfold_Tree(v, fn))
+  Tree(value, from_List_LazyList(existing.concat(unfolded)))
+
+def prune_Tree(tree: Tree[a]) -> Tree[a]:
+  Tree(value, _) = tree
+  Tree(value, empty_LazyList)

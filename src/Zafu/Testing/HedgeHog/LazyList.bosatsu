@@ -1,0 +1,65 @@
+package Zafu/Testing/HedgeHog/LazyList
+
+from Bosatsu/Lazy import (
+  Lazy,
+  lazy,
+  get_Lazy,
+)
+
+export (
+  LazyList(),
+  empty_LazyList,
+  cons,
+  singleton,
+  from_List,
+  to_List,
+  first,
+  uncons,
+)
+
+enum LazyList[a: +*]:
+  Empty
+  Cons(head: Lazy[a], tail: Lazy[LazyList[a]])
+
+empty_LazyList: forall a. LazyList[a] = Empty
+
+def cons(head: a, tail: Lazy[LazyList[a]]) -> LazyList[a]:
+  Cons(lazy(() -> head), tail)
+
+def singleton(item: a) -> LazyList[a]:
+  cons(item, lazy(() -> empty_LazyList))
+
+def from_List(list: List[a]) -> LazyList[a]:
+  recur list:
+    case []:
+      empty_LazyList
+    case [head, *tail]:
+      Cons(lazy(() -> head), lazy(() -> from_List(tail)))
+
+def to_List(source: LazyList[a]) -> List[a]:
+  def loop_to_list(rem: LazyList[a], rev: List[a], steps: List[Unit]) -> List[a]:
+    loop steps:
+      case []:
+        rev.reverse()
+      case [_, *tail_steps]:
+        match rem:
+          case Empty:
+            rev.reverse()
+          case Cons(head, tail):
+            loop_to_list(get_Lazy(tail), [get_Lazy(head), *rev], tail_steps)
+
+  loop_to_list(source, [], replicate_List(Unit, 4096))
+
+def first(list: LazyList[a]) -> Option[a]:
+  match list:
+    case Empty:
+      None
+    case Cons(head, _):
+      Some(get_Lazy(head))
+
+def uncons(list: LazyList[a]) -> Option[(a, LazyList[a])]:
+  match list:
+    case Empty:
+      None
+    case Cons(head, tail):
+      Some((get_Lazy(head), get_Lazy(tail)))

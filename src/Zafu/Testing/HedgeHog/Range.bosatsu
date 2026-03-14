@@ -1,0 +1,64 @@
+package Zafu/Testing/HedgeHog/Range
+
+from Bosatsu/Rand import (
+  Rand,
+  int_range,
+  const_Rand,
+  map_Rand,
+  one_of,
+)
+
+export (
+  Range,
+  constant_Range,
+  linear_Range,
+  sample_Int,
+  one_of_Int,
+  int8_signed_Range,
+  int16_signed_Range,
+  int32_signed_Range,
+  int64_signed_Range,
+  int128_signed_Range,
+  uint32_Range,
+  pos_int8_Range,
+  pos_int16_Range,
+  pos_int32_Range,
+)
+
+struct Range(lower: Int, upper_exclusive: Int)
+
+def normalize(range: Range) -> Range:
+  Range(lower, upper_exclusive) = range
+  if cmp_Int(upper_exclusive, lower) matches GT:
+    range
+  else:
+    Range(lower, lower.add(1))
+
+def constant_Range(lower: Int, upper_exclusive: Int) -> Range:
+  normalize(Range(lower, upper_exclusive))
+
+def linear_Range(lower: Int, upper_exclusive: Int) -> Range:
+  constant_Range(lower, upper_exclusive)
+
+def sample_Int(range: Range) -> Rand[Int]:
+  Range(lower, upper_exclusive) = normalize(range)
+  span = upper_exclusive.sub(lower)
+  if span.eq_Int(1):
+    const_Rand(lower)
+  else:
+    map_Rand(int_range(span), i -> i.add(lower))
+
+def one_of_Int(first: Range, rest: List[Range]) -> Rand[Int]:
+  one_of(sample_Int(first), rest.map_List(sample_Int))
+
+int8_signed_Range = linear_Range(0.sub(shift_left_Int(1, 7)), shift_left_Int(1, 7))
+int16_signed_Range = linear_Range(0.sub(shift_left_Int(1, 15)), shift_left_Int(1, 15))
+int32_signed_Range = linear_Range(0.sub(shift_left_Int(1, 31)), shift_left_Int(1, 31))
+int64_signed_Range = linear_Range(0.sub(shift_left_Int(1, 63)), shift_left_Int(1, 63))
+int128_signed_Range = linear_Range(0.sub(shift_left_Int(1, 127)), shift_left_Int(1, 127))
+
+uint32_Range = linear_Range(0, shift_left_Int(1, 32))
+
+pos_int8_Range = linear_Range(1, shift_left_Int(1, 8))
+pos_int16_Range = linear_Range(1, shift_left_Int(1, 16))
+pos_int32_Range = linear_Range(1, shift_left_Int(1, 31))
