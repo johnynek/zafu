@@ -50,6 +50,7 @@ export (
   is_empty,
   non_empty,
   concat,
+  concat_lazy,
   cons,
   lazy_singleton,
   cons_take,
@@ -163,6 +164,15 @@ def concat(first: LazyList[a], second: LazyList[a]) -> LazyList[a]:
       second
     case Cons(head, tail):
       Cons(head, lazy(() -> concat(get_Lazy(tail), second)))
+
+# Concatenates two lazy lists while preserving laziness.
+# Empty inputs are returned directly without rebuilding.
+def concat_lazy(first: LazyList[a], second: Lazy[LazyList[a]]) -> LazyList[a]:
+  recur first:
+    case Empty:
+      get_Lazy(second)
+    case Cons(head, tail):
+      Cons(head, lazy(() -> concat_lazy(get_Lazy(tail), second)))
 
 # Strict left fold over values in iteration order.
 def foldl(ll: LazyList[a], init: b, fn: (b, a) -> b) -> b:

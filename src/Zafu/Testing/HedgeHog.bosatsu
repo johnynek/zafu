@@ -16,6 +16,9 @@ from Bosatsu/Num/Float64 import (
   is_finite,
   subf,
 )
+from Bosatsu/Lazy import (
+  get_Lazy,
+)
 from Bosatsu/Rand import (
   Rand,
   int_range,
@@ -28,13 +31,14 @@ from Bosatsu/Rand import (
   sequence_Rand,
   run_Rand,
 )
-from Zafu/Testing/HedgeHog/LazyList import (
+from Zafu/Collection/LazyList import (
   LazyList,
   empty_LazyList,
-  singleton as singleton_LazyList,
+  lazy_singleton,
   from_List as from_List_LazyList,
   to_List as to_List_LazyList,
-  first as first_LazyList,
+  map as map_LazyList,
+  filter as filter_native_LazyList,
   uncons as uncons_LazyList,
 )
 from Zafu/Testing/HedgeHog/Range import (
@@ -81,6 +85,16 @@ export (
   run_Prop,
 )
 
+def singleton_LazyList(item: a) -> LazyList[a]:
+  lazy_singleton(() -> item)
+
+def first_LazyList(list: LazyList[a]) -> Option[a]:
+  match uncons_LazyList(list):
+    case None:
+      None
+    case Some((head, _)):
+      Some(get_Lazy(head))
+
 struct Gen(rand: Rand[a], shrink: a -> LazyList[a])
 
 def gen_Rand(gen: Gen[a]) -> Rand[a]:
@@ -101,7 +115,7 @@ def const_Gen(value: a) -> Gen[a]:
 def map_Gen(gen: Gen[a], to: a -> b, from: b -> a) -> Gen[b]:
   Gen(
     map_Rand(gen.gen_Rand(), to),
-    b -> from_List_LazyList(to_List_LazyList(gen.shrink_Gen()(from(b))).map_List(to)),
+    b -> map_LazyList(gen.shrink_Gen()(from(b)), to),
   )
 
 # Preserve shrinking for flat_map by requiring the result shrinker.
@@ -174,10 +188,11 @@ def first_failing_steps(values: LazyList[a], test_fn: a -> Test, steps: List[Uni
         case None:
           None
         case Some((head, rest)):
-          if test_fn(head).test_passes():
-            first_failing_steps(rest, test_fn, tail)
+          value = get_Lazy(head)
+          if test_fn(value).test_passes():
+            first_failing_steps(get_Lazy(rest), test_fn, tail)
           else:
-            Some(head)
+            Some(value)
 
 def first_failing(values: LazyList[a], test_fn: a -> Test) -> Option[a]:
   first_failing_steps(values, test_fn, replicate_List(Unit, 4096))
@@ -254,7 +269,7 @@ def sign_Int(i: Int) -> Int:
     1
 
 def filter_LazyList(list: LazyList[a], pred: a -> Bool) -> LazyList[a]:
-  from_List_LazyList([value for value in to_List_LazyList(list) if pred(value)])
+  filter_native_LazyList(list, pred)
 
 def filter_map_LazyList(list: LazyList[a], fn: a -> Option[b]) -> LazyList[b]:
   mapped = to_List_LazyList(list).foldl_List([], (acc, item) -> (
