@@ -64,9 +64,9 @@ from Zafu/Abstract/Semigroup import (
   semigroup_from_combine,
   semigroup_specialized,
   combine as combine_Semigroup,
+  combine_map_all as combine_map_all_Semigroup,
   combine_n as combine_n_Semigroup,
   combine_n_positive_from_combine,
-  combine_all_option as combine_all_option_Semigroup,
 )
 
 from Zafu/Abstract/Monoid import (
@@ -75,6 +75,7 @@ from Zafu/Abstract/Monoid import (
   monoid_to_semigroup,
   empty as empty_Monoid,
   combine as combine_Monoid,
+  combine_map_all as combine_map_all_Monoid,
   combine_all as combine_all_Monoid,
 )
 from Zafu/Abstract/Foldable import (
@@ -464,17 +465,10 @@ ord_String: Ord[String] = ord_from_cmp(cmp_String)
 eq_String: Eq[String] = ord_to_eq(ord_String)
 hash_String: Hash[String] = hash_specialized(hash_string_value, eq_String)
 
-def combine_all_option_Unit(items: List[Unit]) -> Option[Unit]:
-  match items:
-    case []:
-      None
-    case _:
-      Some(())
-
 semigroup_Unit: Semigroup[Unit] = semigroup_specialized(
   (_, _) -> (),
   (_, _) -> (),
-  combine_all_option_Unit,
+  (head, _, fn) -> fn(head),
 )
 monoid_Unit: Monoid[Unit] = monoid_from_semigroup((), semigroup_Unit)
 
@@ -485,49 +479,47 @@ def combine_n_positive_or_self(semigroup_item: Semigroup[a], value: a, n: Int) -
     case None:
       value
 
-def combine_all_option_Bool_and(items: List[Bool]) -> Option[Bool]:
-  def go(rem: List[Bool]) -> Option[Bool]:
+def combine_map_all_Bool_and(head: a, tail: List[a], fn: a -> Bool) -> Bool:
+  def go(rem: List[a]) -> Bool:
     loop rem:
       case []:
-        Some(True)
-      case [head, *tail]:
-        if head:
-          go(tail)
+        True
+      case [next, *rest]:
+        if fn(next):
+          go(rest)
         else:
-          Some(False)
-  match items:
-    case []:
-      None
-    case _:
-      go(items)
+          False
+  if fn(head):
+    go(tail)
+  else:
+    False
 
-def combine_all_option_Bool_or(items: List[Bool]) -> Option[Bool]:
-  def go(rem: List[Bool]) -> Option[Bool]:
+def combine_map_all_Bool_or(head: a, tail: List[a], fn: a -> Bool) -> Bool:
+  def go(rem: List[a]) -> Bool:
     loop rem:
       case []:
-        Some(False)
-      case [head, *tail]:
-        if head:
-          Some(True)
+        False
+      case [next, *rest]:
+        if fn(next):
+          True
         else:
-          go(tail)
-  match items:
-    case []:
-      None
-    case _:
-      go(items)
+          go(rest)
+  if fn(head):
+    True
+  else:
+    go(tail)
 
 semigroup_Bool_and: Semigroup[Bool] = semigroup_specialized(
   and_Bool,
   (value, _) -> value,
-  combine_all_option_Bool_and,
+  combine_map_all_Bool_and,
 )
 monoid_Bool_and: Monoid[Bool] = monoid_from_semigroup(True, semigroup_Bool_and)
 
 semigroup_Bool_or: Semigroup[Bool] = semigroup_specialized(
   or_Bool,
   (value, _) -> value,
-  combine_all_option_Bool_or,
+  combine_map_all_Bool_or,
 )
 monoid_Bool_or: Monoid[Bool] = monoid_from_semigroup(False, semigroup_Bool_or)
 
@@ -546,10 +538,9 @@ semigroup_String: Semigroup[String] = (
     semigroup_specialized(
         combine,
         (str, n) -> combine_n_positive_from_combine(combine, str, n),
-        (strs) -> (
-            match strs:
-                case []: None
-                case not_empty: Some(concat_String(not_empty))
+        (head, tail, fn) -> (
+            parts_rev = tail.foldl_List([fn(head)], (acc, item) -> [fn(item), *acc])
+            concat_String(parts_rev.reverse())
         )
     )
 )
@@ -590,18 +581,19 @@ def hash_Option(hash_item: Hash[a]) -> Hash[Option[a]]:
   ), eq_Option(eq_item))
 
 def semigroup_Option(semigroup_item: Semigroup[a]) -> Semigroup[Option[a]]:
+  combine_option = (left, right) -> (
+    match (left, right):
+      case (Some(left_v), Some(right_v)):
+        Some(combine_Semigroup(semigroup_item, left_v, right_v))
+      case (Some(_), None):
+        left
+      case (None, Some(_)):
+        right
+      case (None, None):
+        None
+  )
   semigroup_specialized(
-    (left, right) -> (
-      match (left, right):
-        case (Some(left_v), Some(right_v)):
-          Some(combine_Semigroup(semigroup_item, left_v, right_v))
-        case (Some(_), None):
-          left
-        case (None, Some(_)):
-          right
-        case (None, None):
-          None
-    ),
+    combine_option,
     (value, n) -> (
       match value:
         case None:
@@ -613,23 +605,26 @@ def semigroup_Option(semigroup_item: Semigroup[a]) -> Semigroup[Option[a]]:
             case None:
               None
     ),
-    (items) -> (
-      match items:
+    (head, tail, fn) -> (
+      present_rev = tail.foldl_List(
+        match fn(head):
+          case None:
+            []
+          case Some(item):
+            [item],
+        (acc, item) -> (
+          match fn(item):
+            case None:
+              acc
+            case Some(mapped_item):
+              [mapped_item, *acc]
+        ),
+      )
+      match present_rev.reverse():
         case []:
           None
-        case _:
-          present_rev = items.foldl_List([], (acc, next) -> (
-            match next:
-              case None:
-                acc
-              case Some(item):
-                [item, *acc]
-          ))
-          match combine_all_option_Semigroup(semigroup_item, present_rev.reverse()):
-            case Some(combined):
-              Some(Some(combined))
-            case None:
-              Some(None)
+        case [present_head, *present_tail]:
+          Some(combine_map_all_Semigroup(semigroup_item, present_head, present_tail, item -> item))
     ),
   )
 
@@ -651,22 +646,17 @@ def hash_List(hash_item: Hash[a]) -> Hash[List[a]]:
 
 list_concat_semigroup: Semigroup[List[a]] = semigroup_from_combine((left, right) -> left.concat(right))
 
-def combine_all_option_List(items: List[List[a]]) -> Option[List[a]]:
-  match items:
-    case []:
-      None
-    case _:
-      # Avoid repeated left-associated concat, which is quadratic.
-      chunks_rev = items.foldl_List([], (acc, chunk) -> [chunk, *acc])
-      flattened = chunks_rev.foldl_List([], (acc, chunk) -> (
-        chunk.reverse().foldl_List(acc, (chunk_acc, item) -> [item, *chunk_acc])
-      ))
-      Some(flattened)
+def combine_map_all_List(head: b, tail: List[b], fn: b -> List[a]) -> List[a]:
+  def prepend_chunk_reverse(chunk: List[a], rev_total: List[a]) -> List[a]:
+    chunk.foldl_List(rev_total, (acc, item) -> [item, *acc])
+  # Build reverse of the final concatenation in one pass, then reverse once.
+  rev_total = tail.foldl_List(prepend_chunk_reverse(fn(head), []), (acc, item) -> prepend_chunk_reverse(fn(item), acc))
+  rev_total.reverse()
 
 semigroup_List: Semigroup[List[a]] = semigroup_specialized(
   (left, right) -> left.concat(right),
   (value, n) -> combine_n_positive_or_self(list_concat_semigroup, value, n),
-  combine_all_option_List,
+  combine_map_all_List,
 )
 monoid_List: Monoid[List[a]] = monoid_from_semigroup([], semigroup_List)
 
@@ -704,7 +694,7 @@ def foldr_iter(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterSt
 foldable_List: Foldable[List] = foldable_specialized(
   foldl_List,
   foldr_List,
-  (items, monoid, fn) -> combine_all_Monoid(monoid, items.map_List(fn)),
+  (items, monoid, fn) -> combine_map_all_Monoid(monoid, items, fn),
   foldl_iter,
   foldr_iter,
   is_empty_List,
@@ -2532,12 +2522,13 @@ def semigroup_Tuple1(semigroup1: Semigroup[a1]) -> Semigroup[Tuple1[a1]]:
     ((Tuple1(value1)), n) -> (
       Tuple1(combine_n_positive_or_self(semigroup1, value1, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
+    (head, tail, fn) -> (
+      Tuple1(head1) = fn(head)
+      tail1_rev = tail.foldl_List([], (acc, item) -> (
+        Tuple1(item1) = fn(item)
+        [item1, *acc]
+      ))
+      Tuple1(combine_map_all_Semigroup(semigroup1, head1, tail1_rev.reverse(), item -> item))
     ),
   )
 
@@ -2550,12 +2541,17 @@ def semigroup_Tuple2(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2]) -> Se
     ((Tuple2(value1, value2)), n) -> (
       Tuple2(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
+    (head, tail, fn) -> (
+      (head1, head2) = fn(head)
+      (tail1_rev, tail2_rev) = tail.foldl_List(([], []), (acc, item) -> (
+        (acc1, acc2) = acc
+        (item1, item2) = fn(item)
+        ([item1, *acc1], [item2, *acc2])
+      ))
+      Tuple2(
+        combine_map_all_Semigroup(semigroup1, head1, tail1_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup2, head2, tail2_rev.reverse(), item -> item),
+      )
     ),
   )
 
@@ -2568,12 +2564,18 @@ def semigroup_Tuple3(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
     ((Tuple3(value1, value2, value3)), n) -> (
       Tuple3(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
+    (head, tail, fn) -> (
+      (head1, head2, head3) = fn(head)
+      (tail1_rev, tail2_rev, tail3_rev) = tail.foldl_List(([], [], []), (acc, item) -> (
+        (acc1, acc2, acc3) = acc
+        (item1, item2, item3) = fn(item)
+        ([item1, *acc1], [item2, *acc2], [item3, *acc3])
+      ))
+      Tuple3(
+        combine_map_all_Semigroup(semigroup1, head1, tail1_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup2, head2, tail2_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup3, head3, tail3_rev.reverse(), item -> item),
+      )
     ),
   )
 
@@ -2586,12 +2588,19 @@ def semigroup_Tuple4(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
     ((Tuple4(value1, value2, value3, value4)), n) -> (
       Tuple4(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
+    (head, tail, fn) -> (
+      (head1, head2, head3, head4) = fn(head)
+      (tail1_rev, tail2_rev, tail3_rev, tail4_rev) = tail.foldl_List(([], [], [], []), (acc, item) -> (
+        (acc1, acc2, acc3, acc4) = acc
+        (item1, item2, item3, item4) = fn(item)
+        ([item1, *acc1], [item2, *acc2], [item3, *acc3], [item4, *acc4])
+      ))
+      Tuple4(
+        combine_map_all_Semigroup(semigroup1, head1, tail1_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup2, head2, tail2_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup3, head3, tail3_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup4, head4, tail4_rev.reverse(), item -> item),
+      )
     ),
   )
 
@@ -2604,12 +2613,20 @@ def semigroup_Tuple5(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
     ((Tuple5(value1, value2, value3, value4, value5)), n) -> (
       Tuple5(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
+    (head, tail, fn) -> (
+      (head1, head2, head3, head4, head5) = fn(head)
+      (tail1_rev, tail2_rev, tail3_rev, tail4_rev, tail5_rev) = tail.foldl_List(([], [], [], [], []), (acc, item) -> (
+        (acc1, acc2, acc3, acc4, acc5) = acc
+        (item1, item2, item3, item4, item5) = fn(item)
+        ([item1, *acc1], [item2, *acc2], [item3, *acc3], [item4, *acc4], [item5, *acc5])
+      ))
+      Tuple5(
+        combine_map_all_Semigroup(semigroup1, head1, tail1_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup2, head2, tail2_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup3, head3, tail3_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup4, head4, tail4_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup5, head5, tail5_rev.reverse(), item -> item),
+      )
     ),
   )
 
@@ -2622,13 +2639,7 @@ def semigroup_Tuple6(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
     ((Tuple6(value1, value2, value3, value4, value5, value6)), n) -> (
       Tuple6(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple7(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7]) -> Semigroup[Tuple7[a1, a2, a3, a4, a5, a6, a7]]:
@@ -2640,13 +2651,7 @@ def semigroup_Tuple7(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
     ((Tuple7(value1, value2, value3, value4, value5, value6, value7)), n) -> (
       Tuple7(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple8(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8]) -> Semigroup[Tuple8[a1, a2, a3, a4, a5, a6, a7, a8]]:
@@ -2658,13 +2663,7 @@ def semigroup_Tuple8(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
     ((Tuple8(value1, value2, value3, value4, value5, value6, value7, value8)), n) -> (
       Tuple8(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple9(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9]) -> Semigroup[Tuple9[a1, a2, a3, a4, a5, a6, a7, a8, a9]]:
@@ -2676,13 +2675,7 @@ def semigroup_Tuple9(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
     ((Tuple9(value1, value2, value3, value4, value5, value6, value7, value8, value9)), n) -> (
       Tuple9(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple10(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10]) -> Semigroup[Tuple10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]]:
@@ -2694,13 +2687,7 @@ def semigroup_Tuple10(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple10(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10)), n) -> (
       Tuple10(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple11(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11]) -> Semigroup[Tuple11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]]:
@@ -2712,13 +2699,7 @@ def semigroup_Tuple11(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple11(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11)), n) -> (
       Tuple11(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple12(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12]) -> Semigroup[Tuple12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]]:
@@ -2730,13 +2711,7 @@ def semigroup_Tuple12(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple12(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12)), n) -> (
       Tuple12(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple13(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13]) -> Semigroup[Tuple13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]]:
@@ -2748,13 +2723,7 @@ def semigroup_Tuple13(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple13(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13)), n) -> (
       Tuple13(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple14(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14]) -> Semigroup[Tuple14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]]:
@@ -2766,13 +2735,7 @@ def semigroup_Tuple14(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple14(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14)), n) -> (
       Tuple14(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple15(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15]) -> Semigroup[Tuple15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]]:
@@ -2784,13 +2747,7 @@ def semigroup_Tuple15(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple15(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15)), n) -> (
       Tuple15(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple16(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16]) -> Semigroup[Tuple16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]]:
@@ -2802,13 +2759,7 @@ def semigroup_Tuple16(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple16(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16)), n) -> (
       Tuple16(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple17(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17]) -> Semigroup[Tuple17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]]:
@@ -2820,13 +2771,7 @@ def semigroup_Tuple17(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple17(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17)), n) -> (
       Tuple17(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple18(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18]) -> Semigroup[Tuple18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]]:
@@ -2838,13 +2783,7 @@ def semigroup_Tuple18(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple18(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18)), n) -> (
       Tuple18(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple19(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19]) -> Semigroup[Tuple19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]]:
@@ -2856,13 +2795,7 @@ def semigroup_Tuple19(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple19(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19)), n) -> (
       Tuple19(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple20(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20]) -> Semigroup[Tuple20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]]:
@@ -2874,13 +2807,7 @@ def semigroup_Tuple20(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple20(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20)), n) -> (
       Tuple20(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple21(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21]) -> Semigroup[Tuple21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]]:
@@ -2892,13 +2819,7 @@ def semigroup_Tuple21(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple21(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21)), n) -> (
       Tuple21(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n), combine_n_positive_or_self(semigroup21, value21, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple22(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22]) -> Semigroup[Tuple22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]]:
@@ -2910,13 +2831,7 @@ def semigroup_Tuple22(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple22(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22)), n) -> (
       Tuple22(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n), combine_n_positive_or_self(semigroup21, value21, n), combine_n_positive_or_self(semigroup22, value22, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple23(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23]) -> Semigroup[Tuple23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]]:
@@ -2928,13 +2843,7 @@ def semigroup_Tuple23(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple23(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23)), n) -> (
       Tuple23(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n), combine_n_positive_or_self(semigroup21, value21, n), combine_n_positive_or_self(semigroup22, value22, n), combine_n_positive_or_self(semigroup23, value23, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple24(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24]) -> Semigroup[Tuple24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]]:
@@ -2946,13 +2855,7 @@ def semigroup_Tuple24(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple24(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24)), n) -> (
       Tuple24(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n), combine_n_positive_or_self(semigroup21, value21, n), combine_n_positive_or_self(semigroup22, value22, n), combine_n_positive_or_self(semigroup23, value23, n), combine_n_positive_or_self(semigroup24, value24, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple25(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25]) -> Semigroup[Tuple25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]]:
@@ -2964,13 +2867,7 @@ def semigroup_Tuple25(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple25(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25)), n) -> (
       Tuple25(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n), combine_n_positive_or_self(semigroup21, value21, n), combine_n_positive_or_self(semigroup22, value22, n), combine_n_positive_or_self(semigroup23, value23, n), combine_n_positive_or_self(semigroup24, value24, n), combine_n_positive_or_self(semigroup25, value25, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple26(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26]) -> Semigroup[Tuple26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]]:
@@ -2982,13 +2879,7 @@ def semigroup_Tuple26(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple26(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26)), n) -> (
       Tuple26(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n), combine_n_positive_or_self(semigroup21, value21, n), combine_n_positive_or_self(semigroup22, value22, n), combine_n_positive_or_self(semigroup23, value23, n), combine_n_positive_or_self(semigroup24, value24, n), combine_n_positive_or_self(semigroup25, value25, n), combine_n_positive_or_self(semigroup26, value26, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple27(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26], semigroup27: Semigroup[a27]) -> Semigroup[Tuple27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]]:
@@ -3000,13 +2891,7 @@ def semigroup_Tuple27(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple27(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26, value27)), n) -> (
       Tuple27(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n), combine_n_positive_or_self(semigroup21, value21, n), combine_n_positive_or_self(semigroup22, value22, n), combine_n_positive_or_self(semigroup23, value23, n), combine_n_positive_or_self(semigroup24, value24, n), combine_n_positive_or_self(semigroup25, value25, n), combine_n_positive_or_self(semigroup26, value26, n), combine_n_positive_or_self(semigroup27, value27, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple28(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26], semigroup27: Semigroup[a27], semigroup28: Semigroup[a28]) -> Semigroup[Tuple28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]]:
@@ -3018,13 +2903,7 @@ def semigroup_Tuple28(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple28(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26, value27, value28)), n) -> (
       Tuple28(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n), combine_n_positive_or_self(semigroup21, value21, n), combine_n_positive_or_self(semigroup22, value22, n), combine_n_positive_or_self(semigroup23, value23, n), combine_n_positive_or_self(semigroup24, value24, n), combine_n_positive_or_self(semigroup25, value25, n), combine_n_positive_or_self(semigroup26, value26, n), combine_n_positive_or_self(semigroup27, value27, n), combine_n_positive_or_self(semigroup28, value28, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple29(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26], semigroup27: Semigroup[a27], semigroup28: Semigroup[a28], semigroup29: Semigroup[a29]) -> Semigroup[Tuple29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]]:
@@ -3036,13 +2915,7 @@ def semigroup_Tuple29(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple29(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26, value27, value28, value29)), n) -> (
       Tuple29(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n), combine_n_positive_or_self(semigroup21, value21, n), combine_n_positive_or_self(semigroup22, value22, n), combine_n_positive_or_self(semigroup23, value23, n), combine_n_positive_or_self(semigroup24, value24, n), combine_n_positive_or_self(semigroup25, value25, n), combine_n_positive_or_self(semigroup26, value26, n), combine_n_positive_or_self(semigroup27, value27, n), combine_n_positive_or_self(semigroup28, value28, n), combine_n_positive_or_self(semigroup29, value29, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple30(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26], semigroup27: Semigroup[a27], semigroup28: Semigroup[a28], semigroup29: Semigroup[a29], semigroup30: Semigroup[a30]) -> Semigroup[Tuple30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]]:
@@ -3054,13 +2927,7 @@ def semigroup_Tuple30(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple30(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26, value27, value28, value29, value30)), n) -> (
       Tuple30(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n), combine_n_positive_or_self(semigroup21, value21, n), combine_n_positive_or_self(semigroup22, value22, n), combine_n_positive_or_self(semigroup23, value23, n), combine_n_positive_or_self(semigroup24, value24, n), combine_n_positive_or_self(semigroup25, value25, n), combine_n_positive_or_self(semigroup26, value26, n), combine_n_positive_or_self(semigroup27, value27, n), combine_n_positive_or_self(semigroup28, value28, n), combine_n_positive_or_self(semigroup29, value29, n), combine_n_positive_or_self(semigroup30, value30, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple31(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26], semigroup27: Semigroup[a27], semigroup28: Semigroup[a28], semigroup29: Semigroup[a29], semigroup30: Semigroup[a30], semigroup31: Semigroup[a31]) -> Semigroup[Tuple31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]]:
@@ -3072,13 +2939,7 @@ def semigroup_Tuple31(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple31(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26, value27, value28, value29, value30, value31)), n) -> (
       Tuple31(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n), combine_n_positive_or_self(semigroup21, value21, n), combine_n_positive_or_self(semigroup22, value22, n), combine_n_positive_or_self(semigroup23, value23, n), combine_n_positive_or_self(semigroup24, value24, n), combine_n_positive_or_self(semigroup25, value25, n), combine_n_positive_or_self(semigroup26, value26, n), combine_n_positive_or_self(semigroup27, value27, n), combine_n_positive_or_self(semigroup28, value28, n), combine_n_positive_or_self(semigroup29, value29, n), combine_n_positive_or_self(semigroup30, value30, n), combine_n_positive_or_self(semigroup31, value31, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def semigroup_Tuple32(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6], semigroup7: Semigroup[a7], semigroup8: Semigroup[a8], semigroup9: Semigroup[a9], semigroup10: Semigroup[a10], semigroup11: Semigroup[a11], semigroup12: Semigroup[a12], semigroup13: Semigroup[a13], semigroup14: Semigroup[a14], semigroup15: Semigroup[a15], semigroup16: Semigroup[a16], semigroup17: Semigroup[a17], semigroup18: Semigroup[a18], semigroup19: Semigroup[a19], semigroup20: Semigroup[a20], semigroup21: Semigroup[a21], semigroup22: Semigroup[a22], semigroup23: Semigroup[a23], semigroup24: Semigroup[a24], semigroup25: Semigroup[a25], semigroup26: Semigroup[a26], semigroup27: Semigroup[a27], semigroup28: Semigroup[a28], semigroup29: Semigroup[a29], semigroup30: Semigroup[a30], semigroup31: Semigroup[a31], semigroup32: Semigroup[a32]) -> Semigroup[Tuple32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]]:
@@ -3090,13 +2951,7 @@ def semigroup_Tuple32(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semi
     ((Tuple32(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26, value27, value28, value29, value30, value31, value32)), n) -> (
       Tuple32(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n), combine_n_positive_or_self(semigroup6, value6, n), combine_n_positive_or_self(semigroup7, value7, n), combine_n_positive_or_self(semigroup8, value8, n), combine_n_positive_or_self(semigroup9, value9, n), combine_n_positive_or_self(semigroup10, value10, n), combine_n_positive_or_self(semigroup11, value11, n), combine_n_positive_or_self(semigroup12, value12, n), combine_n_positive_or_self(semigroup13, value13, n), combine_n_positive_or_self(semigroup14, value14, n), combine_n_positive_or_self(semigroup15, value15, n), combine_n_positive_or_self(semigroup16, value16, n), combine_n_positive_or_self(semigroup17, value17, n), combine_n_positive_or_self(semigroup18, value18, n), combine_n_positive_or_self(semigroup19, value19, n), combine_n_positive_or_self(semigroup20, value20, n), combine_n_positive_or_self(semigroup21, value21, n), combine_n_positive_or_self(semigroup22, value22, n), combine_n_positive_or_self(semigroup23, value23, n), combine_n_positive_or_self(semigroup24, value24, n), combine_n_positive_or_self(semigroup25, value25, n), combine_n_positive_or_self(semigroup26, value26, n), combine_n_positive_or_self(semigroup27, value27, n), combine_n_positive_or_self(semigroup28, value28, n), combine_n_positive_or_self(semigroup29, value29, n), combine_n_positive_or_self(semigroup30, value30, n), combine_n_positive_or_self(semigroup31, value31, n), combine_n_positive_or_self(semigroup32, value32, n))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          Some(tail.foldl_List(head, combine_fn))
-    ),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
   )
 
 def monoid_Tuple1(monoid1: Monoid[a1]) -> Monoid[Tuple1[a1]]:
@@ -3377,6 +3232,10 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   Assertion(
     combine_all_Monoid(monoid_List, [[], [1, 2], [3, 4]]) matches [1, 2, 3, 4],
     "monoid_List combine_all",
+  ),
+  Assertion(
+    combine_map_all_Monoid(monoid_List, [1, 2, 3], value -> [value, value]) matches [1, 1, 2, 2, 3, 3],
+    "monoid_List combine_map_all",
   ),
   (
     tuple2_monoid = monoid_Tuple2(monoid_Int_add, monoid_Bool_or)

@@ -11,6 +11,8 @@ export (
   semigroup_from_combine,
   semigroup_specialized,
   combine,
+  combine_map_all,
+  combine_map_all_option,
   combine_all_option,
   combine_tree_option,
   combine_fn,
@@ -28,7 +30,7 @@ export (
 struct Semigroup[a](
   combine_fn: (a, a) -> a,
   combine_n_positive_fn: (a, Int) -> a,
-  combine_all_option_fn: List[a] -> Option[a],
+  combine_map_all_fn: forall b. (b, List[b], b -> a) -> a,
 )
 
 # Default repeated-combine implementation with logarithmic combine count.
@@ -47,14 +49,8 @@ def combine_n_positive_from_combine(combine_fn: (a, a) -> a, value: a, n: Int) -
         go(div(rem, 2), next_total, combine_fn(power, power))
   go(n.sub(1), value, value)
 
-def combine_all_option_from_combine(combine_fn: (a, a) -> a, items: List[a]) -> Option[a]:
-  items.foldl_List(None, (state, item) -> (
-    match state:
-      case None:
-        Some(item)
-      case Some(acc):
-        Some(combine_fn(acc, item))
-  ))
+def combine_map_all_from_combine(combine_fn: (a, a) -> a, head: b, tail: List[b], fn: b -> a) -> a:
+  tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item)))
 
 def split_at_List(items: List[a], size: Int) -> (List[a], List[a]):
   def go(items: List[a], size: Int, rev_front: List[a]) -> (List[a], List[a]):
@@ -71,16 +67,16 @@ def split_at_List(items: List[a], size: Int) -> (List[a], List[a]):
 def semigroup_specialized(
   combine_fn: (a, a) -> a,
   combine_n_positive_fn: (a, Int) -> a,
-  combine_all_option_fn: List[a] -> Option[a],
+  combine_map_all_fn: forall b. (b, List[b], b -> a) -> a,
 ) -> Semigroup[a]:
-  Semigroup(combine_fn, combine_n_positive_fn, combine_all_option_fn)
+  Semigroup(combine_fn, combine_n_positive_fn, combine_map_all_fn)
 
 # Constructor from combine with helper operations derived.
 def semigroup_from_combine(combine_fn: (a, a) -> a) -> Semigroup[a]:
   semigroup_specialized(
     combine_fn,
     (value, n) -> combine_n_positive_from_combine(combine_fn, value, n),
-    (items) -> combine_all_option_from_combine(combine_fn, items),
+    (head, tail, fn) -> combine_map_all_from_combine(combine_fn, head, tail, fn),
   )
 
 def combine(inst: Semigroup[a], left: a, right: a) -> a:
@@ -91,6 +87,17 @@ def combine_fn(inst: Semigroup[a]) -> (a, a) -> a:
   Semigroup(fn, _, _) = inst
   fn
 
+def combine_map_all(inst: Semigroup[a], head: b, tail: List[b], fn: b -> a) -> a:
+  Semigroup(_, _, combine_map_all_fn) = inst
+  combine_map_all_fn(head, tail, fn)
+
+def combine_map_all_option(inst: Semigroup[a], items: List[b], fn: b -> a) -> Option[a]:
+  match items:
+    case []:
+      None
+    case [head, *tail]:
+      Some(combine_map_all(inst, head, tail, fn))
+
 def combine_n(inst: Semigroup[a], value: a, n: Int) -> Option[a]:
   if cmp_Int(n, 0) matches GT:
     Semigroup(_, combine_n_positive_fn, _) = inst
@@ -99,8 +106,7 @@ def combine_n(inst: Semigroup[a], value: a, n: Int) -> Option[a]:
     None
 
 def combine_all_option(inst: Semigroup[a], items: List[a]) -> Option[a]:
-  Semigroup(_, _, combine_all_option_fn) = inst
-  combine_all_option_fn(items)
+  combine_map_all_option(inst, items, item -> item)
 
 # combine this list by forming a balanced tree. Useful for combine operations
 # that don't decrease size
@@ -140,17 +146,25 @@ def maybe_combine_right(inst: Semigroup[a], left: a, right_opt: Option[a]) -> a:
       inst.combine(left, right)
 
 def reverse_Semigroup(inst: Semigroup[a]) -> Semigroup[a]:
-  Semigroup { combine_fn, combine_n_positive_fn, combine_all_option_fn, ... } = inst
+  Semigroup { combine_fn, combine_n_positive_fn, combine_map_all_fn, ... } = inst
   # Keep specialized combine_n for repeated-value behavior; reverse list input
   # so combine_all_option matches the flipped argument order.
   semigroup_specialized(
     (left, right) -> combine_fn(right, left),
     combine_n_positive_fn,
-    (items) -> combine_all_option_fn(items.reverse()),
+    (head, tail, fn) -> (
+      # Reverse input order so mapped bulk combine follows flipped Semigroup order.
+      rev_items = tail.foldl_List([head], (acc, item) -> [item, *acc])
+      match rev_items:
+        case [rev_head, *rev_tail]:
+          combine_map_all_fn(rev_head, rev_tail, fn)
+        case []:
+          fn(head)
+    ),
   )
 
 def intercalate(inst: Semigroup[a], middle: a) -> Semigroup[a]:
-  Semigroup { combine_fn, combine_n_positive_fn, combine_all_option_fn, ... } = inst
+  Semigroup { combine_fn, combine_n_positive_fn, ... } = inst
   semigroup_specialized(
     (left, right) -> combine_fn(combine_fn(left, middle), right),
     (value, n) -> (
@@ -160,13 +174,8 @@ def intercalate(inst: Semigroup[a], middle: a) -> Semigroup[a]:
         tail_value = combine_fn(middle, value)
         combine_fn(value, combine_n_positive_fn(tail_value, n.sub(1)))
     ),
-    (items) -> (
-      match items:
-        case []:
-          None
-        case [head, *tail]:
-          interleaved_rev = tail.foldl_List([head], (acc, item) -> [item, middle, *acc])
-          combine_all_option_fn(interleaved_rev.reverse())
+    (head, tail, fn) -> (
+      tail.foldl_List(fn(head), (acc, item) -> combine_fn(combine_fn(acc, middle), fn(item)))
     ),
   )
 
@@ -176,25 +185,13 @@ def reverse(inst: Semigroup[a]) -> Semigroup[a]:
 first: Semigroup[a] = semigroup_specialized(
   (left, _) -> left,
   (value, _) -> value,
-  (items) -> (
-    match items:
-      case []:
-        None
-      case [head, *_]:
-        Some(head)
-  ),
+  (head, _, fn) -> fn(head),
 )
 
 last: Semigroup[a] = semigroup_specialized(
   (_, right) -> right,
   (value, _) -> value,
-  (items) -> (
-    match items:
-      case []:
-        None
-      case [head, *tail]:
-        Some(tail.foldl_List(head, (_, item) -> item))
-  ),
+  (head, tail, fn) -> tail.foldl_List(fn(head), (_, item) -> fn(item)),
 )
 
 def laws_Semigroup(inst: Semigroup[a], eq_inst: Eq[a], x: a, y: a, z: a) -> Test:
@@ -219,11 +216,39 @@ tests = TestSuite("Semigroup tests", [
   ),
   (
     int_add = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(int_add.combine_map_all(1, [2, 3], x -> x.mul(2)).eq_Int(12), "combine_map_all")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(int_add.combine_map_all_option([1, 2, 3], x -> x.mul(2)) matches Some(12), "combine_map_all_option")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(int_add.combine_map_all_option([], x -> x.mul(2)) matches None, "combine_map_all_option empty")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
     Assertion(int_add.combine_all_option([]) matches None, "combine_all_option empty")
   ),
   (
     int_add = semigroup_from_combine((left, right) -> left.add(right))
     Assertion(int_add.combine_all_option([1, 2, 3]) matches Some(6), "combine_all_option non-empty")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    Assertion(
+      match (
+        int_add.combine_all_option([1, 2, 3]),
+        int_add.combine_map_all_option([1, 2, 3], item -> item),
+      ):
+        case (Some(left), Some(right)):
+          left.eq_Int(right)
+        case (None, None):
+          True
+        case _:
+          False,
+      "combine_all_option coherence",
+    )
   ),
   (
     int_add = semigroup_from_combine((left, right) -> left.add(right))
@@ -244,9 +269,19 @@ tests = TestSuite("Semigroup tests", [
     Assertion(reversed.combine_n([1], 4) matches Some([1, 1, 1, 1]), "reverse combine_n repeated values")
   ),
   (
+    list_sg = semigroup_from_combine((left, right) -> left.concat(right))
+    reversed = list_sg.reverse()
+    Assertion(reversed.combine_all_option([[1], [2], [3]]) matches Some([3, 2, 1]), "reverse combine_all_option")
+  ),
+  (
     int_add = semigroup_from_combine((left, right) -> left.add(right))
     inter = int_add.intercalate(10)
     Assertion(inter.combine(1, 2).eq_Int(13), "intercalate")
+  ),
+  (
+    int_add = semigroup_from_combine((left, right) -> left.add(right))
+    inter = int_add.intercalate(10)
+    Assertion(inter.combine_all_option([1, 2, 3]) matches Some(26), "intercalate combine_all_option")
   ),
   (
     first_int = first

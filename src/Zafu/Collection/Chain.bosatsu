@@ -64,7 +64,7 @@ from Zafu/Abstract/Monoid import (
   Monoid,
   empty as empty_monoid,
   combine as combine_monoid,
-  combine_all as combine_all_monoid,
+  combine_map_all as combine_map_all_monoid,
 )
 from Zafu/Abstract/Instances/Predef import (
   foldable_Array,
@@ -359,7 +359,7 @@ def fold_map(chain: Chain[a], monoid: Monoid[b], fn: a -> b) -> b:
             array_total = fold_map_foldable(items, foldable_Array, monoid, fn)
             loop_fold(rem.sub(1), tail, combine_monoid(monoid, acc, array_total))
           case [WrapList(items), *tail]:
-            list_total = combine_all_monoid(monoid, items.map_List(fn))
+            list_total = combine_map_all_monoid(monoid, items, fn)
             loop_fold(rem.sub(1), tail, combine_monoid(monoid, acc, list_total))
           case [Concat(_, left, right), *tail]:
             loop_fold(rem.sub(1), [left, right, *tail], acc)
@@ -952,18 +952,12 @@ tests = TestSuite("Chain tests", [
   Assertion(concat_all([from_List([1]), from_List([2, 3])]).to_List() matches [1, 2, 3], "concat_all sanity"),
   Assertion(foldl(from_List([1, 2, 3]), 0, add).eq_Int(6), "foldl sanity"),
   Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),
-  Assertion(combine_all(empty, semigroup_specialized((_, _) -> 999, (value, _) -> value, _ -> None)) matches None, "combine_all empty"),
+  Assertion(combine_all(empty, semigroup_specialized((_, _) -> 999, (value, _) -> value, (_, _, _) -> 0)) matches None, "combine_all empty"),
   Assertion(combine_all(from_List([1, 2, 3]), semigroup_specialized(
     (_, _) -> 999,
     (value, _) -> value,
-    (items) -> (
-      match items:
-        case []:
-          None
-        case _:
-          Some(items.foldl_List(0, add))
-    ),
-  )) matches Some(6), "combine_all uses list combine_all_option"),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> add(acc, fn(item))),
+  )) matches Some(6), "combine_all uses list combine_map_all"),
   Assertion(map(from_List([1, 2]), i -> i.add(10)).to_List() matches [11, 12], "map sanity"),
   (
     chain = from_List([1, 2, 3])

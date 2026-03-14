@@ -413,7 +413,15 @@ monoid_Doc: Monoid[Doc] =
         Empty,
         append,
         repeat,
-        docs -> combine_tree_option(append, docs))
+        (head, tail, fn) -> (
+          mapped_head = fn(head)
+          docs = tail.foldl_List([mapped_head], (acc, item) -> [fn(item), *acc]).reverse()
+          match combine_tree_option(append, docs):
+            case Some(combined):
+              combined
+            case None:
+              mapped_head
+        ))
 
 # Inserts zero-width text into output.
 # Input: `value` bytes to emit without affecting layout width.
