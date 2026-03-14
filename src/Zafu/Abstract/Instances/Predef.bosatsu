@@ -64,6 +64,7 @@ from Zafu/Abstract/Semigroup import (
   semigroup_from_combine,
   semigroup_specialized,
   combine as combine_Semigroup,
+  combine_map_all as combine_map_all_Semigroup,
   combine_n as combine_n_Semigroup,
   combine_n_positive_from_combine,
 )
@@ -604,7 +605,27 @@ def semigroup_Option(semigroup_item: Semigroup[a]) -> Semigroup[Option[a]]:
             case None:
               None
     ),
-    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_option(acc, fn(item))),
+    (head, tail, fn) -> (
+      present_rev = tail.foldl_List(
+        match fn(head):
+          case None:
+            []
+          case Some(item):
+            [item],
+        (acc, item) -> (
+          match fn(item):
+            case None:
+              acc
+            case Some(mapped_item):
+              [mapped_item, *acc]
+        ),
+      )
+      match present_rev.reverse():
+        case []:
+          None
+        case [present_head, *present_tail]:
+          Some(combine_map_all_Semigroup(semigroup_item, present_head, present_tail, item -> item))
+    ),
   )
 
 def monoid_Option(semigroup_item: Semigroup[a]) -> Monoid[Option[a]]:
@@ -2501,7 +2522,14 @@ def semigroup_Tuple1(semigroup1: Semigroup[a1]) -> Semigroup[Tuple1[a1]]:
     ((Tuple1(value1)), n) -> (
       Tuple1(combine_n_positive_or_self(semigroup1, value1, n))
     ),
-    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
+    (head, tail, fn) -> (
+      Tuple1(head1) = fn(head)
+      tail1_rev = tail.foldl_List([], (acc, item) -> (
+        Tuple1(item1) = fn(item)
+        [item1, *acc]
+      ))
+      Tuple1(combine_map_all_Semigroup(semigroup1, head1, tail1_rev.reverse(), item -> item))
+    ),
   )
 
 def semigroup_Tuple2(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2]) -> Semigroup[Tuple2[a1, a2]]:
@@ -2513,7 +2541,18 @@ def semigroup_Tuple2(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2]) -> Se
     ((Tuple2(value1, value2)), n) -> (
       Tuple2(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n))
     ),
-    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
+    (head, tail, fn) -> (
+      Tuple2(head1, head2) = fn(head)
+      (tail1_rev, tail2_rev) = tail.foldl_List(([], []), (acc, item) -> (
+        (acc1, acc2) = acc
+        Tuple2(item1, item2) = fn(item)
+        ([item1, *acc1], [item2, *acc2])
+      ))
+      Tuple2(
+        combine_map_all_Semigroup(semigroup1, head1, tail1_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup2, head2, tail2_rev.reverse(), item -> item),
+      )
+    ),
   )
 
 def semigroup_Tuple3(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3]) -> Semigroup[Tuple3[a1, a2, a3]]:
@@ -2525,7 +2564,19 @@ def semigroup_Tuple3(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
     ((Tuple3(value1, value2, value3)), n) -> (
       Tuple3(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n))
     ),
-    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
+    (head, tail, fn) -> (
+      Tuple3(head1, head2, head3) = fn(head)
+      (tail1_rev, tail2_rev, tail3_rev) = tail.foldl_List(([], [], []), (acc, item) -> (
+        (acc1, acc2, acc3) = acc
+        Tuple3(item1, item2, item3) = fn(item)
+        ([item1, *acc1], [item2, *acc2], [item3, *acc3])
+      ))
+      Tuple3(
+        combine_map_all_Semigroup(semigroup1, head1, tail1_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup2, head2, tail2_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup3, head3, tail3_rev.reverse(), item -> item),
+      )
+    ),
   )
 
 def semigroup_Tuple4(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4]) -> Semigroup[Tuple4[a1, a2, a3, a4]]:
@@ -2537,7 +2588,20 @@ def semigroup_Tuple4(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
     ((Tuple4(value1, value2, value3, value4)), n) -> (
       Tuple4(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n))
     ),
-    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
+    (head, tail, fn) -> (
+      Tuple4(head1, head2, head3, head4) = fn(head)
+      (tail1_rev, tail2_rev, tail3_rev, tail4_rev) = tail.foldl_List(([], [], [], []), (acc, item) -> (
+        (acc1, acc2, acc3, acc4) = acc
+        Tuple4(item1, item2, item3, item4) = fn(item)
+        ([item1, *acc1], [item2, *acc2], [item3, *acc3], [item4, *acc4])
+      ))
+      Tuple4(
+        combine_map_all_Semigroup(semigroup1, head1, tail1_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup2, head2, tail2_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup3, head3, tail3_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup4, head4, tail4_rev.reverse(), item -> item),
+      )
+    ),
   )
 
 def semigroup_Tuple5(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5]) -> Semigroup[Tuple5[a1, a2, a3, a4, a5]]:
@@ -2549,7 +2613,21 @@ def semigroup_Tuple5(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
     ((Tuple5(value1, value2, value3, value4, value5)), n) -> (
       Tuple5(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n))
     ),
-    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> combine_fn(acc, fn(item))),
+    (head, tail, fn) -> (
+      Tuple5(head1, head2, head3, head4, head5) = fn(head)
+      (tail1_rev, tail2_rev, tail3_rev, tail4_rev, tail5_rev) = tail.foldl_List(([], [], [], [], []), (acc, item) -> (
+        (acc1, acc2, acc3, acc4, acc5) = acc
+        Tuple5(item1, item2, item3, item4, item5) = fn(item)
+        ([item1, *acc1], [item2, *acc2], [item3, *acc3], [item4, *acc4], [item5, *acc5])
+      ))
+      Tuple5(
+        combine_map_all_Semigroup(semigroup1, head1, tail1_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup2, head2, tail2_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup3, head3, tail3_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup4, head4, tail4_rev.reverse(), item -> item),
+        combine_map_all_Semigroup(semigroup5, head5, tail5_rev.reverse(), item -> item),
+      )
+    ),
   )
 
 def semigroup_Tuple6(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semigroup3: Semigroup[a3], semigroup4: Semigroup[a4], semigroup5: Semigroup[a5], semigroup6: Semigroup[a6]) -> Semigroup[Tuple6[a1, a2, a3, a4, a5, a6]]:
