@@ -433,24 +433,12 @@ tests = TestSuite("Zafu/Collection/NonEmptyList tests", [
   Assertion(combine_all(NonEmptyList(1, [2, 3]), semigroup_specialized(
     (_, _) -> 999,
     (value, _) -> value,
-    (items) -> (
-      match items:
-        case []:
-          None
-        case _:
-          Some(items.foldl_List(0, add))
-    ),
-  )).eq_Int(6), "combine_all uses specialized combine_all_option"),
+    (head, tail, fn) -> tail.foldl_List(fn(head), (acc, item) -> add(acc, fn(item))),
+  )).eq_Int(6), "combine_all uses specialized combine_map_all"),
   Assertion(combine_all(singleton(7), semigroup_specialized(
     (_, _) -> 999,
     (value, _) -> value,
-    (items) -> (
-      match items:
-        case []:
-          None
-        case _:
-          Some(0)
-    ),
+    (_, _, _) -> 0,
   )).eq_Int(7), "combine_all singleton fast path"),
   Assertion(to_List(reverse(NonEmptyList(1, [2, 3]))) matches [3, 2, 1], "reverse"),
   (

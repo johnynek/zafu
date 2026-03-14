@@ -11,8 +11,8 @@ from Zafu/Abstract/Semigroup import (
   semigroup_from_combine,
   semigroup_specialized,
   combine as combine_semigroup,
+  combine_map_all as combine_map_all_semigroup,
   combine_n as combine_n_semigroup,
-  combine_all_option as combine_all_option_semigroup,
   reverse as reverse_semigroup,
   laws_Semigroup,
 )
@@ -25,6 +25,7 @@ export (
   empty,
   combine,
   combine_n,
+  combine_map_all,
   combine_all,
   is_empty,
   reverse,
@@ -50,11 +51,11 @@ def monoid_specialized(
   empty_value: a,
   combine_fn: (a, a) -> a,
   combine_n_positive_fn: (a, Int) -> a,
-  combine_all_option_fn: List[a] -> Option[a],
+  combine_map_all_fn: forall b. (b, List[b], b -> a) -> a,
 ) -> Monoid[a]:
   monoid_from_semigroup(
     empty_value,
-    semigroup_specialized(combine_fn, combine_n_positive_fn, combine_all_option_fn),
+    semigroup_specialized(combine_fn, combine_n_positive_fn, combine_map_all_fn),
   )
 
 # Projection keeps all semigroup specialization by returning the stored dictionary.
@@ -76,17 +77,15 @@ def combine_n(inst: Monoid[a], value: a, n: Int) -> a:
       case None:
         inst.empty()
 
-def combine_all(inst: Monoid[a], items: List[a]) -> a:
+def combine_map_all(inst: Monoid[a], items: List[b], fn: b -> a) -> a:
   match items:
     case []:
       inst.empty()
-    case _:
-      match combine_all_option_semigroup(monoid_to_semigroup(inst), items):
-        case Some(combined):
-          combined
-        case None:
-          # Defensive fallback for malformed semigroups; non-empty should yield Some.
-          inst.empty()
+    case [head, *tail]:
+      combine_map_all_semigroup(monoid_to_semigroup(inst), head, tail, fn)
+
+def combine_all(inst: Monoid[a], items: List[a]) -> a:
+  combine_map_all(inst, items, item -> item)
 
 def is_empty(inst: Monoid[a], eq_inst: Eq[a], value: a) -> Bool:
   eq_Eq(eq_inst, value, inst.empty())
@@ -121,6 +120,17 @@ tests = TestSuite("Monoid tests", [
     Assertion(int_add.combine_all([]).eq_Int(0), "combine_all empty")
   ),
   (
+    int_add = monoid_from_combine(0, (left, right) -> left.add(right))
+    Assertion(int_add.combine_map_all([1, 2, 3], x -> x.mul(2)).eq_Int(12), "combine_map_all")
+  ),
+  (
+    int_add = monoid_from_combine(0, (left, right) -> left.add(right))
+    Assertion(
+      int_add.combine_all([1, 2, 3]).eq_Int(int_add.combine_map_all([1, 2, 3], item -> item)),
+      "combine_all coherence",
+    )
+  ),
+  (
     list_monoid = monoid_from_combine([], (left, right) -> left.concat(right))
     reversed = list_monoid.reverse()
     Assertion(reversed.combine([1], [2, 3]) matches [2, 3, 1], "reverse combine order")
@@ -140,7 +150,7 @@ tests = TestSuite("Monoid tests", [
       0,
       (left, right) -> left.add(right),
       (_, n) -> n.add(1000),
-      (_) -> Some(777),
+      (_, _, _) -> 777,
     )
     projected = monoid_to_semigroup(specialized)
     Assertion(combine_n_semigroup(projected, 1, 3) matches Some(1003), "monoid_to_semigroup keeps combine_n")
@@ -150,9 +160,9 @@ tests = TestSuite("Monoid tests", [
       0,
       (left, right) -> left.add(right),
       (_, n) -> n.add(1000),
-      (_) -> Some(777),
+      (_, _, _) -> 777,
     )
     projected = monoid_to_semigroup(specialized)
-    Assertion(combine_all_option_semigroup(projected, [1, 2, 3]) matches Some(777), "monoid_to_semigroup keeps combine_all")
+    Assertion(combine_map_all_semigroup(projected, 1, [2, 3], x -> x).eq_Int(777), "monoid_to_semigroup keeps combine_map_all")
   ),
 ])
