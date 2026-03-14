@@ -2542,10 +2542,10 @@ def semigroup_Tuple2(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2]) -> Se
       Tuple2(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n))
     ),
     (head, tail, fn) -> (
-      Tuple2(head1, head2) = fn(head)
+      (head1, head2) = fn(head)
       (tail1_rev, tail2_rev) = tail.foldl_List(([], []), (acc, item) -> (
         (acc1, acc2) = acc
-        Tuple2(item1, item2) = fn(item)
+        (item1, item2) = fn(item)
         ([item1, *acc1], [item2, *acc2])
       ))
       Tuple2(
@@ -2565,10 +2565,10 @@ def semigroup_Tuple3(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
       Tuple3(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n))
     ),
     (head, tail, fn) -> (
-      Tuple3(head1, head2, head3) = fn(head)
+      (head1, head2, head3) = fn(head)
       (tail1_rev, tail2_rev, tail3_rev) = tail.foldl_List(([], [], []), (acc, item) -> (
         (acc1, acc2, acc3) = acc
-        Tuple3(item1, item2, item3) = fn(item)
+        (item1, item2, item3) = fn(item)
         ([item1, *acc1], [item2, *acc2], [item3, *acc3])
       ))
       Tuple3(
@@ -2589,10 +2589,10 @@ def semigroup_Tuple4(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
       Tuple4(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n))
     ),
     (head, tail, fn) -> (
-      Tuple4(head1, head2, head3, head4) = fn(head)
+      (head1, head2, head3, head4) = fn(head)
       (tail1_rev, tail2_rev, tail3_rev, tail4_rev) = tail.foldl_List(([], [], [], []), (acc, item) -> (
         (acc1, acc2, acc3, acc4) = acc
-        Tuple4(item1, item2, item3, item4) = fn(item)
+        (item1, item2, item3, item4) = fn(item)
         ([item1, *acc1], [item2, *acc2], [item3, *acc3], [item4, *acc4])
       ))
       Tuple4(
@@ -2614,10 +2614,10 @@ def semigroup_Tuple5(semigroup1: Semigroup[a1], semigroup2: Semigroup[a2], semig
       Tuple5(combine_n_positive_or_self(semigroup1, value1, n), combine_n_positive_or_self(semigroup2, value2, n), combine_n_positive_or_self(semigroup3, value3, n), combine_n_positive_or_self(semigroup4, value4, n), combine_n_positive_or_self(semigroup5, value5, n))
     ),
     (head, tail, fn) -> (
-      Tuple5(head1, head2, head3, head4, head5) = fn(head)
+      (head1, head2, head3, head4, head5) = fn(head)
       (tail1_rev, tail2_rev, tail3_rev, tail4_rev, tail5_rev) = tail.foldl_List(([], [], [], [], []), (acc, item) -> (
         (acc1, acc2, acc3, acc4, acc5) = acc
-        Tuple5(item1, item2, item3, item4, item5) = fn(item)
+        (item1, item2, item3, item4, item5) = fn(item)
         ([item1, *acc1], [item2, *acc2], [item3, *acc3], [item4, *acc4], [item5, *acc5])
       ))
       Tuple5(
