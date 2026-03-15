@@ -11,6 +11,8 @@ export (
   from_Int,
   to_Int,
   max,
+  scale_Size,
+  size_for_sample,
   percentage,
   incBy,
   golden,
@@ -19,14 +21,14 @@ export (
 # HedgeHog size parameter normalized to the closed interval 1..100.
 struct Size(value: Int)
 
-size_max: Int = 100
+max: Int = 100
 golden_num: Int = 61803398875
 golden_den: Int = 100000000000
 
 def normalize_Int(value: Int) -> Int:
-  remainder = mod_Int(value, size_max)
+  remainder = mod_Int(value, max)
   if cmp_Int(remainder, 0) matches LT | EQ:
-    remainder.add(size_max)
+    remainder.add(max)
   else:
     remainder
 
@@ -39,13 +41,20 @@ def to_Int(size: Size) -> Int:
   Size(value) = size
   value
 
-# Return the maximum normalized size value.
-def max() -> Int:
-  size_max
+# Scale an integer by the normalized size ratio.
+def scale_Size(size: Size, value: Int) -> Int:
+  value.mul(size.to_Int()).div(max)
+
+# Compute the sample size used for an index in a finite run.
+def size_for_sample(index: Int, count: Int) -> Size:
+  if cmp_Int(count, 1) matches LT | EQ:
+    from_Int(1)
+  else:
+    from_Int(index.mul(max.sub(1)).div(count.sub(1)).add(1))
 
 # Convert a size to the [0, 1] percentage used for range scaling.
 def percentage(size: Size) -> Float64:
-  divf(int_to_Float64(size.to_Int()), int_to_Float64(size_max))
+  divf(int_to_Float64(size.to_Int()), int_to_Float64(max))
 
 # Add two sizes with HedgeHog's wraparound normalization.
 def incBy(size: Size, delta: Size) -> Size:

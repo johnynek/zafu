@@ -3,7 +3,7 @@ package Zafu/Testing/HedgeHog/Range
 from Bosatsu/Collection/Array import (
   from_List_Array,
   size_Array,
-  get_Array,
+  get_or_Array,
 )
 
 from Zafu/Testing/HedgeHog/Seed import (
@@ -14,8 +14,7 @@ from Zafu/Testing/HedgeHog/Seed import (
 from Zafu/Testing/HedgeHog/Size import (
   Size,
   from_Int as size_from_Int,
-  max as max_Size,
-  to_Int,
+  scale_Size,
 )
 
 export (
@@ -48,7 +47,7 @@ def normalize_bounds(lower: Int, upper_exclusive: Int) -> (Int, Int):
 
 def scale_from(origin: Int, target: Int, size: Size) -> Int:
   delta = target.sub(origin)
-  origin.add(delta.mul(size.to_Int()).div(max_Size()))
+  origin.add(scale_Size(size, delta))
 
 def default_origin(lower: Int, upper_exclusive: Int) -> Int:
   if cmp_Int(lower, 0) matches GT | EQ:
@@ -97,7 +96,8 @@ def linear_Range(lower: Int, upper_exclusive: Int) -> Range:
 
 # Sample an integer from the range at the given size.
 def sample_Int(range: Range, size: Size, seed: Seed) -> (Seed, Int):
-  (lower, upper_exclusive) = normalize_bounds(range.lower_bound(size), range.upper_bound(size))
+  (lower0, upper_exclusive0) = bounds(range, size)
+  (lower, upper_exclusive) = normalize_bounds(lower0, upper_exclusive0)
   choose_Int(seed, lower, upper_exclusive.sub(1))
 
 # Build a size-aware sampler that chooses one of several ranges uniformly first.
@@ -106,11 +106,8 @@ def one_of_Int(first: Range, rest: List[Range]) -> (Size, Seed) -> (Seed, Int):
   last_idx = size_Array(ranges).sub(1)
   (size, seed) -> (
     (seed1, idx) = choose_Int(seed, 0, last_idx)
-    match get_Array(ranges, idx):
-      case Some(range):
-        sample_Int(range, size, seed1)
-      case None:
-        sample_Int(first, size, seed1)
+    range = get_or_Array(ranges, idx, _ -> first)
+    sample_Int(range, size, seed1)
   )
 
 # Size-scaled signed 8-bit integer range.
