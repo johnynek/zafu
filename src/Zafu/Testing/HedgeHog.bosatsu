@@ -183,42 +183,35 @@ def not_Bool(value: Bool) -> Bool:
 max_test_steps: Int = 65536
 
 def first_failure(test: Test) -> Option[(List[String], String)]:
-  (todo, result) = int_loop(
-    max_test_steps,
-    ([([], test)], None),
-    (rem, state) -> (
-      (todo0, result0) = state
-      match result0:
-        case Some(_):
-          (0, state)
-        case None:
-          match todo0:
-            case []:
-              (0, state)
-            case [head, *tail]:
-              ((path_rev, current)) = head
-              match current:
-                case Assertion(value, message):
-                  next_result = None if value else Some((path_rev.reverse(), message))
-                  (rem.sub(1), (tail, next_result))
-                case TestSuite(name, tests):
-                  next_path_rev = [name, *path_rev]
-                  next_todo = tests.reverse().foldl_List(
-                    tail,
-                    (acc, child) -> [((next_path_rev, child)), *acc],
-                  )
-                  (rem.sub(1), (next_todo, None))
-    ),
-  )
-  match result:
-    case Some(found):
-      Some(found)
-    case None:
-      match todo:
-        case []:
-          None
-        case _:
-          Some(([], "test traversal exceeded step budget"))
+  def go(rem: Int, todo: List[(List[String], Test)]) -> Option[(List[String], String)]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        match todo:
+          case []:
+            None
+          case _:
+            Some(([], "test traversal exceeded step budget"))
+      case _:
+        match todo:
+          case []:
+            None
+          case [head, *tail]:
+            ((path_rev, current)) = head
+            match current:
+              case Assertion(value, message):
+                if value:
+                  go(rem.sub(1), tail)
+                else:
+                  Some((path_rev.reverse(), message))
+              case TestSuite(name, tests):
+                next_path_rev = [name, *path_rev]
+                next_todo = tests.reverse().foldl_List(
+                  tail,
+                  (acc, child) -> [((next_path_rev, child)), *acc],
+                )
+                go(rem.sub(1), next_todo)
+
+  go(max_test_steps, [([], test)])
 
 max_tree_scan_steps: Int = 4096
 
