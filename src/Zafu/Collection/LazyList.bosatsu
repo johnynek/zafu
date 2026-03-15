@@ -54,6 +54,7 @@ export (
   lazy_singleton,
   cons_take,
   filter,
+  filter_map,
   foldl,
   flat_map,
   from_List,
@@ -122,6 +123,21 @@ def filter(ll: LazyList[a], pred: a -> Bool) -> LazyList[a]:
         )
       else:
         filter(get_Lazy(tail), pred)
+
+# Lazily map+filter elements by keeping only Some results.
+def filter_map(ll: LazyList[a], fn: a -> Option[b]) -> LazyList[b]:
+  recur ll:
+    case Empty:
+      Empty
+    case Cons(head, tail):
+      match fn(get_Lazy(head)):
+        case Some(mapped):
+          Cons(
+            lazy(() -> mapped),
+            lazy(() -> filter_map(get_Lazy(tail), fn))
+          )
+        case None:
+          filter_map(get_Lazy(tail), fn)
 
 # Extracts the head and remaining tail if the list is non-empty.
 def uncons(ll: LazyList[a]) -> Option[(Lazy[a], Lazy[LazyList[a]])]:

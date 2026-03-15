@@ -1,0 +1,151 @@
+package Zafu/Testing/HedgeHog/Seed
+
+from Bosatsu/Num/Float64 import (
+  addf,
+  divf,
+  int_to_Float64,
+  is_finite,
+  subf,
+  timesf,
+)
+
+export (
+  Seed,
+  UInt64,
+  from_Int,
+  next,
+  choose_Int,
+  choose_Float64,
+  to_Int,
+  to_Float64,
+)
+
+# HedgeHog generator seed backed by local xoshiro256** state.
+struct Seed(s0: Int, s1: Int, s2: Int, s3: Int)
+# Unsigned 64-bit sample value emitted by the HedgeHog PRNG.
+struct UInt64(value: Int)
+
+def operator -(a, b): a.sub(b)
+def operator +(a, b): a.add(b)
+def operator *(a, b): a.mul(b)
+def operator &(a, b): a.and_Int(b)
+def operator <<(a, b): a.shift_left_Int(b)
+def operator >>(a, b): a.shift_right_Int(b)
+def operator |(a, b): a.or_Int(b)
+def operator ^(a, b): a.xor_Int(b)
+
+bitmask_64: Int = (1 << 64) - 1
+float_two_pow_64: Float64 = int_to_Float64(1 << 64)
+
+default_chunk0: Int = 14111135881393708029
+default_chunk1: Int = 5644425815758670568
+default_chunk2: Int = 10374574312259028851
+default_chunk3: Int = 8692674185091628863
+
+default_state: Int = default_chunk0 + (default_chunk1 << 64) + (default_chunk2 << 128) + (default_chunk3 << 192)
+
+def uint64(i: Int) -> Int:
+  i & bitmask_64
+
+def rotl(x: Int, k: Int) -> Int:
+  lx = uint64(x << k)
+  rx = uint64(x >> (64 - k))
+  lx | rx
+
+# Expose the raw integer bits of a UInt64 sample.
+def to_Int(value: UInt64) -> Int:
+  UInt64(raw) = value
+  raw
+
+# Convert a UInt64 sample into a non-negative Float64 value.
+def to_Float64(value: UInt64) -> Float64:
+  int_to_Float64(value.to_Int())
+
+# Build a non-zero seed from an integer.
+def from_Int(i: Int) -> Seed:
+  not_zero = match i ^ default_state:
+    case 0:
+      default_state
+    case nz:
+      nz
+
+  Seed(
+    uint64(not_zero),
+    uint64(not_zero >> 64),
+    uint64(not_zero >> 128),
+    uint64(not_zero >> 192),
+  )
+
+# Xoshiro256** over the same 4x64-bit state shape as Bosatsu/Rand, but exposed
+# locally so HedgeHog no longer depends on Bosatsu/Rand.
+# Advance the PRNG and return the next seed plus one 64-bit sample.
+def next(seed: Seed) -> (Seed, UInt64):
+  Seed(s0_0, s1_0, s2_0, s3_0) = seed
+
+  result = uint64(rotl(uint64(s1_0 * 5), 7) * 9)
+  t = uint64(s1_0 << 17)
+
+  s2_1 = s2_0 ^ s0_0
+  s3_1 = s3_0 ^ s1_0
+  s1_1 = s1_0 ^ s2_1
+  s0_1 = s0_0 ^ s3_1
+  s2_2 = s2_1 ^ t
+  s3_2 = uint64(rotl(s3_1, 45))
+
+  (Seed(s0_1, s1_1, s2_2, s3_2), UInt64(result))
+
+def normalize_bounds(lower: Int, upper: Int) -> (Int, Int):
+  match cmp_Int(lower, upper):
+    case LT | EQ:
+      (lower, upper)
+    case GT:
+      (upper, lower)
+
+# Sample an integer uniformly from an inclusive range.
+def choose_Int(seed: Seed, lower: Int, upper: Int) -> (Seed, Int):
+  (low, high) = normalize_bounds(lower, upper)
+  (next_seed, raw) = next(seed)
+  if low.eq_Int(high):
+    (next_seed, low)
+  else:
+    span = high.sub(low).add(1)
+    (next_seed, mod_Int(raw.to_Int(), span).add(low))
+
+# Sample a Float64 uniformly from the half-open interval [lower, upper).
+def choose_Float64(seed: Seed, lower: Float64, upper: Float64) -> (Seed, Float64):
+  (next_seed, raw) = next(seed)
+  fraction = divf(raw.to_Float64(), float_two_pow_64)
+  delta = subf(upper, lower)
+  (next_seed, addf(lower, timesf(delta, fraction)))
+
+tests = TestSuite("Zafu/Testing/HedgeHog/Seed tests", [
+  (
+    (_, raw) = next(from_Int(0))
+    Assertion(cmp_Int(raw.to_Int(), 0) matches GT, "Seed.from_Int builds a working seed")
+  ),
+  Assertion(
+    next(from_Int(123)) matches (
+      Seed(17664033716968795729, 177945307802048029, 4796981907600055541, 16625854819613558137),
+      UInt64(8729640893712524891),
+    ),
+    "Seed.next first step",
+  ),
+  (
+    (next_seed, _) = next(from_Int(123))
+    Assertion(
+      next(next_seed) matches (
+        Seed(1288477671768456501, 13099067934439220409, 15496909720256688804, 12280362462105161686),
+        UInt64(10394048885771308214),
+      ),
+      "Seed.next second step",
+    )
+  ),
+  Assertion(
+    choose_Int(from_Int(99), 7, 7) matches (_, 7),
+    "Seed.choose_Int handles singleton range",
+  ),
+  (
+    (_, value) = choose_Float64(from_Int(77), 0.0, 1.0)
+    Assertion(is_finite(value), "Seed.choose_Float64 is finite")
+  ),
+])
