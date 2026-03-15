@@ -511,10 +511,7 @@ pos_int_sampler = one_of_Int(
 )
 
 # Generator for signed Int values across several size-scaled ranges.
-int_Gen: Gen[Int] = sampled_Gen(
-  int_sampler,
-  shrink_Int,
-)
+int_Gen: Gen[Int] = sampled_Gen(int_sampler, shrink_Int)
 
 # Generator focused on 32-bit signed Int values.
 int32_Gen: Gen[Int] = sampled_Gen(
