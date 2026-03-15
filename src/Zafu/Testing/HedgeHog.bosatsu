@@ -180,47 +180,45 @@ def not_Bool(value: Bool) -> Bool:
   else:
     True
 
-def test_passes(test: Test) -> Bool:
-  def loop_tests(steps: List[Unit], todo: List[Test]) -> Bool:
-    loop steps:
-      case []:
-        False
-      case [_, *tail_steps]:
-        match todo:
-          case []:
-            True
-          case [head, *tail]:
-            match head:
-              case Assertion(value, _):
-                if value:
-                  loop_tests(tail_steps, tail)
-                else:
-                  False
-              case TestSuite(_, tests):
-                loop_tests(tail_steps, tests.concat(tail))
+max_test_steps: Int = 65536
 
-  loop_tests(replicate_List(Unit, 65536), [test])
-
-def first_failure_message(test: Test) -> Option[String]:
-  def loop_tests(steps: List[Unit], todo: List[Test]) -> Option[String]:
-    loop steps:
-      case []:
-        Some("test traversal exceeded step budget")
-      case [_, *tail_steps]:
-        match todo:
-          case []:
-            None
-          case [head, *tail]:
-            match head:
-              case Assertion(value, message):
-                if value:
-                  loop_tests(tail_steps, tail)
-                else:
-                  Some(message)
-              case TestSuite(_, tests):
-                loop_tests(tail_steps, tests.concat(tail))
-
-  loop_tests(replicate_List(Unit, 65536), [test])
+def first_failure(test: Test) -> Option[(List[String], String)]:
+  (todo, result) = int_loop(
+    max_test_steps,
+    ([([], test)], None),
+    (rem, state) -> (
+      (todo0, result0) = state
+      match result0:
+        case Some(_):
+          (0, state)
+        case None:
+          match todo0:
+            case []:
+              (0, state)
+            case [head, *tail]:
+              ((path_rev, current)) = head
+              match current:
+                case Assertion(value, message):
+                  next_result = None if value else Some((path_rev.reverse(), message))
+                  (rem.sub(1), (tail, next_result))
+                case TestSuite(name, tests):
+                  next_path_rev = [name, *path_rev]
+                  next_todo = tests.reverse().foldl_List(
+                    tail,
+                    (acc, child) -> [((next_path_rev, child)), *acc],
+                  )
+                  (rem.sub(1), (next_todo, None))
+    ),
+  )
+  match result:
+    case Some(found):
+      Some(found)
+    case None:
+      match todo:
+        case []:
+          None
+        case _:
+          Some(([], "test traversal exceeded step budget"))
 
 def first_failing_tree_steps(values: LazyList[LazyTree[a]], test_fn: a -> Test, steps: List[Unit]) -> Option[LazyTree[a]]:
   loop steps:
@@ -232,7 +230,7 @@ def first_failing_tree_steps(values: LazyList[LazyTree[a]], test_fn: a -> Test, 
           None
         case Some((head, rest)):
           tree = get_Lazy(head)
-          if test_fn(root_LazyTree(tree)).test_passes():
+          if test_fn(root_LazyTree(tree)).first_failure() matches None:
             first_failing_tree_steps(get_Lazy(rest), test_fn, tail)
           else:
             Some(tree)
@@ -254,16 +252,28 @@ def shrink_tree_to_smallest_steps(steps: List[Unit], current: LazyTree[a], test_
 def shrink_tree_to_smallest(start: LazyTree[a], test_fn: a -> Test) -> a:
   shrink_tree_to_smallest_steps(replicate_List(Unit, 128), start, test_fn)
 
-def render_failure(name: String, show: a -> String, original: a, shrunk: a, message: Option[String]) -> String:
+def render_suite_path(path: List[String]) -> String:
+  match path:
+    case []:
+      ""
+    case [head, *tail]:
+      tail.foldl_List(head, (acc, item) -> "${acc}/${item}")
+
+def render_failure(name: String, show: a -> String, original: a, shrunk: a, failure: Option[(List[String], String)]) -> String:
   base = "${name} failed (original=${show(original)}, shrunk=${show(shrunk)})"
-  match message:
+  match failure:
     case None:
       base
-    case Some(extra):
+    case Some((path, extra)):
+      prefix = match path:
+        case []:
+          ""
+        case _:
+          " @ ${render_suite_path(path)}"
       if length_String(extra).eq_Int(0):
         base
       else:
-        "${base}: ${extra}"
+        "${base}${prefix}: ${extra}"
 
 def list_size_loop(list: List[a], acc: Int) -> Int:
   loop list:
@@ -316,7 +326,7 @@ def first_failure_and_shrunk_samples(samples: List[LazyTree[a]], test_fn: a -> T
     case [head, *tail]:
       original = root_LazyTree(head)
       test = test_fn(original)
-      if test.test_passes():
+      if test.first_failure() matches None:
         first_failure_and_shrunk_samples(tail, test_fn)
       else:
         Some((original, shrink_tree_to_smallest(head, test_fn)))
@@ -562,8 +572,8 @@ def forall_Prop(gen: Gen[a], name: String, show: a -> String, test_fn: a -> Test
       case None:
         Assertion(True, name)
       case Some((original, shrunk)):
-        fail_message = first_failure_message(test_fn(shrunk))
-        Assertion(False, render_failure(name, show, original, shrunk, fail_message))
+        failure = test_fn(shrunk).first_failure()
+        Assertion(False, render_failure(name, show, original, shrunk, failure))
     (next_seed, test)
   ))
 
@@ -672,8 +682,8 @@ def suite_recursion_witness() -> Test:
     Assertion(True, "top passes"),
     TestSuite("inner", [Assertion(False, "inner fails")]),
   ])
-  passes = not_Bool(nested.test_passes())
-  has_message = nested.first_failure_message() matches Some("inner fails")
+  passes = not_Bool(nested.first_failure() matches None)
+  has_message = nested.first_failure() matches Some((["outer", "inner"], "inner fails"))
   Assertion(and_Bool(passes, has_message), "suite recursion should inspect child tests")
 
 def shrink_int_witness() -> Test:
