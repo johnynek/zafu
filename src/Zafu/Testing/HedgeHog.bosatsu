@@ -7,6 +7,9 @@ from Bosatsu/Char import (
   int_List_to_String,
 )
 from Bosatsu/List import eq_List
+from Bosatsu/Lazy import (
+  get_Lazy,
+)
 from Bosatsu/Num/Float64 import (
   abs,
   cmp_Float64,
@@ -16,32 +19,25 @@ from Bosatsu/Num/Float64 import (
   is_finite,
   subf,
 )
-from Bosatsu/Lazy import (
-  get_Lazy,
-)
-from Bosatsu/Rand import (
-  Rand,
-  int_range,
-  one_of,
-  geometric_Int,
-  const_Rand,
-  map_Rand,
-  flat_map_Rand,
-  prod_Rand,
-  sequence_Rand,
-  run_Rand,
-)
 from Zafu/Collection/LazyList import (
   LazyList,
   empty_LazyList,
-  lazy_singleton,
+  concat as concat_LazyList,
   from_List as from_List_LazyList,
   to_List as to_List_LazyList,
   map as map_LazyList,
   filter as filter_native_LazyList,
   uncons as uncons_LazyList,
 )
+from Zafu/Collection/LazyTree import (
+  LazyTree,
+  singleton as singleton_LazyTree,
+  map as map_LazyTree,
+  flat_map as flat_map_LazyTree,
+  unfold as unfold_LazyTree,
+)
 from Zafu/Testing/HedgeHog/Range import (
+  Range,
   linear_Range,
   sample_Int,
   one_of_Int,
@@ -55,15 +51,29 @@ from Zafu/Testing/HedgeHog/Range import (
   pos_int16_Range,
   pos_int32_Range,
 )
+from Zafu/Testing/HedgeHog/Seed import (
+  Seed,
+  from_Int as seed_from_Int,
+  choose_Float64,
+  choose_Int,
+)
+from Zafu/Testing/HedgeHog/Size import (
+  Size,
+  from_Int as size_from_Int,
+  max as max_Size,
+  golden as golden_Size,
+)
 
 export (
   Gen,
-  gen_Rand,
-  shrink_Gen,
+  run_Gen,
   no_shrink_Gen,
   const_Gen,
   map_Gen,
   flat_map_Gen,
+  resize_Gen,
+  scale_Gen,
+  small_Gen,
   unit_Gen,
   bool_Gen,
   comparison_Gen,
@@ -85,45 +95,78 @@ export (
   run_Prop,
 )
 
-def singleton_LazyList(item: a) -> LazyList[a]:
-  lazy_singleton(() -> item)
+def root_LazyTree(tree: LazyTree[a]) -> a:
+  LazyTree(value, _) = tree
+  value
 
-def first_LazyList(list: LazyList[a]) -> Option[a]:
-  match uncons_LazyList(list):
-    case None:
-      None
-    case Some((head, _)):
-      Some(get_Lazy(head))
+def children_LazyTree(tree: LazyTree[a]) -> LazyList[LazyTree[a]]:
+  LazyTree(_, children) = tree
+  children
 
-struct Gen(rand: Rand[a], shrink: a -> LazyList[a])
+def drop_seed_Tree(tree: LazyTree[(Seed, a)]) -> LazyTree[a]:
+  map_LazyTree(tree, ((_, value)) -> value)
 
-def gen_Rand(gen: Gen[a]) -> Rand[a]:
-  Gen(rand, _) = gen
-  rand
+def with_extra_children(tree: LazyTree[a], extra_children: List[LazyTree[a]]) -> LazyTree[a]:
+  match extra_children:
+    case []:
+      tree
+    case _:
+      LazyTree(value, children0) = tree
+      LazyTree(value, concat_LazyList(from_List_LazyList(extra_children), children0))
 
-def shrink_Gen(gen: Gen[a]) -> a -> LazyList[a]:
-  Gen(_, shrink) = gen
-  shrink
+max_shrink_depth: Int = 128
 
-def no_shrink_Gen(rand: Rand[a]) -> Gen[a]:
-  Gen(rand, _ -> empty_LazyList)
+def tree_from_shrinks(next_seed: Seed, value: a, shrink: a -> LazyList[a]) -> LazyTree[(Seed, a)]:
+  unfold_LazyTree(
+    max_shrink_depth,
+    (max_shrink_depth, value),
+    ((_, item)) -> (next_seed, item),
+    ((rem, item)) -> (
+      if cmp_Int(rem, 0) matches LT | EQ:
+        empty_LazyList
+      else:
+        map_LazyList(shrink(item), child -> (rem.sub(1), child))
+    ),
+  )
+
+struct Gen(run: (Size, Seed) -> LazyTree[(Seed, a)])
+
+def run_Gen(gen: Gen[a], size: Size, seed: Seed) -> LazyTree[(Seed, a)]:
+  Gen(run) = gen
+  run(size, seed)
+
+def sampled_Gen(run_value: (Size, Seed) -> (Seed, a), shrink: a -> LazyList[a]) -> Gen[a]:
+  Gen((size, seed) -> (
+    ((next_seed, value)) = run_value(size, seed)
+    tree_from_shrinks(next_seed, value, shrink)
+  ))
+
+def no_shrink_Gen(run_value: (Size, Seed) -> (Seed, a)) -> Gen[a]:
+  Gen((size, seed) -> (
+    ((next_seed, value)) = run_value(size, seed)
+    singleton_LazyTree((next_seed, value))
+  ))
 
 def const_Gen(value: a) -> Gen[a]:
-  no_shrink_Gen(const_Rand(value))
+  no_shrink_Gen((_, seed) -> (seed, value))
 
-# Preserve shrinking when the caller can provide the inverse map.
-def map_Gen(gen: Gen[a], to: a -> b, from: b -> a) -> Gen[b]:
-  Gen(
-    map_Rand(gen.gen_Rand(), to),
-    b -> map_LazyList(gen.shrink_Gen()(from(b)), to),
-  )
+def map_Gen(gen: Gen[a], to: a -> b) -> Gen[b]:
+  Gen((size, seed) -> map_LazyTree(run_Gen(gen, size, seed), ((next_seed, value)) -> (next_seed, to(value))))
 
-# Preserve shrinking for flat_map by requiring the result shrinker.
-def flat_map_Gen(gen: Gen[a], fn: a -> Gen[b], shrink: b -> LazyList[b]) -> Gen[b]:
-  Gen(
-    flat_map_Rand(gen.gen_Rand(), a -> fn(a).gen_Rand()),
-    shrink,
-  )
+def flat_map_Gen(gen: Gen[a], fn: a -> Gen[b]) -> Gen[b]:
+  Gen((size, seed) -> flat_map_LazyTree(
+    run_Gen(gen, size, seed),
+    ((next_seed, value)) -> run_Gen(fn(value), size, next_seed),
+  ))
+
+def resize_Gen(gen: Gen[a], fixed_size: Size) -> Gen[a]:
+  Gen((_, seed) -> run_Gen(gen, fixed_size, seed))
+
+def scale_Gen(gen: Gen[a], scale: Size -> Size) -> Gen[a]:
+  Gen((size, seed) -> run_Gen(gen, scale(size), seed))
+
+def small_Gen(gen: Gen[a]) -> Gen[a]:
+  scale_Gen(gen, size -> golden_Size(size))
 
 def and_Bool(left: Bool, right: Bool) -> Bool:
   if left:
@@ -179,7 +222,7 @@ def first_failure_message(test: Test) -> Option[String]:
 
   loop_tests(replicate_List(Unit, 65536), [test])
 
-def first_failing_steps(values: LazyList[a], test_fn: a -> Test, steps: List[Unit]) -> Option[a]:
+def first_failing_tree_steps(values: LazyList[LazyTree[a]], test_fn: a -> Test, steps: List[Unit]) -> Option[LazyTree[a]]:
   loop steps:
     case []:
       None
@@ -188,43 +231,28 @@ def first_failing_steps(values: LazyList[a], test_fn: a -> Test, steps: List[Uni
         case None:
           None
         case Some((head, rest)):
-          value = get_Lazy(head)
-          if test_fn(value).test_passes():
-            first_failing_steps(get_Lazy(rest), test_fn, tail)
+          tree = get_Lazy(head)
+          if test_fn(root_LazyTree(tree)).test_passes():
+            first_failing_tree_steps(get_Lazy(rest), test_fn, tail)
           else:
-            Some(value)
+            Some(tree)
 
-def first_failing(values: LazyList[a], test_fn: a -> Test) -> Option[a]:
-  first_failing_steps(values, test_fn, replicate_List(Unit, 4096))
+def first_failing_tree(values: LazyList[LazyTree[a]], test_fn: a -> Test) -> Option[LazyTree[a]]:
+  first_failing_tree_steps(values, test_fn, replicate_List(Unit, 4096))
 
-def shrink_to_smallest_steps(steps: List[Unit], current: a, shrink: a -> LazyList[a], test_fn: a -> Test) -> a:
+def shrink_tree_to_smallest_steps(steps: List[Unit], current: LazyTree[a], test_fn: a -> Test) -> a:
   loop steps:
     case []:
-      current
+      root_LazyTree(current)
     case [_, *tail]:
-      match first_failing(shrink(current), test_fn):
+      match first_failing_tree(children_LazyTree(current), test_fn):
         case None:
-          current
+          root_LazyTree(current)
         case Some(next):
-          shrink_to_smallest_steps(tail, next, shrink, test_fn)
+          shrink_tree_to_smallest_steps(tail, next, test_fn)
 
-def shrink_to_smallest(start: a, shrink: a -> LazyList[a], test_fn: a -> Test) -> a:
-  shrink_to_smallest_steps(replicate_List(Unit, 128), start, shrink, test_fn)
-
-def first_failure_and_shrunk_samples(samples: List[a], gen: Gen[a], test_fn: a -> Test) -> Option[(a, a)]:
-  loop samples:
-    case []:
-      None
-    case [head, *tail]:
-      test = test_fn(head)
-      if test.test_passes():
-        first_failure_and_shrunk_samples(tail, gen, test_fn)
-      else:
-        Some((head, shrink_to_smallest(head, gen.shrink_Gen(), test_fn)))
-
-def first_failure_and_shrunk(gen: Gen[a], count: Int, seed: Int, test_fn: a -> Test) -> Option[(a, a)]:
-  samples = run_Rand(sequence_Rand(replicate_List(gen.gen_Rand(), count)), seed)
-  first_failure_and_shrunk_samples(samples, gen, test_fn)
+def shrink_tree_to_smallest(start: LazyTree[a], test_fn: a -> Test) -> a:
+  shrink_tree_to_smallest_steps(replicate_List(Unit, 128), start, test_fn)
 
 def render_failure(name: String, show: a -> String, original: a, shrunk: a, message: Option[String]) -> String:
   base = "${name} failed (original=${show(original)}, shrunk=${show(shrunk)})"
@@ -247,13 +275,6 @@ def list_size_loop(list: List[a], acc: Int) -> Int:
 def list_size(list: List[a]) -> Int:
   list_size_loop(list, 0)
 
-def min_Int(a: Int, b: Int) -> Int:
-  match cmp_Int(a, b):
-    case LT | EQ:
-      a
-    case GT:
-      b
-
 def abs_Int(i: Int) -> Int:
   if cmp_Int(i, 0) matches LT:
     0.sub(i)
@@ -267,6 +288,42 @@ def sign_Int(i: Int) -> Int:
     0
   else:
     1
+
+def size_for_sample(index: Int, count: Int) -> Size:
+  if cmp_Int(count, 1) matches LT | EQ:
+    size_from_Int(1)
+  else:
+    scaled = index.mul(max_Size().sub(1)).div(count.sub(1)).add(1)
+    size_from_Int(scaled)
+
+def sample_trees(gen: Gen[a], count: Int, seed0: Seed) -> (Seed, List[LazyTree[a]]):
+  def go(rem: Int, idx: Int, seed: Seed, rev_acc: List[LazyTree[a]]) -> (Seed, List[LazyTree[a]]):
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        (seed, rev_acc.reverse())
+      case _:
+        size = size_for_sample(idx, count)
+        tree = run_Gen(gen, size, seed)
+        ((next_seed, _)) = root_LazyTree(tree)
+        go(rem.sub(1), idx.add(1), next_seed, [drop_seed_Tree(tree), *rev_acc])
+
+  go(count, 0, seed0, [])
+
+def first_failure_and_shrunk_samples(samples: List[LazyTree[a]], test_fn: a -> Test) -> Option[(a, a)]:
+  loop samples:
+    case []:
+      None
+    case [head, *tail]:
+      original = root_LazyTree(head)
+      test = test_fn(original)
+      if test.test_passes():
+        first_failure_and_shrunk_samples(tail, test_fn)
+      else:
+        Some((original, shrink_tree_to_smallest(head, test_fn)))
+
+def first_failure_and_shrunk(gen: Gen[a], count: Int, seed: Int, test_fn: a -> Test) -> Option[(a, a)]:
+  (_, samples) = sample_trees(gen, count, seed_from_Int(seed))
+  first_failure_and_shrunk_samples(samples, test_fn)
 
 def filter_LazyList(list: LazyList[a], pred: a -> Bool) -> LazyList[a]:
   filter_native_LazyList(list, pred)
@@ -288,7 +345,7 @@ def shrink_Int(i: Int) -> LazyList[Int]:
     half = i.div(2)
     one = sign_Int(i)
     if half.eq_Int(0):
-      singleton_LazyList(0)
+      from_List_LazyList([0])
     elif half.eq_Int(one):
       from_List_LazyList([0, one])
     else:
@@ -304,17 +361,14 @@ def shrink_positive(i: Int) -> LazyList[Int]:
     positive = to_List_LazyList(filter_LazyList(shrink_Int(i), v -> cmp_Int(v, 0) matches GT))
     from_List_LazyList([1].concat(positive))
 
-def shrink_List(shrink_item)(list: List[a]) -> LazyList[List[a]]:
-  match list:
-    case []:
+def shrink_Comparison_Index(i: Int) -> LazyList[Int]:
+  match i:
+    case 0:
       empty_LazyList
-    case [head, *tail]:
-      candidates = match first_LazyList(shrink_item(head)):
-        case Some(h):
-          [tail, [head], [h, *tail]]
-        case None:
-          [tail, [head]]
-      from_List_LazyList(candidates)
+    case 1:
+      from_List_LazyList([0])
+    case _:
+      from_List_LazyList([1, 0])
 
 def to_ascii_Char(i: Int) -> Char:
   match int_to_Char(i):
@@ -333,171 +387,11 @@ def int_List_to_String_or_empty(list: List[Int]) -> String:
     case None:
       ""
 
-def shrink_String(str: String) -> LazyList[String]:
-  ints = string_to_Int_List(str)
-  filter_map_LazyList(shrink_List(shrink_Int)(ints), int_List_to_String)
-
-def shrink_Option(shrink_item)(value: Option[a]) -> LazyList[Option[a]]:
-  match value:
-    case None:
-      empty_LazyList
-    case Some(item):
-      match first_LazyList(shrink_item(item)):
-        case Some(next):
-          from_List_LazyList([None, Some(next)])
-        case None:
-          singleton_LazyList(None)
-
-def shrink_Tuple2(shrink_left, shrink_right)((left, right): (a, b)) -> LazyList[(a, b)]:
-  left_candidates = match first_LazyList(shrink_left(left)):
-    case Some(l):
-      [(l, right)]
-    case None:
-      []
-  right_candidates = match first_LazyList(shrink_right(right)):
-    case Some(r):
-      [(left, r)]
-    case None:
-      []
-  from_List_LazyList(left_candidates.concat(right_candidates))
-
-def shrink_Tuple3(shrink_a, shrink_b, shrink_c)((a0, b0, c0): (a, b, c)) -> LazyList[(a, b, c)]:
-  as = match first_LazyList(shrink_a(a0)):
-    case Some(a1):
-      [(a1, b0, c0)]
-    case None:
-      []
-  bs = match first_LazyList(shrink_b(b0)):
-    case Some(b1):
-      [(a0, b1, c0)]
-    case None:
-      []
-  cs = match first_LazyList(shrink_c(c0)):
-    case Some(c1):
-      [(a0, b0, c1)]
-    case None:
-      []
-  from_List_LazyList(as.concat(bs).concat(cs))
-
-def shrink_Tuple4(shrink_a, shrink_b, shrink_c, shrink_d)((a0, b0, c0, d0): (a, b, c, d)) -> LazyList[(a, b, c, d)]:
-  as = match first_LazyList(shrink_a(a0)):
-    case Some(a1):
-      [(a1, b0, c0, d0)]
-    case None:
-      []
-  bs = match first_LazyList(shrink_b(b0)):
-    case Some(b1):
-      [(a0, b1, c0, d0)]
-    case None:
-      []
-  cs = match first_LazyList(shrink_c(c0)):
-    case Some(c1):
-      [(a0, b0, c1, d0)]
-    case None:
-      []
-  ds = match first_LazyList(shrink_d(d0)):
-    case Some(d1):
-      [(a0, b0, c0, d1)]
-    case None:
-      []
-  from_List_LazyList(as.concat(bs).concat(cs).concat(ds))
-
-unit_Gen: Gen[Unit] = const_Gen(Unit)
-
-bool_Gen: Gen[Bool] = Gen(
-  map_Rand(int_range(2), i -> i.eq_Int(1)),
-  b -> singleton_LazyList(False) if b else empty_LazyList,
-)
-
-comparison_Gen: Gen[Comparison] = Gen(
-  map_Rand(int_range(3), i -> (
-    if i.eq_Int(0):
-      LT
-    elif i.eq_Int(1):
-      EQ
-    else:
-      GT
-  )),
-  c -> from_List_LazyList(match c:
-    case LT:
-      []
-    case EQ:
-      [LT]
-    case GT:
-      [EQ, LT],
-  ),
-)
-
-int32_max = shift_left_Int(1, 31)
-
-int_Gen: Gen[Int] = Gen(
-  one_of_Int(
-    int8_signed_Range,
-    [int16_signed_Range, int32_signed_Range, int64_signed_Range, int128_signed_Range],
-  ),
-  shrink_Int,
-)
-
-int32_Gen: Gen[Int] = Gen(sample_Int(int32_signed_Range), shrink_Int)
-
-uint32_Gen: Gen[Int] = Gen(sample_Int(uint32_Range), shrink_non_negative)
-
-pos_Int_Gen: Gen[Int] = Gen(
-  one_of_Int(
-    pos_int8_Range,
-    [pos_int16_Range, pos_int32_Range],
-  ),
-  shrink_positive,
-)
-
-ascii_printable_Range = linear_Range(32, 127)
-short_string_length_Range = linear_Range(0, 24)
-short_list_length_Range = linear_Range(0, 16)
-
-char_Gen: Gen[Char] = Gen(
-  map_Rand(sample_Int(ascii_printable_Range), to_ascii_Char),
-  shrink_Char,
-)
-
-string_Gen: Gen[String] = Gen(
-  flat_map_Rand(sample_Int(short_string_length_Range), len -> (
-    chars = replicate_List(char_Gen.gen_Rand(), len)
-    map_Rand(sequence_Rand(chars), list -> (
-      int_values = list.map_List(char_to_Int)
-      int_List_to_String_or_empty(int_values)
-    ))
-  )),
-  shrink_String,
-)
+def chars_to_String(chars: List[Char]) -> String:
+  int_List_to_String_or_empty(chars.map_List(char_to_Int))
 
 float_zero = int_to_Float64(0)
 float_one = int_to_Float64(1)
-float_scale = int_to_Float64(1000000)
-
-def signed_Float64(neg: Bool, value: Float64) -> Float64:
-  if neg:
-    subf(float_zero, value)
-  else:
-    value
-
-rand_unit_float: Rand[Float64] = map_Rand(
-  int_range(1000000),
-  i -> divf(int_to_Float64(i), float_scale),
-)
-
-rand_signed_unit_float: Rand[Float64] = map_Rand(
-  prod_Rand(bool_Gen.gen_Rand(), rand_unit_float),
-  ((neg, value)) -> signed_Float64(neg, value),
-)
-
-rand_exp_float: Rand[Float64] = map_Rand(
-  prod_Rand(bool_Gen.gen_Rand(), geometric_Int),
-  ((neg, exp0)) -> (
-    exp = min_Int(exp0, 60)
-    mag = int_to_Float64(shift_left_Int(1, exp))
-    signed_Float64(neg, mag)
-  ),
-)
 
 def shrink_Float64(value: Float64) -> LazyList[Float64]:
   if cmp_Float64(value, float_zero) matches EQ:
@@ -510,76 +404,186 @@ def shrink_Float64(value: Float64) -> LazyList[Float64]:
     else:
       from_List_LazyList([float_zero, half, mirrored])
 
-float64_Gen: Gen[Float64] = Gen(
-  one_of(rand_unit_float, [rand_signed_unit_float, rand_exp_float]),
-  shrink_Float64,
+def exact_list_Gen(length: Int, gen: Gen[a]) -> Gen[List[a]]:
+  recur length:
+    case _ if cmp_Int(length, 0) matches LT | EQ:
+      const_Gen([])
+    case _:
+      flat_map_Gen(gen, head -> map_Gen(exact_list_Gen(length.sub(1), gen), tail -> [head, *tail]))
+
+def list_of_range_Gen(length_range: Range, gen: Gen[a]) -> Gen[List[a]]:
+  Gen((size, seed) -> (
+    (seed1, length) = sample_Int(length_range, size, seed)
+    tree = run_Gen(exact_list_Gen(length, gen), size, seed1)
+    ((seed2, items)) = root_LazyTree(tree)
+    extra_children = match items:
+      case []:
+        []
+      case [head, *tail]:
+        [
+          singleton_LazyTree((seed2, tail)),
+          singleton_LazyTree((seed2, [head])),
+        ]
+    with_extra_children(tree, extra_children)
+  ))
+
+def comparison_from_index(i: Int) -> Comparison:
+  if i.eq_Int(0):
+    LT
+  elif i.eq_Int(1):
+    EQ
+  else:
+    GT
+
+def sample_unit_float(seed: Seed) -> (Seed, Float64):
+  choose_Float64(seed, float_zero, float_one)
+
+def signed_Float64(neg: Bool, value: Float64) -> Float64:
+  if neg:
+    subf(float_zero, value)
+  else:
+    value
+
+def sample_signed_unit_float(seed: Seed) -> (Seed, Float64):
+  (seed1, neg_idx) = choose_Int(seed, 0, 1)
+  (seed2, value) = sample_unit_float(seed1)
+  (seed2, signed_Float64(neg_idx.eq_Int(1), value))
+
+def sample_exp_float(size: Size, seed: Seed) -> (Seed, Float64):
+  (seed1, neg_idx) = choose_Int(seed, 0, 1)
+  (seed2, exp0) = sample_Int(linear_Range(0, 61), size, seed1)
+  (seed2, signed_Float64(neg_idx.eq_Int(1), int_to_Float64(shift_left_Int(1, exp0))))
+
+def sample_float64(size: Size, seed: Seed) -> (Seed, Float64):
+  (seed1, tag) = sample_Int(linear_Range(0, 3), size, seed)
+  if tag.eq_Int(0):
+    sample_unit_float(seed1)
+  elif tag.eq_Int(1):
+    sample_signed_unit_float(seed1)
+  else:
+    sample_exp_float(size, seed1)
+
+unit_Gen: Gen[Unit] = const_Gen(Unit)
+
+bool_Gen: Gen[Bool] = map_Gen(
+  sampled_Gen((size, seed) -> sample_Int(linear_Range(0, 2), size, seed), shrink_non_negative),
+  i -> i.eq_Int(1),
 )
 
+comparison_Gen: Gen[Comparison] = map_Gen(
+  sampled_Gen((size, seed) -> sample_Int(linear_Range(0, 3), size, seed), shrink_Comparison_Index),
+  comparison_from_index,
+)
+
+int32_max = shift_left_Int(1, 31)
+
+int_Gen: Gen[Int] = sampled_Gen(
+  (size, seed) -> one_of_Int(
+    int8_signed_Range,
+    [int16_signed_Range, int32_signed_Range, int64_signed_Range, int128_signed_Range],
+    size,
+    seed,
+  ),
+  shrink_Int,
+)
+
+int32_Gen: Gen[Int] = sampled_Gen(
+  (size, seed) -> sample_Int(int32_signed_Range, size, seed),
+  shrink_Int,
+)
+
+uint32_Gen: Gen[Int] = sampled_Gen(
+  (size, seed) -> sample_Int(uint32_Range, size, seed),
+  shrink_non_negative,
+)
+
+pos_Int_Gen: Gen[Int] = sampled_Gen(
+  (size, seed) -> one_of_Int(
+    pos_int8_Range,
+    [pos_int16_Range, pos_int32_Range],
+    size,
+    seed,
+  ),
+  shrink_positive,
+)
+
+ascii_printable_Range = linear_Range(32, 127)
+short_string_length_Range = linear_Range(0, 24)
+short_list_length_Range = linear_Range(0, 16)
+
+char_Gen: Gen[Char] = sampled_Gen(
+  (size, seed) -> (
+    (next_seed, code) = sample_Int(ascii_printable_Range, size, seed)
+    (next_seed, to_ascii_Char(code))
+  ),
+  shrink_Char,
+)
+
+string_Gen: Gen[String] = map_Gen(
+  list_of_range_Gen(short_string_length_Range, char_Gen),
+  chars_to_String,
+)
+
+float64_Gen: Gen[Float64] = sampled_Gen(sample_float64, shrink_Float64)
+
 def option_Gen(gen: Gen[a]) -> Gen[Option[a]]:
-  Gen(
-    flat_map_Rand(sample_Int(linear_Range(0, 4)), i -> (
-      if i.eq_Int(0):
-        const_Rand(None)
-      else:
-        map_Rand(gen.gen_Rand(), Some)
-    )),
-    shrink_Option(gen.shrink_Gen()),
-  )
+  Gen((size, seed) -> (
+    (seed1, tag) = sample_Int(linear_Range(0, 4), size, seed)
+    if tag.eq_Int(0):
+      singleton_LazyTree((seed1, None))
+    else:
+      mapped = map_LazyTree(run_Gen(gen, size, seed1), ((next_seed, value)) -> (next_seed, Some(value)))
+      ((seed2, _)) = root_LazyTree(mapped)
+      with_extra_children(mapped, [singleton_LazyTree((seed2, None))])
+  ))
 
 def list_Gen(gen: Gen[a]) -> Gen[List[a]]:
-  Gen(
-    flat_map_Rand(sample_Int(short_list_length_Range), len -> sequence_Rand(replicate_List(gen.gen_Rand(), len))),
-    shrink_List(gen.shrink_Gen()),
-  )
+  list_of_range_Gen(short_list_length_Range, gen)
 
 def tuple2_Gen(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
-  Gen(
-    prod_Rand(left.gen_Rand(), right.gen_Rand()),
-    shrink_Tuple2(left.shrink_Gen(), right.shrink_Gen()),
-  )
+  flat_map_Gen(left, left_value -> map_Gen(right, right_value -> (left_value, right_value)))
 
 def tuple3_Gen(ga: Gen[a], gb: Gen[b], gc: Gen[c]) -> Gen[(a, b, c)]:
-  Gen(
-    map_Rand(prod_Rand(prod_Rand(ga.gen_Rand(), gb.gen_Rand()), gc.gen_Rand()), (((a0, b0), c0)) -> (a0, b0, c0)),
-    shrink_Tuple3(ga.shrink_Gen(), gb.shrink_Gen(), gc.shrink_Gen()),
-  )
+  flat_map_Gen(ga, a0 -> flat_map_Gen(gb, b0 -> map_Gen(gc, c0 -> (a0, b0, c0))))
 
 def tuple4_Gen(ga: Gen[a], gb: Gen[b], gc: Gen[c], gd: Gen[d]) -> Gen[(a, b, c, d)]:
-  Gen(
-    map_Rand(
-      prod_Rand(prod_Rand(prod_Rand(ga.gen_Rand(), gb.gen_Rand()), gc.gen_Rand()), gd.gen_Rand()),
-      ((((a0, b0), c0), d0)) -> (a0, b0, c0, d0)
-    ),
-    shrink_Tuple4(ga.shrink_Gen(), gb.shrink_Gen(), gc.shrink_Gen(), gd.shrink_Gen()),
-  )
+  flat_map_Gen(ga, a0 -> flat_map_Gen(gb, b0 -> flat_map_Gen(gc, c0 -> map_Gen(gd, d0 -> (a0, b0, c0, d0)))))
 
-struct Prop(run: Int -> Rand[Test])
+struct Prop(run: (Int, Seed) -> (Seed, Test))
 
-def run_count(prop: Prop, count: Int) -> Rand[Test]:
+def run_count(prop: Prop, count: Int, seed: Seed) -> (Seed, Test):
   Prop(run) = prop
-  run(count)
+  run(count, seed)
 
 def forall_Prop(gen: Gen[a], name: String, show: a -> String, test_fn: a -> Test) -> Prop:
-  Prop(count -> (
-    samples_rand = sequence_Rand(replicate_List(gen.gen_Rand(), count))
-    map_Rand(samples_rand, samples -> (
-      match first_failure_and_shrunk_samples(samples, gen, test_fn):
-        case None:
-          Assertion(True, name)
-        case Some((original, shrunk)):
-          fail_message = first_failure_message(test_fn(shrunk))
-          Assertion(False, render_failure(name, show, original, shrunk, fail_message))
-    ))
+  Prop((count, seed) -> (
+    (next_seed, samples) = sample_trees(gen, count, seed)
+    test = match first_failure_and_shrunk_samples(samples, test_fn):
+      case None:
+        Assertion(True, name)
+      case Some((original, shrunk)):
+        fail_message = first_failure_message(test_fn(shrunk))
+        Assertion(False, render_failure(name, show, original, shrunk, fail_message))
+    (next_seed, test)
   ))
 
 def suite_Prop(name: String, props: List[Prop]) -> Prop:
-  Prop(count -> (
-    all_runs = [run_count(prop, count) for prop in props]
-    map_Rand(sequence_Rand(all_runs), tests -> TestSuite(name, tests))
+  Prop((count, seed) -> (
+    def go(rem: List[Prop], current_seed: Seed, rev_tests: List[Test]) -> (Seed, List[Test]):
+      loop rem:
+        case []:
+          (current_seed, rev_tests.reverse())
+        case [head, *tail]:
+          (next_seed, test) = run_count(head, count, current_seed)
+          go(tail, next_seed, [test, *rev_tests])
+
+    (final_seed, tests) = go(props, seed, [])
+    (final_seed, TestSuite(name, tests))
   ))
 
 def run_Prop(prop: Prop, count: Int, seed: Int) -> Test:
-  run_Rand(run_count(prop, count), seed)
+  (_, test) = run_count(prop, count, seed_from_Int(seed))
+  test
 
 def show_Bool(bool: Bool) -> String:
   if bool:
@@ -655,18 +659,13 @@ non_one_int_Range = linear_Range(2, 1026)
 non_empty_list_len_Range = linear_Range(1, 9)
 
 def non_one_int_Gen() -> Gen[Int]:
-  Gen(
-    sample_Int(non_one_int_Range),
+  sampled_Gen(
+    (size, seed) -> sample_Int(non_one_int_Range, size, seed),
     shrink_positive,
   )
 
 def non_empty_int_list_Gen() -> Gen[List[Int]]:
-  Gen(
-    flat_map_Rand(sample_Int(non_empty_list_len_Range), len -> (
-      sequence_Rand(replicate_List(int_Gen.gen_Rand(), len))
-    )),
-    shrink_List(shrink_Int),
-  )
+  list_of_range_Gen(non_empty_list_len_Range, int_Gen)
 
 def suite_recursion_witness() -> Test:
   nested = TestSuite("outer", [

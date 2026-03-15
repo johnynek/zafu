@@ -1,17 +1,27 @@
 package Zafu/Testing/HedgeHog/Range
 
-from Bosatsu/Rand import (
-  Rand,
-  int_range,
-  const_Rand,
-  map_Rand,
-  one_of,
+from Zafu/Testing/HedgeHog/Seed import (
+  Seed,
+  choose_Int,
+  from_Int as seed_from_Int,
+)
+from Zafu/Testing/HedgeHog/Size import (
+  Size,
+  from_Int as size_from_Int,
+  max as max_Size,
+  to_Int,
+)
+from Zafu/Collection/List import (
+  size as size_List,
+  get_List,
 )
 
 export (
   Range,
   constant_Range,
   linear_Range,
+  lower_bound,
+  upper_bound,
   sample_Int,
   one_of_Int,
   int8_signed_Range,
@@ -25,31 +35,74 @@ export (
   pos_int32_Range,
 )
 
-struct Range(lower: Int, upper_exclusive: Int)
+struct Range(origin: Int, bounds_fn: Size -> (Int, Int))
 
-def normalize(range: Range) -> Range:
-  Range(lower, upper_exclusive) = range
+def normalize_bounds(lower: Int, upper_exclusive: Int) -> (Int, Int):
   if cmp_Int(upper_exclusive, lower) matches GT:
-    range
+    (lower, upper_exclusive)
   else:
-    Range(lower, lower.add(1))
+    (lower, lower.add(1))
+
+def scale_from(origin: Int, target: Int, size: Size) -> Int:
+  delta = target.sub(origin)
+  origin.add(delta.mul(size.to_Int()).div(max_Size()))
+
+def default_origin(lower: Int, upper_exclusive: Int) -> Int:
+  if cmp_Int(lower, 0) matches GT | EQ:
+    lower
+  elif cmp_Int(upper_exclusive, 0) matches LT | EQ:
+    upper_exclusive.sub(1)
+  else:
+    0
+
+def bounds(range: Range, size: Size) -> (Int, Int):
+  Range(_, bounds_fn) = range
+  bounds_fn(size)
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def lower_bound(range: Range, size: Size) -> Int:
+  (lower, _) = bounds(range, size)
+  lower
+
+def upper_bound(range: Range, size: Size) -> Int:
+  (_, upper_exclusive) = bounds(range, size)
+  upper_exclusive
 
 def constant_Range(lower: Int, upper_exclusive: Int) -> Range:
-  normalize(Range(lower, upper_exclusive))
+  (lower1, upper1) = normalize_bounds(lower, upper_exclusive)
+  Range(lower1, _ -> (lower1, upper1))
+
+def linear_from_Range(origin: Int, lower: Int, upper_exclusive: Int) -> Range:
+  (lower1, upper1) = normalize_bounds(lower, upper_exclusive)
+  Range(origin, size -> normalize_bounds(
+    scale_from(origin, lower1, size),
+    scale_from(origin, upper1, size),
+  ))
 
 def linear_Range(lower: Int, upper_exclusive: Int) -> Range:
-  constant_Range(lower, upper_exclusive)
+  linear_from_Range(default_origin(lower, upper_exclusive), lower, upper_exclusive)
 
-def sample_Int(range: Range) -> Rand[Int]:
-  Range(lower, upper_exclusive) = normalize(range)
-  span = upper_exclusive.sub(lower)
-  if span.eq_Int(1):
-    const_Rand(lower)
-  else:
-    map_Rand(int_range(span), i -> i.add(lower))
+def sample_Int(range: Range, size: Size, seed: Seed) -> (Seed, Int):
+  (lower, upper_exclusive) = normalize_bounds(range.lower_bound(size), range.upper_bound(size))
+  choose_Int(seed, lower, upper_exclusive.sub(1))
 
-def one_of_Int(first: Range, rest: List[Range]) -> Rand[Int]:
-  one_of(sample_Int(first), rest.map_List(sample_Int))
+def one_of_Int(first: Range, rest: List[Range], size: Size, seed: Seed) -> (Seed, Int):
+  ranges = [first, *rest]
+  match ranges:
+    case [only]:
+      sample_Int(only, size, seed)
+    case _:
+      (seed1, idx) = choose_Int(seed, 0, size_List(ranges).sub(1))
+      match get_List(ranges, idx):
+        case Some(range):
+          sample_Int(range, size, seed1)
+        case None:
+          sample_Int(first, size, seed1)
 
 int8_signed_Range = linear_Range(0.sub(shift_left_Int(1, 7)), shift_left_Int(1, 7))
 int16_signed_Range = linear_Range(0.sub(shift_left_Int(1, 15)), shift_left_Int(1, 15))
@@ -62,3 +115,36 @@ uint32_Range = linear_Range(0, shift_left_Int(1, 32))
 pos_int8_Range = linear_Range(1, shift_left_Int(1, 8))
 pos_int16_Range = linear_Range(1, shift_left_Int(1, 16))
 pos_int32_Range = linear_Range(1, shift_left_Int(1, 31))
+
+tests = TestSuite("Zafu/Testing/HedgeHog/Range tests", [
+  Assertion(
+    constant_Range(5, 11).lower_bound(size_from_Int(1)).eq_Int(5),
+    "constant lower bound",
+  ),
+  Assertion(
+    constant_Range(5, 11).upper_bound(size_from_Int(99)).eq_Int(11),
+    "constant upper bound",
+  ),
+  Assertion(
+    linear_Range(0, 10).upper_bound(size_from_Int(1)).eq_Int(1),
+    "linear range starts small",
+  ),
+  Assertion(
+    linear_Range(0, 10).upper_bound(size_from_Int(100)).eq_Int(10),
+    "linear range reaches max bound",
+  ),
+  (
+    sample_range = linear_Range(-10, 11)
+    sample_size = size_from_Int(50)
+    (_, sampled_value) = sample_Int(sample_range, sample_size, seed_from_Int(7))
+    lower = sample_range.lower_bound(sample_size)
+    upper = sample_range.upper_bound(sample_size)
+    Assertion(
+      and_Bool(
+        cmp_Int(sampled_value, lower) matches GT | EQ,
+        cmp_Int(sampled_value, upper) matches LT,
+      ),
+      "sample_Int stays in bounds",
+    )
+  ),
+])

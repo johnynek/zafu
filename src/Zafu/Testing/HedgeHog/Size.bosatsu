@@ -1,0 +1,58 @@
+package Zafu/Testing/HedgeHog/Size
+
+from Bosatsu/Num/Float64 import (
+  cmp_Float64,
+  divf,
+  int_to_Float64,
+)
+
+export (
+  Size,
+  from_Int,
+  to_Int,
+  max,
+  percentage,
+  incBy,
+  golden,
+)
+
+struct Size(value: Int)
+
+size_max: Int = 100
+golden_num: Int = 61803398875
+golden_den: Int = 100000000000
+
+def normalize_Int(value: Int) -> Int:
+  remainder = mod_Int(value, size_max)
+  if cmp_Int(remainder, 0) matches LT | EQ:
+    remainder.add(size_max)
+  else:
+    remainder
+
+def from_Int(value: Int) -> Size:
+  Size(normalize_Int(value))
+
+def to_Int(size: Size) -> Int:
+  Size(value) = size
+  value
+
+def max() -> Int:
+  size_max
+
+def percentage(size: Size) -> Float64:
+  divf(int_to_Float64(size.to_Int()), int_to_Float64(size_max))
+
+def incBy(size: Size, delta: Size) -> Size:
+  from_Int(size.to_Int().add(delta.to_Int()))
+
+def golden(size: Size) -> Size:
+  from_Int(size.to_Int().mul(golden_num).div(golden_den))
+
+tests = TestSuite("Zafu/Testing/HedgeHog/Size tests", [
+  Assertion(from_Int(100).to_Int().eq_Int(100), "Size.from_Int keeps 100"),
+  Assertion(from_Int(101).to_Int().eq_Int(1), "Size.from_Int wraps above max"),
+  Assertion(from_Int(0).to_Int().eq_Int(100), "Size.from_Int wraps non-positive"),
+  Assertion(cmp_Float64(from_Int(50).percentage(), 0.5) matches EQ, "Size.percentage"),
+  Assertion(from_Int(60).incBy(from_Int(50)).to_Int().eq_Int(10), "Size.incBy wraps"),
+  Assertion(from_Int(100).golden().to_Int().eq_Int(61), "Size.golden scales"),
+])
