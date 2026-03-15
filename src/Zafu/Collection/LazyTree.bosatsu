@@ -4,6 +4,20 @@ from Bosatsu/Lazy import (
   lazy,
   get_Lazy,
 )
+from Bosatsu/Rand import (
+  Rand,
+  int_range,
+  map_Rand,
+  flat_map_Rand,
+  prod_Rand,
+  sequence_Rand,
+)
+from Bosatsu/Testing/Properties import (
+  Prop,
+  forall_Prop,
+  suite_Prop,
+  run_Prop,
+)
 from Zafu/Abstract/Eq import (
   Eq,
   eq_from_fn,
@@ -17,7 +31,6 @@ from Zafu/Abstract/Monad import (
   Monad,
   monad_from_applicative_flat_map_tailrec_steps,
   tailrec_steps,
-  laws_Monad,
 )
 from Zafu/Collection/LazyList import (
   LazyList,
@@ -208,6 +221,162 @@ def eq_IterState_Int_Int(left: IterState[Int, Int], right: IterState[Int, Int]) 
 eq_LazyTree_Int: Eq[LazyTree[Int]] = eq_LazyTree(eq_Int_inst)
 eq_LazyTree_IterState_Int_Int: Eq[LazyTree[IterState[Int, Int]]] = eq_LazyTree(eq_from_fn(eq_IterState_Int_Int))
 
+bounded_tree_depth = 3
+bounded_tree_min_branch = 2
+bounded_tree_max_branch = 3
+
+rand_tree_value: Rand[Int] = map_Rand(int_range(41), i -> i.sub(20))
+rand_small_offset: Rand[Int] = map_Rand(int_range(17), i -> i.sub(8))
+rand_small_positive: Rand[Int] = map_Rand(int_range(3), i -> i.add(1))
+rand_tail_goal: Rand[Int] = map_Rand(int_range(4), i -> i.add(1))
+rand_child_count: Rand[Int] = map_Rand(int_range(bounded_tree_max_branch.sub(bounded_tree_min_branch).add(1)), i -> i.add(bounded_tree_min_branch))
+
+def rand_bounded_tree(depth: Int) -> Rand[LazyTree[Int]]:
+  recur depth:
+    case _ if cmp_Int(depth, 0) matches LT | EQ:
+      map_Rand(rand_tree_value, singleton)
+    case _:
+      child_gen = rand_bounded_tree(depth.sub(1))
+      flat_map_Rand(prod_Rand(rand_tree_value, rand_child_count), ((value, child_count)) -> (
+        map_Rand(
+          sequence_Rand(replicate_List(child_gen, child_count)),
+          children -> LazyTree(value, from_List_LazyList(children)),
+        )
+      ))
+
+rand_law_tree: Rand[LazyTree[Int]] = rand_bounded_tree(bounded_tree_depth)
+
+struct MonadLawConfig(
+  pure_value: Int,
+  ab_root_shift: Int,
+  ab_child_shift: Int,
+  bc_root_shift: Int,
+  bc_child_shift: Int,
+  map_shift: Int,
+  map_scale: Int,
+  tail_seed: Int,
+  tail_goal: Int,
+)
+
+rand_monad_law_config: Rand[MonadLawConfig] = map_Rand(
+  prod_Rand(
+    prod_Rand(rand_tree_value, rand_small_offset),
+    prod_Rand(
+      prod_Rand(rand_small_offset, rand_small_offset),
+      prod_Rand(
+        prod_Rand(rand_small_offset, rand_small_positive),
+        prod_Rand(int_range(3), rand_tail_goal),
+      ),
+    ),
+  ),
+  (((pure_value, ab_root_shift), ((ab_child_shift, bc_root_shift), ((bc_child_shift, map_scale), (tail_seed, tail_goal))))) -> (
+    MonadLawConfig(
+      pure_value,
+      ab_root_shift,
+      ab_child_shift,
+      bc_root_shift,
+      bc_child_shift,
+      ab_root_shift.add(bc_child_shift),
+      map_scale,
+      tail_seed,
+      tail_goal,
+    )
+  ),
+)
+
+rand_tree_and_law_config: Rand[(LazyTree[Int], MonadLawConfig)] = prod_Rand(rand_law_tree, rand_monad_law_config)
+
+def law_fn_ab(config: MonadLawConfig) -> Int -> LazyTree[Int]:
+  MonadLawConfig(_, ab_root_shift, ab_child_shift, _, _, _, _, _, _) = config
+  value -> LazyTree(
+    value.add(ab_root_shift),
+    from_List_LazyList([
+      singleton(value.sub(ab_root_shift)),
+      LazyTree(value.add(ab_child_shift), from_List_LazyList([singleton(value.mul(2).add(ab_child_shift))])),
+    ]),
+  )
+
+def law_fn_bc(config: MonadLawConfig) -> Int -> LazyTree[Int]:
+  MonadLawConfig(_, _, _, bc_root_shift, bc_child_shift, _, _, _, _) = config
+  value -> LazyTree(
+    value.mul(2).add(bc_root_shift),
+    from_List_LazyList([
+      singleton(value.add(bc_child_shift)),
+      singleton(value.sub(bc_child_shift)),
+    ]),
+  )
+
+def law_fn_map(config: MonadLawConfig) -> Int -> Int:
+  MonadLawConfig(_, _, _, _, _, map_shift, map_scale, _, _) = config
+  value -> value.mul(map_scale).add(map_shift)
+
+def law_tailrec_step(config: MonadLawConfig) -> Int -> LazyTree[IterState[Int, Int]]:
+  MonadLawConfig(_, _, _, _, _, map_shift, _, _, tail_goal) = config
+  seed -> (
+    if cmp_Int(seed, tail_goal) matches LT:
+      singleton(Continue(seed.add(1)))
+    else:
+      singleton(Done(seed.add(map_shift)))
+  )
+
+def monad_laws_hold(tree: LazyTree[Int], config: MonadLawConfig) -> Bool:
+  MonadLawConfig(pure_value, _, _, _, _, _, _, tail_seed, _) = config
+  fn_ab = law_fn_ab(config)
+  fn_bc = law_fn_bc(config)
+  fn_map = law_fn_map(config)
+  step = law_tailrec_step(config)
+
+  left_identity = eq_Eq(
+    eq_LazyTree_Int,
+    flat_map(singleton(pure_value), fn_ab),
+    fn_ab(pure_value),
+  )
+  right_identity = eq_Eq(
+    eq_LazyTree_Int,
+    flat_map(tree, singleton),
+    tree,
+  )
+  associativity = eq_Eq(
+    eq_LazyTree_Int,
+    flat_map(flat_map(tree, fn_ab), fn_bc),
+    flat_map(tree, value -> flat_map(fn_ab(value), fn_bc)),
+  )
+  map_coherence = eq_Eq(
+    eq_LazyTree_Int,
+    map(tree, fn_map),
+    flat_map(tree, value -> singleton(fn_map(value))),
+  )
+  tailrec_step_one = eq_Eq(
+    eq_LazyTree_IterState_Int_Int,
+    tailrec_steps(monad_LazyTree, 1, tail_seed, step),
+    step(tail_seed),
+  )
+  tailrec_step_two = eq_Eq(
+    eq_LazyTree_IterState_Int_Int,
+    tailrec_steps(monad_LazyTree, 2, tail_seed, step),
+    flat_map(tailrec_steps(monad_LazyTree, 1, tail_seed, step), iter -> (
+      match iter:
+        case Done(done_value):
+          singleton(done(done_value))
+        case Continue(next_seed):
+          step(next_seed)
+    )),
+  )
+
+  and_Bool(
+    left_identity,
+    and_Bool(
+      right_identity,
+      and_Bool(
+        associativity,
+        and_Bool(
+          map_coherence,
+          and_Bool(tailrec_step_one, tailrec_step_two),
+        ),
+      ),
+    ),
+  )
+
 sample_tree: LazyTree[Int] = LazyTree(
   1,
   from_List_LazyList([
@@ -224,28 +393,44 @@ branchy_tree: LazyTree[Int] = LazyTree(
   ]),
 )
 
-def fn_ab(value: Int) -> LazyTree[Int]:
-  LazyTree(
-    value.add(1),
-    from_List_LazyList([
-      singleton(value.mul(10)),
-      singleton(value.add(2)),
-    ]),
-  )
-
-def fn_bc(value: Int) -> LazyTree[Int]:
-  LazyTree(
-    value.mul(2),
-    from_List_LazyList([
-      singleton(value.sub(3)),
-    ]),
-  )
-
 def tailrec_step(seed: Int) -> LazyTree[IterState[Int, Int]]:
   if cmp_Int(seed, 2) matches LT:
     singleton(Continue(seed.add(1)))
   else:
     singleton(Done(seed))
+
+map_identity_prop: Prop = forall_Prop(
+  rand_law_tree,
+  "map identity on bounded depth-3 trees",
+  tree -> Assertion(eq_Eq(eq_LazyTree_Int, map(tree, value -> value), tree), "map identity")
+)
+
+map_composition_prop: Prop = forall_Prop(
+  rand_tree_and_law_config,
+  "map composition on bounded depth-3 trees",
+  ((tree, config)) -> (
+    fn_left = law_fn_map(config)
+    fn_right = value -> value.sub(3)
+    mapped_twice = map(map(tree, fn_left), fn_right)
+    mapped_once = map(tree, value -> fn_right(fn_left(value)))
+    Assertion(eq_Eq(eq_LazyTree_Int, mapped_twice, mapped_once), "map composition")
+  )
+)
+
+monad_laws_prop: Prop = forall_Prop(
+  rand_tree_and_law_config,
+  "Monad laws on bounded depth-3 trees with branching 2 or 3",
+  ((tree, config)) -> Assertion(monad_laws_hold(tree, config), "Monad laws")
+)
+
+lazy_tree_props: Prop = suite_Prop(
+  "LazyTree properties",
+  [
+    map_identity_prop,
+    map_composition_prop,
+    monad_laws_prop,
+  ],
+)
 
 tests = TestSuite("LazyTree tests", [
   (
@@ -298,36 +483,5 @@ tests = TestSuite("LazyTree tests", [
     monad_LazyTree.tailrec_steps(4, 0, tailrec_step) matches LazyTree(Done(2), EmptyLazyList),
     "monad_LazyTree tailrec_steps reaches Done",
   ),
-  (
-    laws_Monad(
-      monad_LazyTree,
-      eq_LazyTree_Int,
-      eq_LazyTree_Int,
-      eq_LazyTree_Int,
-      eq_LazyTree_IterState_Int_Int,
-      sample_tree,
-      4,
-      fn_ab,
-      fn_bc,
-      value -> value.add(7),
-      0,
-      tailrec_step,
-    )
-  ),
-  (
-    laws_Monad(
-      monad_LazyTree,
-      eq_LazyTree_Int,
-      eq_LazyTree_Int,
-      eq_LazyTree_Int,
-      eq_LazyTree_IterState_Int_Int,
-      branchy_tree,
-      9,
-      value -> LazyTree(value.sub(1), from_List_LazyList([singleton(value)])),
-      value -> singleton(value.mul(3)),
-      value -> value.sub(2),
-      1,
-      tailrec_step,
-    )
-  ),
+  run_Prop(lazy_tree_props, 200, 20260314),
 ])
