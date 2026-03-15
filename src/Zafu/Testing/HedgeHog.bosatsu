@@ -512,7 +512,7 @@ pos_int_sampler = one_of_Int(
 
 # Generator for signed Int values across several size-scaled ranges.
 int_Gen: Gen[Int] = sampled_Gen(
-  (size, seed) -> int_sampler(size)(seed),
+  int_sampler,
   shrink_Int,
 )
 
@@ -530,7 +530,7 @@ uint32_Gen: Gen[Int] = sampled_Gen(
 
 # Generator for positive Int values.
 pos_Int_Gen: Gen[Int] = sampled_Gen(
-  (size, seed) -> pos_int_sampler(size)(seed),
+  pos_int_sampler,
   shrink_positive,
 )
 

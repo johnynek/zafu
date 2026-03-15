@@ -101,10 +101,10 @@ def sample_Int(range: Range, size: Size, seed: Seed) -> (Seed, Int):
   choose_Int(seed, lower, upper_exclusive.sub(1))
 
 # Build a size-aware sampler that chooses one of several ranges uniformly first.
-def one_of_Int(first: Range, rest: List[Range]) -> Size -> Seed -> (Seed, Int):
+def one_of_Int(first: Range, rest: List[Range]) -> (Size, Seed) -> (Seed, Int):
   ranges = from_List_Array([first, *rest])
   last_idx = size_Array(ranges).sub(1)
-  size -> seed -> (
+  (size, seed) -> (
     (seed1, idx) = choose_Int(seed, 0, last_idx)
     match get_Array(ranges, idx):
       case Some(range):
