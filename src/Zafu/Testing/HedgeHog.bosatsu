@@ -220,37 +220,41 @@ def first_failure(test: Test) -> Option[(List[String], String)]:
         case _:
           Some(([], "test traversal exceeded step budget"))
 
-def first_failing_tree_steps(values: LazyList[LazyTree[a]], test_fn: a -> Test, steps: List[Unit]) -> Option[LazyTree[a]]:
+max_tree_scan_steps: Int = 4096
+
+def first_failing_tree_steps(values: LazyList[LazyTree[a]], test_fn: a -> Test, steps: Int) -> Option[LazyTree[a]]:
   loop steps:
-    case []:
+    case _ if cmp_Int(steps, 0) matches LT | EQ:
       None
-    case [_, *tail]:
+    case _:
       match uncons_LazyList(values):
         case None:
           None
         case Some((head, rest)):
           tree = get_Lazy(head)
           if test_fn(root_LazyTree(tree)).first_failure() matches None:
-            first_failing_tree_steps(get_Lazy(rest), test_fn, tail)
+            first_failing_tree_steps(get_Lazy(rest), test_fn, steps.sub(1))
           else:
             Some(tree)
 
 def first_failing_tree(values: LazyList[LazyTree[a]], test_fn: a -> Test) -> Option[LazyTree[a]]:
-  first_failing_tree_steps(values, test_fn, replicate_List(Unit, 4096))
+  first_failing_tree_steps(values, test_fn, max_tree_scan_steps)
 
-def shrink_tree_to_smallest_steps(steps: List[Unit], current: LazyTree[a], test_fn: a -> Test) -> a:
+max_shrink_steps: Int = 128
+
+def shrink_tree_to_smallest_steps(steps: Int, current: LazyTree[a], test_fn: a -> Test) -> a:
   loop steps:
-    case []:
+    case _ if cmp_Int(steps, 0) matches LT | EQ:
       root_LazyTree(current)
-    case [_, *tail]:
+    case _:
       match first_failing_tree(children_LazyTree(current), test_fn):
         case None:
           root_LazyTree(current)
         case Some(next):
-          shrink_tree_to_smallest_steps(tail, next, test_fn)
+          shrink_tree_to_smallest_steps(steps.sub(1), next, test_fn)
 
 def shrink_tree_to_smallest(start: LazyTree[a], test_fn: a -> Test) -> a:
-  shrink_tree_to_smallest_steps(replicate_List(Unit, 128), start, test_fn)
+  shrink_tree_to_smallest_steps(max_shrink_steps, start, test_fn)
 
 def render_suite_path(path: List[String]) -> String:
   match path:
