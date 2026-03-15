@@ -1,5 +1,11 @@
 package Zafu/Testing/HedgeHog/Range
 
+from Bosatsu/Collection/Array import (
+  from_List_Array,
+  size_Array,
+  get_Array,
+)
+
 from Zafu/Testing/HedgeHog/Seed import (
   Seed,
   choose_Int,
@@ -10,10 +16,6 @@ from Zafu/Testing/HedgeHog/Size import (
   from_Int as size_from_Int,
   max as max_Size,
   to_Int,
-)
-from Zafu/Collection/List import (
-  size as size_List,
-  get_List,
 )
 
 export (
@@ -98,19 +100,18 @@ def sample_Int(range: Range, size: Size, seed: Seed) -> (Seed, Int):
   (lower, upper_exclusive) = normalize_bounds(range.lower_bound(size), range.upper_bound(size))
   choose_Int(seed, lower, upper_exclusive.sub(1))
 
-# Sample from one of several ranges, choosing the range uniformly first.
-def one_of_Int(first: Range, rest: List[Range], size: Size, seed: Seed) -> (Seed, Int):
-  ranges = [first, *rest]
-  match ranges:
-    case [only]:
-      sample_Int(only, size, seed)
-    case _:
-      (seed1, idx) = choose_Int(seed, 0, size_List(ranges).sub(1))
-      match get_List(ranges, idx):
-        case Some(range):
-          sample_Int(range, size, seed1)
-        case None:
-          sample_Int(first, size, seed1)
+# Build a size-aware sampler that chooses one of several ranges uniformly first.
+def one_of_Int(first: Range, rest: List[Range]) -> Size -> Seed -> (Seed, Int):
+  ranges = from_List_Array([first, *rest])
+  last_idx = size_Array(ranges).sub(1)
+  size -> seed -> (
+    (seed1, idx) = choose_Int(seed, 0, last_idx)
+    match get_Array(ranges, idx):
+      case Some(range):
+        sample_Int(range, size, seed1)
+      case None:
+        sample_Int(first, size, seed1)
+  )
 
 # Size-scaled signed 8-bit integer range.
 int8_signed_Range = linear_Range(0.sub(shift_left_Int(1, 7)), shift_left_Int(1, 7))

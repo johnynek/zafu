@@ -465,13 +465,16 @@ def sample_signed_unit_float(seed: Seed) -> (Seed, Float64):
   (seed2, value) = sample_unit_float(seed1)
   (seed2, signed_Float64(neg_idx.eq_Int(1), value))
 
+float_exp_Range = linear_Range(0, 61)
+float_tag_Range = linear_Range(0, 3)
+
 def sample_exp_float(size: Size, seed: Seed) -> (Seed, Float64):
   (seed1, neg_idx) = choose_Int(seed, 0, 1)
-  (seed2, exp0) = sample_Int(linear_Range(0, 61), size, seed1)
+  (seed2, exp0) = sample_Int(float_exp_Range, size, seed1)
   (seed2, signed_Float64(neg_idx.eq_Int(1), int_to_Float64(shift_left_Int(1, exp0))))
 
 def sample_float64(size: Size, seed: Seed) -> (Seed, Float64):
-  (seed1, tag) = sample_Int(linear_Range(0, 3), size, seed)
+  (seed1, tag) = sample_Int(float_tag_Range, size, seed)
   if tag.eq_Int(0):
     sample_unit_float(seed1)
   elif tag.eq_Int(1):
@@ -482,28 +485,34 @@ def sample_float64(size: Size, seed: Seed) -> (Seed, Float64):
 # Generator for Unit.
 unit_Gen: Gen[Unit] = const_Gen(Unit)
 
+bool_tag_Range = linear_Range(0, 2)
+comparison_tag_Range = linear_Range(0, 3)
+
 # Generator for Bool values.
 bool_Gen: Gen[Bool] = map_Gen(
-  sampled_Gen((size, seed) -> sample_Int(linear_Range(0, 2), size, seed), shrink_non_negative),
+  sampled_Gen((size, seed) -> sample_Int(bool_tag_Range, size, seed), shrink_non_negative),
   i -> i.eq_Int(1),
 )
 
 # Generator for LT, EQ, and GT values.
 comparison_Gen: Gen[Comparison] = map_Gen(
-  sampled_Gen((size, seed) -> sample_Int(linear_Range(0, 3), size, seed), shrink_Comparison_Index),
+  sampled_Gen((size, seed) -> sample_Int(comparison_tag_Range, size, seed), shrink_Comparison_Index),
   comparison_from_index,
 )
 
 int32_max = shift_left_Int(1, 31)
+int_sampler = one_of_Int(
+  int8_signed_Range,
+  [int16_signed_Range, int32_signed_Range, int64_signed_Range, int128_signed_Range],
+)
+pos_int_sampler = one_of_Int(
+  pos_int8_Range,
+  [pos_int16_Range, pos_int32_Range],
+)
 
 # Generator for signed Int values across several size-scaled ranges.
 int_Gen: Gen[Int] = sampled_Gen(
-  (size, seed) -> one_of_Int(
-    int8_signed_Range,
-    [int16_signed_Range, int32_signed_Range, int64_signed_Range, int128_signed_Range],
-    size,
-    seed,
-  ),
+  (size, seed) -> int_sampler(size)(seed),
   shrink_Int,
 )
 
@@ -521,12 +530,7 @@ uint32_Gen: Gen[Int] = sampled_Gen(
 
 # Generator for positive Int values.
 pos_Int_Gen: Gen[Int] = sampled_Gen(
-  (size, seed) -> one_of_Int(
-    pos_int8_Range,
-    [pos_int16_Range, pos_int32_Range],
-    size,
-    seed,
-  ),
+  (size, seed) -> pos_int_sampler(size)(seed),
   shrink_positive,
 )
 
@@ -554,8 +558,9 @@ float64_Gen: Gen[Float64] = sampled_Gen(sample_float64, shrink_Float64)
 
 # Lift a generator into Option, including None as a shrink candidate.
 def option_Gen(gen: Gen[a]) -> Gen[Option[a]]:
+  option_tag_Range = linear_Range(0, 4)
   Gen((size, seed) -> (
-    (seed1, tag) = sample_Int(linear_Range(0, 4), size, seed)
+    (seed1, tag) = sample_Int(option_tag_Range, size, seed)
     if tag.eq_Int(0):
       singleton_LazyTree((seed1, None))
     else:
