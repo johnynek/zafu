@@ -35,6 +35,7 @@ export (
   pos_int32_Range,
 )
 
+# Size-sensitive integer range with an origin and bound scaling rule.
 struct Range(origin: Int, bounds_fn: Size -> (Int, Int))
 
 def normalize_bounds(lower: Int, upper_exclusive: Int) -> (Int, Int):
@@ -65,18 +66,22 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
+# Return the current lower bound for a size.
 def lower_bound(range: Range, size: Size) -> Int:
   (lower, _) = bounds(range, size)
   lower
 
+# Return the current exclusive upper bound for a size.
 def upper_bound(range: Range, size: Size) -> Int:
   (_, upper_exclusive) = bounds(range, size)
   upper_exclusive
 
+# Build a size-independent range with fixed inclusive/exclusive bounds.
 def constant_Range(lower: Int, upper_exclusive: Int) -> Range:
   (lower1, upper1) = normalize_bounds(lower, upper_exclusive)
   Range(lower1, _ -> (lower1, upper1))
 
+# Build a range whose bounds scale from an origin toward the target interval.
 def linear_from_Range(origin: Int, lower: Int, upper_exclusive: Int) -> Range:
   (lower1, upper1) = normalize_bounds(lower, upper_exclusive)
   Range(origin, size -> normalize_bounds(
@@ -84,13 +89,16 @@ def linear_from_Range(origin: Int, lower: Int, upper_exclusive: Int) -> Range:
     scale_from(origin, upper1, size),
   ))
 
+# Build a linearly size-scaled range with a derived origin.
 def linear_Range(lower: Int, upper_exclusive: Int) -> Range:
   linear_from_Range(default_origin(lower, upper_exclusive), lower, upper_exclusive)
 
+# Sample an integer from the range at the given size.
 def sample_Int(range: Range, size: Size, seed: Seed) -> (Seed, Int):
   (lower, upper_exclusive) = normalize_bounds(range.lower_bound(size), range.upper_bound(size))
   choose_Int(seed, lower, upper_exclusive.sub(1))
 
+# Sample from one of several ranges, choosing the range uniformly first.
 def one_of_Int(first: Range, rest: List[Range], size: Size, seed: Seed) -> (Seed, Int):
   ranges = [first, *rest]
   match ranges:
@@ -104,16 +112,25 @@ def one_of_Int(first: Range, rest: List[Range], size: Size, seed: Seed) -> (Seed
         case None:
           sample_Int(first, size, seed1)
 
+# Size-scaled signed 8-bit integer range.
 int8_signed_Range = linear_Range(0.sub(shift_left_Int(1, 7)), shift_left_Int(1, 7))
+# Size-scaled signed 16-bit integer range.
 int16_signed_Range = linear_Range(0.sub(shift_left_Int(1, 15)), shift_left_Int(1, 15))
+# Size-scaled signed 32-bit integer range.
 int32_signed_Range = linear_Range(0.sub(shift_left_Int(1, 31)), shift_left_Int(1, 31))
+# Size-scaled signed 64-bit integer range.
 int64_signed_Range = linear_Range(0.sub(shift_left_Int(1, 63)), shift_left_Int(1, 63))
+# Size-scaled signed 128-bit integer range.
 int128_signed_Range = linear_Range(0.sub(shift_left_Int(1, 127)), shift_left_Int(1, 127))
 
+# Size-scaled unsigned 32-bit integer range.
 uint32_Range = linear_Range(0, shift_left_Int(1, 32))
 
+# Size-scaled positive 8-bit integer range.
 pos_int8_Range = linear_Range(1, shift_left_Int(1, 8))
+# Size-scaled positive 16-bit integer range.
 pos_int16_Range = linear_Range(1, shift_left_Int(1, 16))
+# Size-scaled positive 32-bit integer range.
 pos_int32_Range = linear_Range(1, shift_left_Int(1, 31))
 
 tests = TestSuite("Zafu/Testing/HedgeHog/Range tests", [

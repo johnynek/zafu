@@ -73,7 +73,7 @@ export (
   flat_map_Gen,
   resize_Gen,
   scale_Gen,
-  small_Gen,
+  smaller_Gen,
   unit_Gen,
   bool_Gen,
   comparison_Gen,
@@ -129,8 +129,10 @@ def tree_from_shrinks(next_seed: Seed, value: a, shrink: a -> LazyList[a]) -> La
     ),
   )
 
+# HedgeHog generator with shrink tree threaded through Size and Seed.
 struct Gen(run: (Size, Seed) -> LazyTree[(Seed, a)])
 
+# Run a generator at a specific size and seed.
 def run_Gen(gen: Gen[a], size: Size, seed: Seed) -> LazyTree[(Seed, a)]:
   Gen(run) = gen
   run(size, seed)
@@ -141,31 +143,38 @@ def sampled_Gen(run_value: (Size, Seed) -> (Seed, a), shrink: a -> LazyList[a]) 
     tree_from_shrinks(next_seed, value, shrink)
   ))
 
+# Lift a sampler with no shrink candidates into a generator.
 def no_shrink_Gen(run_value: (Size, Seed) -> (Seed, a)) -> Gen[a]:
   Gen((size, seed) -> (
     ((next_seed, value)) = run_value(size, seed)
     singleton_LazyTree((next_seed, value))
   ))
 
+# Build a generator that always returns the same value.
 def const_Gen(value: a) -> Gen[a]:
   no_shrink_Gen((_, seed) -> (seed, value))
 
+# Map over generated values without changing the shrink structure.
 def map_Gen(gen: Gen[a], to: a -> b) -> Gen[b]:
   Gen((size, seed) -> map_LazyTree(run_Gen(gen, size, seed), ((next_seed, value)) -> (next_seed, to(value))))
 
+# Sequence generators while threading size, seed, and shrink trees.
 def flat_map_Gen(gen: Gen[a], fn: a -> Gen[b]) -> Gen[b]:
   Gen((size, seed) -> flat_map_LazyTree(
     run_Gen(gen, size, seed),
     ((next_seed, value)) -> run_Gen(fn(value), size, next_seed),
   ))
 
+# Override the size seen by a generator.
 def resize_Gen(gen: Gen[a], fixed_size: Size) -> Gen[a]:
   Gen((_, seed) -> run_Gen(gen, fixed_size, seed))
 
+# Transform the size before running a generator.
 def scale_Gen(gen: Gen[a], scale: Size -> Size) -> Gen[a]:
   Gen((size, seed) -> run_Gen(gen, scale(size), seed))
 
-def small_Gen(gen: Gen[a]) -> Gen[a]:
+# Run a generator at a smaller, golden-ratio-scaled size.
+def smaller_Gen(gen: Gen[a]) -> Gen[a]:
   scale_Gen(gen, size -> golden_Size(size))
 
 def and_Bool(left: Bool, right: Bool) -> Bool:
@@ -470,13 +479,16 @@ def sample_float64(size: Size, seed: Seed) -> (Seed, Float64):
   else:
     sample_exp_float(size, seed1)
 
+# Generator for Unit.
 unit_Gen: Gen[Unit] = const_Gen(Unit)
 
+# Generator for Bool values.
 bool_Gen: Gen[Bool] = map_Gen(
   sampled_Gen((size, seed) -> sample_Int(linear_Range(0, 2), size, seed), shrink_non_negative),
   i -> i.eq_Int(1),
 )
 
+# Generator for LT, EQ, and GT values.
 comparison_Gen: Gen[Comparison] = map_Gen(
   sampled_Gen((size, seed) -> sample_Int(linear_Range(0, 3), size, seed), shrink_Comparison_Index),
   comparison_from_index,
@@ -484,6 +496,7 @@ comparison_Gen: Gen[Comparison] = map_Gen(
 
 int32_max = shift_left_Int(1, 31)
 
+# Generator for signed Int values across several size-scaled ranges.
 int_Gen: Gen[Int] = sampled_Gen(
   (size, seed) -> one_of_Int(
     int8_signed_Range,
@@ -494,16 +507,19 @@ int_Gen: Gen[Int] = sampled_Gen(
   shrink_Int,
 )
 
+# Generator focused on 32-bit signed Int values.
 int32_Gen: Gen[Int] = sampled_Gen(
   (size, seed) -> sample_Int(int32_signed_Range, size, seed),
   shrink_Int,
 )
 
+# Generator for non-negative 32-bit unsigned-like Int values.
 uint32_Gen: Gen[Int] = sampled_Gen(
   (size, seed) -> sample_Int(uint32_Range, size, seed),
   shrink_non_negative,
 )
 
+# Generator for positive Int values.
 pos_Int_Gen: Gen[Int] = sampled_Gen(
   (size, seed) -> one_of_Int(
     pos_int8_Range,
@@ -518,6 +534,7 @@ ascii_printable_Range = linear_Range(32, 127)
 short_string_length_Range = linear_Range(0, 24)
 short_list_length_Range = linear_Range(0, 16)
 
+# Generator for printable ASCII characters.
 char_Gen: Gen[Char] = sampled_Gen(
   (size, seed) -> (
     (next_seed, code) = sample_Int(ascii_printable_Range, size, seed)
@@ -526,13 +543,16 @@ char_Gen: Gen[Char] = sampled_Gen(
   shrink_Char,
 )
 
+# Generator for short printable ASCII strings.
 string_Gen: Gen[String] = map_Gen(
   list_of_range_Gen(short_string_length_Range, char_Gen),
   chars_to_String,
 )
 
+# Generator for finite Float64 values with basic shrinking.
 float64_Gen: Gen[Float64] = sampled_Gen(sample_float64, shrink_Float64)
 
+# Lift a generator into Option, including None as a shrink candidate.
 def option_Gen(gen: Gen[a]) -> Gen[Option[a]]:
   Gen((size, seed) -> (
     (seed1, tag) = sample_Int(linear_Range(0, 4), size, seed)
@@ -544,24 +564,30 @@ def option_Gen(gen: Gen[a]) -> Gen[Option[a]]:
       with_extra_children(mapped, [singleton_LazyTree((seed2, None))])
   ))
 
+# Generator for short lists of generated values.
 def list_Gen(gen: Gen[a]) -> Gen[List[a]]:
   list_of_range_Gen(short_list_length_Range, gen)
 
+# Combine two generators into a generator for pairs.
 def tuple2_Gen(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
   flat_map_Gen(left, left_value -> map_Gen(right, right_value -> (left_value, right_value)))
 
+# Combine three generators into a generator for triples.
 def tuple3_Gen(ga: Gen[a], gb: Gen[b], gc: Gen[c]) -> Gen[(a, b, c)]:
   flat_map_Gen(ga, a0 -> flat_map_Gen(gb, b0 -> map_Gen(gc, c0 -> (a0, b0, c0))))
 
+# Combine four generators into a generator for 4-tuples.
 def tuple4_Gen(ga: Gen[a], gb: Gen[b], gc: Gen[c], gd: Gen[d]) -> Gen[(a, b, c, d)]:
   flat_map_Gen(ga, a0 -> flat_map_Gen(gb, b0 -> flat_map_Gen(gc, c0 -> map_Gen(gd, d0 -> (a0, b0, c0, d0)))))
 
+# HedgeHog property that expands into a Test after sampling.
 struct Prop(run: (Int, Seed) -> (Seed, Test))
 
 def run_count(prop: Prop, count: Int, seed: Seed) -> (Seed, Test):
   Prop(run) = prop
   run(count, seed)
 
+# Build a property by testing generated values and shrinking failures.
 def forall_Prop(gen: Gen[a], name: String, show: a -> String, test_fn: a -> Test) -> Prop:
   Prop((count, seed) -> (
     (next_seed, samples) = sample_trees(gen, count, seed)
@@ -574,6 +600,7 @@ def forall_Prop(gen: Gen[a], name: String, show: a -> String, test_fn: a -> Test
     (next_seed, test)
   ))
 
+# Group several properties under a named test suite.
 def suite_Prop(name: String, props: List[Prop]) -> Prop:
   Prop((count, seed) -> (
     def go(rem: List[Prop], current_seed: Seed, rev_tests: List[Test]) -> (Seed, List[Test]):
@@ -588,6 +615,7 @@ def suite_Prop(name: String, props: List[Prop]) -> Prop:
     (final_seed, TestSuite(name, tests))
   ))
 
+# Run a property with a sample count and integer seed.
 def run_Prop(prop: Prop, count: Int, seed: Int) -> Test:
   (_, test) = run_count(prop, count, seed_from_Int(seed))
   test

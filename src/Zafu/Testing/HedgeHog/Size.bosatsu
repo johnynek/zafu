@@ -16,6 +16,7 @@ export (
   golden,
 )
 
+# HedgeHog size parameter normalized to the closed interval 1..100.
 struct Size(value: Int)
 
 size_max: Int = 100
@@ -29,22 +30,28 @@ def normalize_Int(value: Int) -> Int:
   else:
     remainder
 
+# Wrap an integer into HedgeHog's normalized size domain.
 def from_Int(value: Int) -> Size:
   Size(normalize_Int(value))
 
+# Extract the normalized integer backing a size.
 def to_Int(size: Size) -> Int:
   Size(value) = size
   value
 
+# Return the maximum normalized size value.
 def max() -> Int:
   size_max
 
+# Convert a size to the [0, 1] percentage used for range scaling.
 def percentage(size: Size) -> Float64:
   divf(int_to_Float64(size.to_Int()), int_to_Float64(size_max))
 
+# Add two sizes with HedgeHog's wraparound normalization.
 def incBy(size: Size, delta: Size) -> Size:
   from_Int(size.to_Int().add(delta.to_Int()))
 
+# Scale a size by HedgeHog's golden-ratio heuristic.
 def golden(size: Size) -> Size:
   from_Int(size.to_Int().mul(golden_num).div(golden_den))
 

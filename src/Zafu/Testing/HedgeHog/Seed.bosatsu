@@ -20,7 +20,9 @@ export (
   to_Float64,
 )
 
+# HedgeHog generator seed backed by local xoshiro256** state.
 struct Seed(s0: Int, s1: Int, s2: Int, s3: Int)
+# Unsigned 64-bit sample value emitted by the HedgeHog PRNG.
 struct UInt64(value: Int)
 
 def operator -(a, b): a.sub(b)
@@ -50,13 +52,16 @@ def rotl(x: Int, k: Int) -> Int:
   rx = uint64(x >> (64 - k))
   lx | rx
 
+# Expose the raw integer bits of a UInt64 sample.
 def to_Int(value: UInt64) -> Int:
   UInt64(raw) = value
   raw
 
+# Convert a UInt64 sample into a non-negative Float64 value.
 def to_Float64(value: UInt64) -> Float64:
   int_to_Float64(value.to_Int())
 
+# Build a non-zero seed from an integer.
 def from_Int(i: Int) -> Seed:
   not_zero = match i ^ default_state:
     case 0:
@@ -73,6 +78,7 @@ def from_Int(i: Int) -> Seed:
 
 # Xoshiro256** over the same 4x64-bit state shape as Bosatsu/Rand, but exposed
 # locally so HedgeHog no longer depends on Bosatsu/Rand.
+# Advance the PRNG and return the next seed plus one 64-bit sample.
 def next(seed: Seed) -> (Seed, UInt64):
   Seed(s0_0, s1_0, s2_0, s3_0) = seed
 
@@ -95,6 +101,7 @@ def normalize_bounds(lower: Int, upper: Int) -> (Int, Int):
     case GT:
       (upper, lower)
 
+# Sample an integer uniformly from an inclusive range.
 def choose_Int(seed: Seed, lower: Int, upper: Int) -> (Seed, Int):
   (low, high) = normalize_bounds(lower, upper)
   (next_seed, raw) = next(seed)
@@ -104,6 +111,7 @@ def choose_Int(seed: Seed, lower: Int, upper: Int) -> (Seed, Int):
     span = high.sub(low).add(1)
     (next_seed, mod_Int(raw.to_Int(), span).add(low))
 
+# Sample a Float64 uniformly from the half-open interval [lower, upper).
 def choose_Float64(seed: Seed, lower: Float64, upper: Float64) -> (Seed, Float64):
   (next_seed, raw) = next(seed)
   fraction = divf(raw.to_Float64(), float_two_pow_64)
