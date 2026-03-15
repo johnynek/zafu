@@ -1,0 +1,333 @@
+package Zafu/Collection/LazyTree
+
+from Bosatsu/Lazy import (
+  lazy,
+  get_Lazy,
+)
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq_from_fn,
+  eq as eq_Eq,
+)
+from Zafu/Abstract/Applicative import (
+  Applicative,
+  applicative_from_pure_map_map2,
+)
+from Zafu/Abstract/Monad import (
+  Monad,
+  monad_from_applicative_flat_map_tailrec_steps,
+  tailrec_steps,
+  laws_Monad,
+)
+from Zafu/Collection/LazyList import (
+  LazyList,
+  empty_LazyList,
+  concat as concat_LazyList,
+  from_List as from_List_LazyList,
+  map as map_LazyList,
+  Cons as ConsLazyList,
+  Empty as EmptyLazyList,
+)
+from Zafu/Control/IterState import (
+  IterState,
+  Continue,
+  Done,
+  done,
+  continue,
+)
+
+export (
+  LazyTree(),
+  singleton,
+  map,
+  flat_map,
+  prune,
+  unfold,
+  expand,
+  eq_LazyTree,
+  applicative_LazyTree,
+  monad_LazyTree,
+)
+
+struct LazyTree[a: +*](value: a, children: LazyList[LazyTree[a]])
+
+def singleton(value: a) -> LazyTree[a]:
+  LazyTree(value, empty_LazyList)
+
+def map(tree: LazyTree[a], fn: a -> b) -> LazyTree[b]:
+  def map_forest(forest: LazyList[LazyTree[a]]) -> LazyList[LazyTree[b]]:
+    recur forest:
+      case EmptyLazyList:
+        EmptyLazyList
+      case ConsLazyList(head, tail):
+        mapped_head = lazy(() -> (
+          LazyTree(head_value, head_children) = get_Lazy(head)
+          LazyTree(fn(head_value), map_forest(head_children))
+        ))
+        mapped_tail = lazy(() -> map_forest(get_Lazy(tail)))
+        ConsLazyList(
+          mapped_head,
+          mapped_tail,
+        )
+
+  LazyTree(value0, children0) = tree
+  LazyTree(fn(value0), map_forest(children0))
+
+def flat_map(tree: LazyTree[a], fn: a -> LazyTree[b]) -> LazyTree[b]:
+  def flat_map_forest(forest: LazyList[LazyTree[a]]) -> LazyList[LazyTree[b]]:
+    recur forest:
+      case EmptyLazyList:
+        EmptyLazyList
+      case ConsLazyList(head, tail):
+        mapped_head = lazy(() -> (
+          LazyTree(head_value, head_children) = get_Lazy(head)
+          LazyTree(mapped_value, mapped_children) = fn(head_value)
+          LazyTree(mapped_value, concat_LazyList(mapped_children, flat_map_forest(head_children)))
+        ))
+        mapped_tail = lazy(() -> flat_map_forest(get_Lazy(tail)))
+        ConsLazyList(
+          mapped_head,
+          mapped_tail,
+        )
+
+  LazyTree(value0, children0) = tree
+  LazyTree(mapped_value, mapped_children) = fn(value0)
+  LazyTree(mapped_value, concat_LazyList(mapped_children, flat_map_forest(children0)))
+
+def prune(tree: LazyTree[a]) -> LazyTree[a]:
+  LazyTree(value0, _) = tree
+  LazyTree(value0, empty_LazyList)
+
+def unfold(depth: Int, init: b, inject: b -> a, expand_fn: b -> LazyList[b]) -> LazyTree[a]:
+  def unfold_forest(rem: Int, seeds: LazyList[b]) -> LazyList[LazyTree[a]]:
+    recur (rem, seeds):
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        EmptyLazyList
+      case (_, EmptyLazyList):
+        EmptyLazyList
+      case (_, ConsLazyList(head, tail)):
+        ConsLazyList(
+          lazy(() -> (
+            seed = get_Lazy(head)
+            LazyTree(inject(seed), unfold_forest(rem.sub(1), expand_fn(seed)))
+          )),
+          lazy(() -> unfold_forest(rem, get_Lazy(tail))),
+        )
+
+  LazyTree(inject(init), unfold_forest(depth, expand_fn(init)))
+
+def expand(tree: LazyTree[a], depth: Int, expand_fn: a -> LazyList[a]) -> LazyTree[a]:
+  recur depth:
+    case _ if cmp_Int(depth, 0) matches LT | EQ:
+      tree
+    case _:
+      LazyTree(root, children0) = tree
+      expanded_children = map_LazyList(children0, child -> expand(child, depth.sub(1), expand_fn))
+      LazyTree(_, new_children) = unfold(depth, root, value -> value, expand_fn)
+      LazyTree(root, concat_LazyList(expanded_children, new_children))
+
+def map2_LazyTree(left: LazyTree[a], right: LazyTree[b], fn: (a, b) -> c) -> LazyTree[c]:
+  flat_map(left, left_value -> map(right, right_value -> fn(left_value, right_value)))
+
+applicative_LazyTree: Applicative[LazyTree] = applicative_from_pure_map_map2(
+  singleton,
+  map,
+  map2_LazyTree,
+)
+
+def tailrec_steps_LazyTree(
+  max_steps: Int,
+  init: a,
+  step: a -> LazyTree[IterState[a, b]],
+) -> LazyTree[IterState[a, b]]:
+  def go(rem: Int, seed: a) -> LazyTree[IterState[a, b]]:
+    recur rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        singleton(continue(seed))
+      case _:
+        flat_map(step(seed), iter -> (
+          match iter:
+            case Done(done_value):
+              singleton(done(done_value))
+            case Continue(next_seed):
+              go(rem.sub(1), next_seed)
+        ))
+
+  go(max_steps, init)
+
+monad_LazyTree: Monad[LazyTree] = monad_from_applicative_flat_map_tailrec_steps(
+  applicative_LazyTree,
+  flat_map,
+  tailrec_steps_LazyTree,
+)
+
+def and_Bool(left: Bool, right: Bool) -> Bool:
+  if left:
+    right
+  else:
+    False
+
+def eq_LazyTree(eq_item: Eq[a]) -> Eq[LazyTree[a]]:
+  def eq_forest(left_children: LazyList[LazyTree[a]], right_children: LazyList[LazyTree[a]]) -> Bool:
+    recur (left_children, right_children):
+      case (EmptyLazyList, EmptyLazyList):
+        True
+      case (ConsLazyList(left_head, left_tail), ConsLazyList(right_head, right_tail)):
+        LazyTree(left_value, left_grandchildren) = get_Lazy(left_head)
+        LazyTree(right_value, right_grandchildren) = get_Lazy(right_head)
+        and_Bool(
+          eq_Eq(eq_item, left_value, right_value),
+          and_Bool(
+            eq_forest(left_grandchildren, right_grandchildren),
+            eq_forest(get_Lazy(left_tail), get_Lazy(right_tail)),
+          ),
+        )
+      case _:
+        False
+
+  eq_from_fn((left, right) -> (
+    LazyTree(left_value, left_children) = left
+    LazyTree(right_value, right_children) = right
+    and_Bool(
+      eq_Eq(eq_item, left_value, right_value),
+      eq_forest(left_children, right_children),
+    )
+  ))
+
+eq_Int_inst: Eq[Int] = eq_from_fn(eq_Int)
+
+def eq_IterState_Int_Int(left: IterState[Int, Int], right: IterState[Int, Int]) -> Bool:
+  match (left, right):
+    case (Continue(left_cont), Continue(right_cont)):
+      eq_Int(left_cont, right_cont)
+    case (Done(left_done), Done(right_done)):
+      eq_Int(left_done, right_done)
+    case _:
+      False
+
+eq_LazyTree_Int: Eq[LazyTree[Int]] = eq_LazyTree(eq_Int_inst)
+eq_LazyTree_IterState_Int_Int: Eq[LazyTree[IterState[Int, Int]]] = eq_LazyTree(eq_from_fn(eq_IterState_Int_Int))
+
+sample_tree: LazyTree[Int] = LazyTree(
+  1,
+  from_List_LazyList([
+    singleton(2),
+    LazyTree(3, from_List_LazyList([singleton(4)])),
+  ]),
+)
+
+branchy_tree: LazyTree[Int] = LazyTree(
+  5,
+  from_List_LazyList([
+    LazyTree(6, from_List_LazyList([singleton(7), singleton(8)])),
+    singleton(9),
+  ]),
+)
+
+def fn_ab(value: Int) -> LazyTree[Int]:
+  LazyTree(
+    value.add(1),
+    from_List_LazyList([
+      singleton(value.mul(10)),
+      singleton(value.add(2)),
+    ]),
+  )
+
+def fn_bc(value: Int) -> LazyTree[Int]:
+  LazyTree(
+    value.mul(2),
+    from_List_LazyList([
+      singleton(value.sub(3)),
+    ]),
+  )
+
+def tailrec_step(seed: Int) -> LazyTree[IterState[Int, Int]]:
+  if cmp_Int(seed, 2) matches LT:
+    singleton(Continue(seed.add(1)))
+  else:
+    singleton(Done(seed))
+
+tests = TestSuite("LazyTree tests", [
+  (
+    expected = LazyTree(
+      11,
+      from_List_LazyList([
+        singleton(10),
+        LazyTree(12, from_List_LazyList([singleton(20)])),
+        LazyTree(13, from_List_LazyList([singleton(30)])),
+      ]),
+    )
+    actual = flat_map(
+      LazyTree(1, from_List_LazyList([singleton(2), singleton(3)])),
+      value -> LazyTree(value.add(10), from_List_LazyList([singleton(value.mul(10))])),
+    )
+    Assertion(eq_Eq(eq_LazyTree_Int, actual, expected), "flat_map grafts mapped children before descendants")
+  ),
+  (
+    expected = LazyTree(1, empty_LazyList)
+    Assertion(eq_Eq(eq_LazyTree_Int, prune(sample_tree), expected), "prune removes descendants")
+  ),
+  (
+    unfolded = unfold(2, 1, value -> value, value -> (
+      if cmp_Int(value, 3) matches LT:
+        from_List_LazyList([value.add(1)])
+      else:
+        empty_LazyList
+    ))
+    expected = LazyTree(
+      1,
+      from_List_LazyList([
+        LazyTree(2, from_List_LazyList([singleton(3)])),
+      ]),
+    )
+    Assertion(eq_Eq(eq_LazyTree_Int, unfolded, expected), "unfold respects depth")
+  ),
+  (
+    Assertion(eq_Eq(eq_LazyTree_Int, map(sample_tree, value -> value), sample_tree), "map identity")
+  ),
+  (
+    mapped_twice = map(map(branchy_tree, value -> value.add(1)), value -> value.mul(2))
+    mapped_once = map(branchy_tree, value -> value.add(1).mul(2))
+    Assertion(eq_Eq(eq_LazyTree_Int, mapped_twice, mapped_once), "map composition")
+  ),
+  Assertion(
+    monad_LazyTree.tailrec_steps(0, 7, seed -> singleton(Continue(seed.add(1)))) matches LazyTree(Continue(7), EmptyLazyList),
+    "monad_LazyTree tailrec_steps max_steps <= 0",
+  ),
+  Assertion(
+    monad_LazyTree.tailrec_steps(4, 0, tailrec_step) matches LazyTree(Done(2), EmptyLazyList),
+    "monad_LazyTree tailrec_steps reaches Done",
+  ),
+  (
+    laws_Monad(
+      monad_LazyTree,
+      eq_LazyTree_Int,
+      eq_LazyTree_Int,
+      eq_LazyTree_Int,
+      eq_LazyTree_IterState_Int_Int,
+      sample_tree,
+      4,
+      fn_ab,
+      fn_bc,
+      value -> value.add(7),
+      0,
+      tailrec_step,
+    )
+  ),
+  (
+    laws_Monad(
+      monad_LazyTree,
+      eq_LazyTree_Int,
+      eq_LazyTree_Int,
+      eq_LazyTree_Int,
+      eq_LazyTree_IterState_Int_Int,
+      branchy_tree,
+      9,
+      value -> LazyTree(value.sub(1), from_List_LazyList([singleton(value)])),
+      value -> singleton(value.mul(3)),
+      value -> value.sub(2),
+      1,
+      tailrec_step,
+    )
+  ),
+])
