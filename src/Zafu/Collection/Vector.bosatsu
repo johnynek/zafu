@@ -25,6 +25,7 @@ from Zafu/Testing/HedgeHog import (
   Prop,
   uint32_Gen,
   const_Gen,
+  list_Gen as list_Rand,
   map_Gen as map_Rand,
   flat_map_Gen as flat_map_Rand,
   map2_Gen as map2_Rand,
@@ -1405,8 +1406,6 @@ def int_range(upper: Int) -> Rand[Int]:
       mod_Int(raw, upper)
   ))
 
-geometric_Int: Rand[Int] = map_Rand(uint32_Gen, raw -> mod_Int(raw, 24))
-
 def prod_Rand(left: Rand[a], right: Rand[b]) -> Rand[(a, b)]:
   map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
 
@@ -1423,10 +1422,7 @@ def forall_Prop(gen: Rand[a], name: String, test_fn: a -> Test) -> Prop:
 
 rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
 
-rand_list_int: Rand[List[Int]] = flat_map_Rand(
-  geometric_Int,
-  len -> sequence_Rand(replicate_List(rand_int, len))
-)
+rand_list_int: Rand[List[Int]] = list_Rand(rand_int)
 
 def bounded_uint32(raw: Int, upper: Int) -> Int:
   if cmp_Int(upper, 0) matches LT | EQ:
