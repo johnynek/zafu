@@ -16,9 +16,10 @@ from Bosatsu/Num/Float64 import (
   addf,
 )
 from Zafu/Testing/HedgeHog import (
-  Gen as Rand,
+  Gen,
   Prop,
   uint32_Gen,
+  int_range_Gen,
   list_Gen as list_Rand,
   map_Gen as map_Rand,
   map2_Gen as map2_Rand,
@@ -280,25 +281,18 @@ def mk_range(n: Int) -> List[Int]:
         go(rem.sub(1), [rem, *acc])
   go(n, [])
 
-def int_range(upper: Int) -> Rand[Int]:
-  map_Rand(uint32_Gen, raw -> (
-    if cmp_Int(upper, 0) matches LT | EQ:
-      0
-    else:
-      mod_Int(raw, upper)
-  ))
 
-def prod_Rand(left: Rand[a], right: Rand[b]) -> Rand[(a, b)]:
+def prod_Rand(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
   map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
 
-def forall_Prop(gen: Rand[a], name: String, test_fn: a -> Test) -> Prop:
+def forall_Prop(gen: Gen[a], name: String, test_fn: a -> Test) -> Prop:
   forall_Prop_hh(gen, name, _ -> name, test_fn)
 
-rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
+rand_int: Gen[Int] = map_Rand(int_range_Gen(256), i -> i.sub(128))
 
-rand_list_int: Rand[List[Int]] = list_Rand(rand_int)
+rand_list_int: Gen[List[Int]] = list_Rand(rand_int)
 
-rand_list_with_count: Rand[(List[Int], Int)] = map_Rand(prod_Rand(rand_list_int, uint32_Gen), ((list, raw)) -> (
+rand_list_with_count: Gen[(List[Int], Int)] = map_Rand(prod_Rand(rand_list_int, uint32_Gen), ((list, raw)) -> (
   # Keep list and count generation independent so shrinking can minimize each side.
   upper = size(list).add(8)
   bounded =
@@ -309,7 +303,7 @@ rand_list_with_count: Rand[(List[Int], Int)] = map_Rand(prod_Rand(rand_list_int,
   (list, bounded.sub(4))
 ))
 
-rand_list_with_non_negative_count: Rand[(List[Int], Int)] = map_Rand(prod_Rand(rand_list_int, uint32_Gen), ((list, raw)) -> (
+rand_list_with_non_negative_count: Gen[(List[Int], Int)] = map_Rand(prod_Rand(rand_list_int, uint32_Gen), ((list, raw)) -> (
   upper = size(list).add(8)
   bounded =
     if cmp_Int(upper, 0) matches LT | EQ:

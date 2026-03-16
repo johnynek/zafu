@@ -29,10 +29,10 @@ from Zafu/Control/IterState import (
   done,
 )
 from Zafu/Testing/HedgeHog import (
-  Gen as Rand,
+  Gen,
   Prop,
-  uint32_Gen,
-  const_Gen,
+  int_range_Gen,
+  sequence_Gen,
   map_Gen as map_Rand,
   flat_map_Gen as flat_map_Rand,
   map2_Gen as map2_Rand,
@@ -47,26 +47,11 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
-def int_range(upper: Int) -> Rand[Int]:
-  map_Rand(uint32_Gen, raw -> (
-    if cmp_Int(upper, 0) matches LT | EQ:
-      0
-    else:
-      mod_Int(raw, upper)
-  ))
 
-def prod_Rand(left: Rand[a], right: Rand[b]) -> Rand[(a, b)]:
+def prod_Rand(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
   map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
 
-def sequence_Rand(rands: List[Rand[a]]) -> Rand[List[a]]:
-  # Fold left to avoid building a deep recursive chain for long generated lists.
-  rev = rands.foldl_List(
-    const_Gen([]),
-    (acc, next) -> map_Rand(prod_Rand(acc, next), ((rev_list, item)) -> [item, *rev_list]),
-  )
-  map_Rand(rev, list -> list.reverse())
-
-def forall_Prop(gen: Rand[a], name: String, test_fn: a -> Test) -> Prop:
+def forall_Prop(gen: Gen[a], name: String, test_fn: a -> Test) -> Prop:
   forall_Prop_hh(gen, name, _ -> name, test_fn)
 
 eq_Int_inst: Eq[Int] = eq_from_fn(eq_Int)
@@ -87,13 +72,13 @@ bounded_tree_depth = 3
 bounded_tree_min_branch = 2
 bounded_tree_max_branch = 3
 
-rand_tree_value: Rand[Int] = map_Rand(int_range(41), i -> i.sub(20))
-rand_small_offset: Rand[Int] = map_Rand(int_range(17), i -> i.sub(8))
-rand_small_positive: Rand[Int] = map_Rand(int_range(3), i -> i.add(1))
-rand_tail_goal: Rand[Int] = map_Rand(int_range(4), i -> i.add(1))
-rand_child_count: Rand[Int] = map_Rand(int_range(bounded_tree_max_branch.sub(bounded_tree_min_branch).add(1)), i -> i.add(bounded_tree_min_branch))
+rand_tree_value: Gen[Int] = map_Rand(int_range_Gen(41), i -> i.sub(20))
+rand_small_offset: Gen[Int] = map_Rand(int_range_Gen(17), i -> i.sub(8))
+rand_small_positive: Gen[Int] = map_Rand(int_range_Gen(3), i -> i.add(1))
+rand_tail_goal: Gen[Int] = map_Rand(int_range_Gen(4), i -> i.add(1))
+rand_child_count: Gen[Int] = map_Rand(int_range_Gen(bounded_tree_max_branch.sub(bounded_tree_min_branch).add(1)), i -> i.add(bounded_tree_min_branch))
 
-def rand_bounded_tree(depth: Int) -> Rand[LazyTree[Int]]:
+def rand_bounded_tree(depth: Int) -> Gen[LazyTree[Int]]:
   recur depth:
     case _ if cmp_Int(depth, 0) matches LT | EQ:
       map_Rand(rand_tree_value, singleton)
@@ -101,12 +86,12 @@ def rand_bounded_tree(depth: Int) -> Rand[LazyTree[Int]]:
       child_gen = rand_bounded_tree(depth.sub(1))
       flat_map_Rand(prod_Rand(rand_tree_value, rand_child_count), ((value, child_count)) -> (
         map_Rand(
-          sequence_Rand(replicate_List(child_gen, child_count)),
+          sequence_Gen(replicate_List(child_gen, child_count)),
           children -> LazyTree(value, from_List_LazyList(children)),
         )
       ))
 
-rand_law_tree: Rand[LazyTree[Int]] = rand_bounded_tree(bounded_tree_depth)
+rand_law_tree: Gen[LazyTree[Int]] = rand_bounded_tree(bounded_tree_depth)
 
 struct MonadLawConfig(
   pure_value: Int,
@@ -120,14 +105,14 @@ struct MonadLawConfig(
   tail_goal: Int,
 )
 
-rand_monad_law_config: Rand[MonadLawConfig] = map_Rand(
+rand_monad_law_config: Gen[MonadLawConfig] = map_Rand(
   prod_Rand(
     prod_Rand(rand_tree_value, rand_small_offset),
     prod_Rand(
       prod_Rand(rand_small_offset, rand_small_offset),
       prod_Rand(
         prod_Rand(rand_small_offset, rand_small_positive),
-        prod_Rand(int_range(3), rand_tail_goal),
+        prod_Rand(int_range_Gen(3), rand_tail_goal),
       ),
     ),
   ),
@@ -146,7 +131,7 @@ rand_monad_law_config: Rand[MonadLawConfig] = map_Rand(
   ),
 )
 
-rand_tree_and_law_config: Rand[(LazyTree[Int], MonadLawConfig)] = prod_Rand(rand_law_tree, rand_monad_law_config)
+rand_tree_and_law_config: Gen[(LazyTree[Int], MonadLawConfig)] = prod_Rand(rand_law_tree, rand_monad_law_config)
 
 def law_fn_ab(config: MonadLawConfig) -> Int -> LazyTree[Int]:
   MonadLawConfig(_, ab_root_shift, ab_child_shift, _, _, _, _, _, _) = config

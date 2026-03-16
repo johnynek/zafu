@@ -25,28 +25,21 @@ from Zafu/Control/IterState import (
   continue,
 )
 from Zafu/Testing/HedgeHog import (
-  Gen as Rand,
+  Gen,
   Prop,
   bool_Gen,
-  uint32_Gen,
+  int_range_Gen,
   map_Gen as map_Rand,
   map2_Gen as map2_Rand,
   forall_Prop as forall_Prop_hh,
   run_Prop,
 )
 
-def int_range(upper: Int) -> Rand[Int]:
-  map_Rand(uint32_Gen, raw -> (
-    if cmp_Int(upper, 0) matches LT | EQ:
-      0
-    else:
-      mod_Int(raw, upper)
-  ))
 
-def forall_Prop(gen: Rand[a], name: String, test_fn: a -> Test) -> Prop:
+def forall_Prop(gen: Gen[a], name: String, test_fn: a -> Test) -> Prop:
   forall_Prop_hh(gen, name, _ -> name, test_fn)
 
-def prod_Rand(left: Rand[a], right: Rand[b]) -> Rand[(a, b)]:
+def prod_Rand(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
   map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
 
 def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
@@ -176,13 +169,13 @@ def tailrec_step_from_tag(step_tag: Int, goal: Int, shift: Int) -> Int -> Option
     case _:
       seed -> Some(done(seed.add(shift)))
 
-rand_int: Rand[Int] = map_Rand(int_range(81), i -> i.sub(40))
-rand_fn_tag: Rand[Int] = int_range(16)
-rand_shift: Rand[Int] = map_Rand(int_range(7), i -> i.sub(3))
-rand_goal: Rand[Int] = map_Rand(int_range(7), i -> i.add(1))
-rand_tail_seed: Rand[Int] = int_range(6)
+rand_int: Gen[Int] = map_Rand(int_range_Gen(81), i -> i.sub(40))
+rand_fn_tag: Gen[Int] = int_range_Gen(16)
+rand_shift: Gen[Int] = map_Rand(int_range_Gen(7), i -> i.sub(3))
+rand_goal: Gen[Int] = map_Rand(int_range_Gen(7), i -> i.add(1))
+rand_tail_seed: Gen[Int] = int_range_Gen(6)
 
-rand_opt_int: Rand[Option[Int]] = map_Rand(
+rand_opt_int: Gen[Option[Int]] = map_Rand(
   prod_Rand(bool_Gen, rand_int),
   ((is_some, value)) -> Some(value) if is_some else None,
 )
@@ -199,7 +192,7 @@ struct MonadLawCase(
   tail_tag: Int,
 )
 
-rand_law_case: Rand[MonadLawCase] = map_Rand(
+rand_law_case: Gen[MonadLawCase] = map_Rand(
   prod_Rand(
     prod_Rand(prod_Rand(prod_Rand(rand_opt_int, rand_int), rand_fn_tag), rand_fn_tag),
     prod_Rand(prod_Rand(prod_Rand(rand_fn_tag, rand_tail_seed), rand_goal), prod_Rand(rand_shift, rand_fn_tag)),

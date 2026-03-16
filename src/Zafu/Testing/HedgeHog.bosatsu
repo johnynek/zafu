@@ -78,6 +78,7 @@ from Zafu/Testing/HedgeHog/Seed import (
 )
 from Zafu/Testing/HedgeHog/Size import (
   Size,
+  to_Int as to_Int_Size,
   size_for_sample,
   golden as golden_Size,
 )
@@ -90,6 +91,8 @@ export (
   map_Gen,
   map2_Gen,
   flat_map_Gen,
+  traverse_Gen,
+  sequence_Gen,
   fixed_size_Gen,
   scale_Gen,
   smaller_Gen,
@@ -99,8 +102,10 @@ export (
   comparison_Gen,
   int_Gen,
   int32_Gen,
+  int_range_Gen,
   uint32_Gen,
   pos_Int_Gen,
+  geometric_Int_Gen,
   ascii_char_Gen,
   char_Gen,
   short_ascii_Gen,
@@ -217,6 +222,18 @@ def map2_Gen(left: Gen[a], right: Gen[b], fn: (a, b) -> c) -> Gen[c]:
     paired_values = zip_map_LazyTree(max_shrink_depth, drop_seed_Tree(left_tree), drop_seed_Tree(right_tree), fn)
     map_LazyTree(paired_values, value -> (seed2, value))
   ))
+
+# Traverse a list with a generator-producing function.
+def traverse_Gen(items: List[a], fn: a -> Gen[b]) -> Gen[List[b]]:
+  rev = items.foldl_List(
+    const_Gen([]),
+    (acc, item) -> map2_Gen(acc, fn(item), (rev_list, next) -> [next, *rev_list]),
+  )
+  map_Gen(rev, list -> list.reverse())
+
+# Sequence a list of generators into a generator of lists.
+def sequence_Gen(gens: List[Gen[a]]) -> Gen[List[a]]:
+  traverse_Gen(gens, gen -> gen)
 
 applicative_Gen: Applicative[Gen] = applicative_from_pure_map_map2(
   const_Gen,
@@ -477,11 +494,10 @@ def shrink_nonneg_Float64(value: Float64) -> LazyList[Float64]:
     shrink_from_to_Float64(0.0, value)
 
 def exact_list_Gen(length: Int, gen: Gen[a]) -> Gen[List[a]]:
-  recur length:
-    case _ if cmp_Int(length, 0) matches LT | EQ:
-      const_Gen([])
-    case _:
-      map2_Gen(gen, exact_list_Gen(length.sub(1), gen), (head, tail) -> [head, *tail])
+  if cmp_Int(length, 0) matches LT | EQ:
+    const_Gen([])
+  else:
+    sequence_Gen(replicate_List(gen, length))
 
 def list_of_range_Gen(length_range: Range, gen: Gen[a]) -> Gen[List[a]]:
     gen_len = range_to_Gen(length_range, shrink_non_negative)
@@ -572,17 +588,51 @@ uint32_Gen: Gen[Int] = sampled_Gen(
   shrink_non_negative,
 )
 
+# Generator for Int values in [0, upper), clamped to 0 when upper <= 0.
+def int_range_Gen(upper: Int) -> Gen[Int]:
+  map_Gen(uint32_Gen, raw -> (
+    if cmp_Int(upper, 0) matches LT | EQ:
+      0
+    else:
+      mod_Int(raw, upper)
+  ))
+
 # Generator for positive Int values.
 pos_Int_Gen: Gen[Int] = sampled_Gen(
   pos_int_sampler,
   shrink_positive,
 )
 
+def sample_geometric_Int(size: Size, seed: Seed, p: Float64) -> (Seed, Int):
+  max_steps = to_Int_Size(size).mul(8).add(1)
+
+  def go(rem: Int, current_seed: Seed, count: Int) -> (Seed, Int):
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        (current_seed, count)
+      case _:
+        (next_seed, roll) = choose_Float64(current_seed, float_zero, float_one)
+        if cmp_Float64(roll, p) matches LT | EQ:
+          (next_seed, count)
+        else:
+          go(rem.sub(1), next_seed, count.add(1))
+
+  go(max_steps, seed, 0)
+
+# Generator for non-negative Int values with geometric distribution by mean.
+def geometric_Int_Gen(mean: Float64) -> Gen[Int]:
+  if not_Bool(is_finite(mean)):
+    const_Gen(0)
+  elif cmp_Float64(mean, float_zero) matches LT | EQ:
+    const_Gen(0)
+  else:
+    p = divf(float_one, subf(mean, -1.0))
+    sampled_Gen((size, seed) -> sample_geometric_Int(size, seed, p), shrink_non_negative)
+
 ascii_printable_Range = linear_Range(32, 127)
 utf8_multibyte_Range = linear_Range(128, 2048)
 char_tag_Range = linear_Range(0, 2)
 short_string_length_Range = linear_Range(0, 24)
-short_list_length_Range = linear_Range(0, 16)
 
 # Generator for printable ASCII characters.
 ascii_char_Gen: Gen[Char] = sampled_Gen(
@@ -643,7 +693,8 @@ def option_Gen(gen: Gen[a]) -> Gen[Option[a]]:
 
 # Generator for short lists of generated values.
 def list_Gen(gen: Gen[a]) -> Gen[List[a]]:
-  list_of_range_Gen(short_list_length_Range, gen)
+  len <- flat_map_Gen(geometric_Int_Gen(10.0))
+  exact_list_Gen(len, gen)
 
 # Combine two generators into a generator for pairs.
 def tuple2_Gen(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
@@ -758,6 +809,8 @@ predef_generators_prop: Prop = suite_Prop("Predef generators", [
   always_valid_prop(int32_Gen, "Int32-ish", int_to_String, i -> cmp_Int(abs_Int(i), int32_max) matches LT | EQ),
   always_valid_prop(uint32_Gen, "UInt32-ish", int_to_String, i -> cmp_Int(i, 0) matches GT | EQ),
   always_valid_prop(pos_Int_Gen, "Positive Int", int_to_String, i -> cmp_Int(i, 0) matches GT),
+  always_valid_prop(int_range_Gen(7), "Int range [0,7)", int_to_String, i -> and_Bool(cmp_Int(i, 0) matches GT | EQ, cmp_Int(i, 7) matches LT)),
+  always_valid_prop(geometric_Int_Gen(10.0), "Geometric Int >= 0", int_to_String, i -> cmp_Int(i, 0) matches GT | EQ),
   always_valid_prop(char_Gen, "Char round-trip", show_Char, c -> int_to_Char(char_to_Int(c)) matches Some(_)),
   always_valid_prop(string_Gen, "String round-trip", s -> s, s -> int_List_to_String(string_to_Int_List(s)) matches Some(_)),
   always_valid_prop(float64_Gen, "Float64 finite", float64_to_String, is_finite),

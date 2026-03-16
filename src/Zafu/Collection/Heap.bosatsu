@@ -5,9 +5,9 @@ from Bosatsu/List import (
   sort,
 )
 from Zafu/Testing/HedgeHog import (
-  Gen as Rand,
+  Gen,
   Prop,
-  uint32_Gen,
+  int_range_Gen,
   list_Gen as list_Rand,
   map_Gen as map_Rand,
   map2_Gen as map2_Rand,
@@ -419,25 +419,18 @@ def deep_insert(count: Int) -> Heap[Int]:
         go(fuel.sub(1), insert(heap, fuel))
   go(count, empty(ord_Int))
 
-def int_range(upper: Int) -> Rand[Int]:
-  map_Rand(uint32_Gen, raw -> (
-    if cmp_Int(upper, 0) matches LT | EQ:
-      0
-    else:
-      mod_Int(raw, upper)
-  ))
 
-def prod_Rand(left: Rand[a], right: Rand[b]) -> Rand[(a, b)]:
+def prod_Rand(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
   map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
 
-def forall_Prop(gen: Rand[a], name: String, test_fn: a -> Test) -> Prop:
+def forall_Prop(gen: Gen[a], name: String, test_fn: a -> Test) -> Prop:
   forall_Prop_hh(gen, name, _ -> name, test_fn)
 
-rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
+rand_int: Gen[Int] = map_Rand(int_range_Gen(256), i -> i.sub(128))
 
-rand_list_int: Rand[List[Int]] = list_Rand(rand_int)
+rand_list_int: Gen[List[Int]] = list_Rand(rand_int)
 
-rand_list_pair: Rand[(List[Int], List[Int])] = prod_Rand(rand_list_int, rand_list_int)
+rand_list_pair: Gen[(List[Int], List[Int])] = prod_Rand(rand_list_int, rand_list_int)
 
 roundtrip_prop: Prop = forall_Prop(
   rand_list_int,
