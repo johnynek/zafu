@@ -5,8 +5,8 @@ from Bosatsu/Num/Float64 import (
   divf,
   int_to_Float64,
   is_finite,
+  mulf,
   subf,
-  timesf,
 )
 
 export (
@@ -116,7 +116,7 @@ def choose_Float64(seed: Seed, lower: Float64, upper: Float64) -> (Seed, Float64
   (next_seed, raw) = next(seed)
   fraction = divf(raw.to_Float64(), float_two_pow_64)
   delta = subf(upper, lower)
-  (next_seed, addf(lower, timesf(delta, fraction)))
+  (next_seed, addf(lower, mulf(delta, fraction)))
 
 tests = TestSuite("Zafu/Testing/HedgeHog/Seed tests", [
   (
