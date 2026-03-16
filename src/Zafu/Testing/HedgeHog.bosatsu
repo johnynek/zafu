@@ -622,6 +622,7 @@ def sample_geometric_Int(size: Size, seed: Seed, p: Float64) -> (Seed, Int):
 
 # Generator for non-negative Int values with geometric distribution by mean.
 def geometric_Int_Gen(mean: Float64) -> Gen[Int]:
+  # Invalid or non-positive means collapse to a deterministic length of 0.
   if not_Bool(is_finite(mean)):
     const_Gen(0)
   elif cmp_Float64(mean, float_zero) matches LT | EQ:
