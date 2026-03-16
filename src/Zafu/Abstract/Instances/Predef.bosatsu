@@ -25,6 +25,7 @@ from Bosatsu/Num/Float64 import (
   float64_bits_to_Int,
   int_bits_to_Float64,
   is_nan,
+  mulf,
 )
 from Zafu/Collection/List import (
   size as size_List,
@@ -529,7 +530,7 @@ monoid_Int_add: Monoid[Int] = monoid_from_semigroup(0, semigroup_Int_add)
 monoid_Int_mul: Monoid[Int] = monoid_from_semigroup(1, semigroup_Int_mul)
 
 semigroup_Float64_add: Semigroup[Float64] = semigroup_from_combine(addf)
-semigroup_Float64_mul: Semigroup[Float64] = semigroup_from_combine(timesf)
+semigroup_Float64_mul: Semigroup[Float64] = semigroup_from_combine(mulf)
 monoid_Float64_add: Monoid[Float64] = monoid_from_semigroup(0.0, semigroup_Float64_add)
 monoid_Float64_mul: Monoid[Float64] = monoid_from_semigroup(1.0, semigroup_Float64_mul)
 
