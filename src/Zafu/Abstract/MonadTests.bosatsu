@@ -1,0 +1,250 @@
+package Zafu/Abstract/MonadTests
+
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq as eq_Eq,
+  eq_from_fn,
+)
+from Zafu/Abstract/Instances/Predef import (
+  eq_Option,
+  monad_Option,
+)
+from Zafu/Abstract/Monad import (
+  flat_map,
+  flatten,
+  tailrec_steps,
+  laws_Monad,
+)
+from Zafu/Control/IterState import (
+  IterState,
+  Continue,
+  Done,
+  done,
+  continue,
+)
+from Zafu/Testing/HedgeHog import (
+  Gen,
+  Prop,
+  int_between_Gen,
+  int_range_Gen,
+  option_Gen,
+  map_Gen,
+  tuple2_Gen,
+  forall_Prop,
+  run_Prop,
+)
+
+def eq_IterState(eq_cont: Eq[c], eq_done: Eq[d], left: IterState[c, d], right: IterState[c, d]) -> Bool:
+  match (left, right):
+    case (Continue(left_cont), Continue(right_cont)):
+      eq_Eq(eq_cont, left_cont, right_cont)
+    case (Done(left_done), Done(right_done)):
+      eq_Eq(eq_done, left_done, right_done)
+    case _:
+      False
+
+def int_from_tag(tag: Int) -> Int -> Int:
+  match mod_Int(tag, 6):
+    case 0:
+      value -> value
+    case 1:
+      value -> value.add(1)
+    case 2:
+      value -> value.sub(1)
+    case 3:
+      value -> value.mul(2)
+    case 4:
+      value -> value.mul(3).sub(2)
+    case _:
+      value -> 0.sub(value)
+
+def option_fn_from_tag(tag: Int) -> Int -> Option[Int]:
+  match mod_Int(tag, 6):
+    case 0:
+      value -> Some(value.add(1))
+    case 1:
+      value -> Some(value.mul(2))
+    case 2:
+      value -> Some(value.sub(3))
+    case 3:
+      value -> None if mod_Int(value, 2) matches 0 else Some(value.add(2))
+    case 4:
+      value -> None if cmp_Int(value, 0) matches LT else Some(value.sub(1))
+    case _:
+      value -> Some(value.mul(value))
+
+def tailrec_step_from_tag(step_tag: Int, goal: Int, shift: Int) -> Int -> Option[IterState[Int, Int]]:
+  match mod_Int(step_tag, 4):
+    case 0:
+      seed -> (
+        if cmp_Int(seed, goal) matches LT:
+          Some(continue(seed.add(1)))
+        else:
+          Some(done(seed.add(shift)))
+      )
+    case 1:
+      seed -> (
+        if cmp_Int(seed, goal) matches LT:
+          Some(continue(seed.add(2)))
+        else:
+          Some(done(seed.sub(shift)))
+      )
+    case 2:
+      seed -> (
+        if mod_Int(seed, 5) matches 0:
+          None
+        else:
+          Some(continue(seed.add(1)))
+      )
+    case _:
+      seed -> Some(done(seed.add(shift)))
+
+rand_int: Gen[Int] = int_between_Gen(-40, 41)
+rand_fn_tag: Gen[Int] = int_range_Gen(16)
+rand_shift: Gen[Int] = int_between_Gen(-3, 4)
+rand_goal: Gen[Int] = int_between_Gen(1, 8)
+rand_tail_seed: Gen[Int] = int_range_Gen(6)
+
+rand_opt_int: Gen[Option[Int]] = option_Gen(rand_int)
+
+struct MonadLawCase(
+  fa: Option[Int],
+  x: Int,
+  fn_ab_tag: Int,
+  fn_bc_tag: Int,
+  fn_map_tag: Int,
+  tail_seed: Int,
+  tail_goal: Int,
+  tail_shift: Int,
+  tail_tag: Int,
+)
+
+rand_law_case: Gen[MonadLawCase] = map_Gen(
+  tuple2_Gen(
+    tuple2_Gen(tuple2_Gen(tuple2_Gen(rand_opt_int, rand_int), rand_fn_tag), rand_fn_tag),
+    tuple2_Gen(tuple2_Gen(tuple2_Gen(rand_fn_tag, rand_tail_seed), rand_goal), tuple2_Gen(rand_shift, rand_fn_tag)),
+  ),
+  (((((fa, x), fn_ab_tag), fn_bc_tag), (((fn_map_tag, tail_seed), tail_goal), (tail_shift, tail_tag)))) -> (
+    MonadLawCase(fa, x, fn_ab_tag, fn_bc_tag, fn_map_tag, tail_seed, tail_goal, tail_shift, tail_tag)
+  ),
+)
+
+law_prop: Prop = forall_Prop(
+  rand_law_case,
+  "Monad laws over Option using finite function tags",
+  law_case -> (
+    MonadLawCase(fa, x, fn_ab_tag, fn_bc_tag, fn_map_tag, tail_seed, tail_goal, tail_shift, tail_tag) = law_case
+    eq_int = eq_from_fn(eq_Int)
+    eq_opt_int = eq_Option(eq_int)
+    eq_state_int_int = eq_from_fn((left, right) -> eq_IterState(eq_int, eq_int, left, right))
+    eq_opt_state_int_int = eq_Option(eq_state_int_int)
+    fn_ab = option_fn_from_tag(fn_ab_tag)
+    fn_bc = option_fn_from_tag(fn_bc_tag)
+    fn_map = int_from_tag(fn_map_tag)
+    tail_step = tailrec_step_from_tag(tail_tag, tail_goal, tail_shift)
+    laws_Monad(
+      monad_Option,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_state_int_int,
+      fa,
+      x,
+      fn_ab,
+      fn_bc,
+      fn_map,
+      tail_seed,
+      tail_step,
+    )
+  ),
+)
+
+tests = TestSuite("Monad tests", [
+  Assertion(
+    flat_map(Some(1), monad_Option, value -> Some(value.add(2))) matches Some(3),
+    "flat_map Some",
+  ),
+  Assertion(
+    flat_map(None, monad_Option, value -> Some(value.add(2))) matches None,
+    "flat_map None",
+  ),
+  Assertion(flatten(Some(Some(1)), monad_Option) matches Some(1), "flatten nested Some"),
+  Assertion(flatten(Some(None), monad_Option) matches None, "flatten nested None"),
+  Assertion(
+    tailrec_steps(monad_Option, 0, 5, seed -> Some(continue(seed.add(1)))) matches Some(Continue(5)),
+    "tailrec_steps max_steps <= 0",
+  ),
+  Assertion(
+    tailrec_steps(monad_Option, 10, 0, seed -> (
+      if cmp_Int(seed, 3) matches LT:
+        Some(continue(seed.add(1)))
+      else:
+        Some(done(seed))
+    )) matches Some(Done(3)),
+    "tailrec_steps reaches Done",
+  ),
+  Assertion(
+    tailrec_steps(monad_Option, 2, 0, seed -> Some(continue(seed.add(1)))) matches Some(Continue(2)),
+    "tailrec_steps keeps remainder on fuel exhaustion",
+  ),
+  Assertion(
+    tailrec_steps(monad_Option, 5, 0, seed -> (
+      if seed matches 2:
+        None
+      else:
+        Some(continue(seed.add(1)))
+    )) matches None,
+    "tailrec_steps propagates effect failure",
+  ),
+  (
+    eq_int = eq_from_fn(eq_Int)
+    eq_opt_int = eq_Option(eq_int)
+    eq_state_int_int = eq_from_fn((left, right) -> eq_IterState(eq_int, eq_int, left, right))
+    eq_opt_state_int_int = eq_Option(eq_state_int_int)
+    laws_Monad(
+      monad_Option,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_state_int_int,
+      Some(3),
+      7,
+      value -> Some(value.add(1)),
+      value -> Some(value.mul(2)),
+      value -> value.add(5),
+      0,
+      seed -> (
+        if cmp_Int(seed, 2) matches LT:
+          Some(continue(seed.add(1)))
+        else:
+          Some(done(seed))
+      ),
+    )
+  ),
+  (
+    eq_int = eq_from_fn(eq_Int)
+    eq_opt_int = eq_Option(eq_int)
+    eq_state_int_int = eq_from_fn((left, right) -> eq_IterState(eq_int, eq_int, left, right))
+    eq_opt_state_int_int = eq_Option(eq_state_int_int)
+    laws_Monad(
+      monad_Option,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_state_int_int,
+      None,
+      4,
+      value -> (
+        if mod_Int(value, 2) matches 0:
+          None
+        else:
+          Some(value.add(1))
+      ),
+      value -> Some(value.mul(2)),
+      value -> value.add(10),
+      1,
+      seed -> Some(continue(seed.add(1))),
+    )
+  ),
+  run_Prop(law_prop, 180, 20260315),
+])

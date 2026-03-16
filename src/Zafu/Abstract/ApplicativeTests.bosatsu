@@ -1,0 +1,139 @@
+package Zafu/Abstract/ApplicativeTests
+
+from Zafu/Abstract/Applicative import (
+  pure,
+  map,
+  map2,
+  product_left,
+  product_right,
+  void,
+  product2,
+  product3,
+  product4,
+  product5,
+  laws_Applicative,
+)
+from Zafu/Abstract/Eq import (
+  eq_from_fn,
+)
+from Zafu/Abstract/Instances/Predef import (
+  applicative_Option,
+  eq_Option,
+)
+from Zafu/Testing/HedgeHog import (
+  Gen,
+  Prop,
+  int_between_Gen,
+  int_range_Gen,
+  option_Gen,
+  map_Gen,
+  tuple2_Gen,
+  forall_Prop,
+  run_Prop,
+)
+
+def int_from_small_tag(tag: Int) -> Int -> Int:
+  match mod_Int(tag, 6):
+    case 0:
+      value -> value
+    case 1:
+      value -> value.add(1)
+    case 2:
+      value -> value.sub(1)
+    case 3:
+      value -> value.mul(2)
+    case 4:
+      value -> value.mul(3).sub(2)
+    case _:
+      value -> 0.sub(value)
+
+rand_int: Gen[Int] = int_between_Gen(-40, 41)
+rand_fn_tag: Gen[Int] = int_range_Gen(12)
+
+rand_opt_int: Gen[Option[Int]] = option_Gen(rand_int)
+
+rand_opt_fn_tag: Gen[Option[Int]] = option_Gen(rand_fn_tag)
+
+struct ApplicativeLawCase(
+  fa: Option[Int],
+  ff_ab_tag: Option[Int],
+  ff_bc_tag: Option[Int],
+  fn_ab_tag: Int,
+  x: Int,
+)
+
+rand_law_case: Gen[ApplicativeLawCase] = map_Gen(
+  tuple2_Gen(
+    tuple2_Gen(tuple2_Gen(rand_opt_int, rand_opt_fn_tag), rand_opt_fn_tag),
+    tuple2_Gen(rand_fn_tag, rand_int),
+  ),
+  ((((fa, ff_ab_tag), ff_bc_tag), (fn_ab_tag, x))) -> ApplicativeLawCase(fa, ff_ab_tag, ff_bc_tag, fn_ab_tag, x),
+)
+
+law_prop: Prop = forall_Prop(
+  rand_law_case,
+  "Applicative laws over Option using finite function tags",
+  law_case -> (
+    ApplicativeLawCase(fa, ff_ab_tag, ff_bc_tag, fn_ab_tag, x) = law_case
+    eq_int = eq_from_fn(eq_Int)
+    eq_opt_int = eq_Option(eq_int)
+    ff_ab = ff_ab_tag.map(applicative_Option, int_from_small_tag)
+    ff_bc = ff_bc_tag.map(applicative_Option, int_from_small_tag)
+    fn_ab = int_from_small_tag(fn_ab_tag)
+    laws_Applicative(
+      applicative_Option,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_int,
+      fa,
+      ff_ab,
+      ff_bc,
+      fn_ab,
+      x,
+    )
+  ),
+)
+
+tests = TestSuite("Applicative tests", [
+  Assertion(applicative_Option.pure(1) matches Some(1), "pure"),
+  Assertion((Some(1)).map(applicative_Option, value -> value.add(2)) matches Some(3), "map"),
+  Assertion(applicative_Option.map2(Some(1), Some(2), add) matches Some(3), "map2"),
+  Assertion(applicative_Option.product2(Some(1), Some("a")) matches Some((1, "a")), "product2"),
+  Assertion(applicative_Option.product3(Some(1), Some(2), Some(3)) matches Some((1, 2, 3)), "product3"),
+  Assertion(applicative_Option.product4(Some(1), Some(2), Some(3), Some(4)) matches Some((1, 2, 3, 4)), "product4"),
+  Assertion(applicative_Option.product5(Some(1), Some(2), Some(3), Some(4), Some(5)) matches Some((1, 2, 3, 4, 5)), "product5"),
+  Assertion(applicative_Option.product_left(Some(1), Some("x")) matches Some(1), "product_left"),
+  Assertion(applicative_Option.product_right(Some(1), Some("x")) matches Some("x"), "product_right"),
+  Assertion((Some(1)).void(applicative_Option) matches Some(()), "void"),
+  (
+    eq_int = eq_from_fn(eq_Int)
+    eq_opt_int = eq_Option(eq_int)
+    laws_Applicative(
+      applicative_Option,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_int,
+      Some(3),
+      Some(value -> value.add(1)),
+      Some(value -> value.mul(2)),
+      value -> value.add(5),
+      7,
+    )
+  ),
+  (
+    eq_int = eq_from_fn(eq_Int)
+    eq_opt_int = eq_Option(eq_int)
+    laws_Applicative(
+      applicative_Option,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_int,
+      None,
+      Some(value -> value.add(1)),
+      None,
+      value -> value.add(5),
+      7,
+    )
+  ),
+  run_Prop(law_prop, 180, 20260315),
+])

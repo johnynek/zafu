@@ -41,6 +41,7 @@ export (
   traverse,
   sequence,
   map,
+  traverse_balanced_List,
   traverse_to_foldable,
   laws_Traverse,
 )
@@ -138,6 +139,56 @@ def const_applicative(monoid_c: Monoid[c]) -> Applicative[Const[c]]:
     const_map,
     (left, right, fn) -> const_map2(monoid_c, left, right, fn),
   )
+
+enum TraverseListTree[a: +*]:
+  EmptyTraverseListTree
+  LeafTraverseListTree(item: a)
+  BranchTraverseListTree(left: TraverseListTree[a], right: TraverseListTree[a])
+
+def take_TraverseListTree(items: List[a], size: Int) -> (TraverseListTree[a], List[a]):
+  recur size:
+    case _ if cmp_Int(size, 0) matches LT | EQ:
+      (EmptyTraverseListTree, items)
+    case 1:
+      match items:
+        case []:
+          (EmptyTraverseListTree, [])
+        case [head, *tail]:
+          (LeafTraverseListTree(head), tail)
+    case _:
+      left_size = size.div(2)
+      right_size = size.sub(left_size)
+      (left_tree, rem_items) = take_TraverseListTree(items, left_size)
+      (right_tree, tail_items) = take_TraverseListTree(rem_items, right_size)
+      (BranchTraverseListTree(left_tree, right_tree), tail_items)
+
+def prepend_TraverseListTree(tree: TraverseListTree[a], acc: List[a]) -> List[a]:
+  recur tree:
+    case EmptyTraverseListTree:
+      acc
+    case LeafTraverseListTree(item):
+      [item, *acc]
+    case BranchTraverseListTree(left, right):
+      prepend_TraverseListTree(left, prepend_TraverseListTree(right, acc))
+
+def traverse_TraverseListTree[g: * -> *, a, b](tree: TraverseListTree[a], app: Applicative[g], fn: a -> g[b]) -> g[TraverseListTree[b]]:
+  recur tree:
+    case EmptyTraverseListTree:
+      app.pure(EmptyTraverseListTree)
+    case LeafTraverseListTree(item):
+      fn(item).map_app(app, LeafTraverseListTree)
+    case BranchTraverseListTree(left, right):
+      app.map2(
+        traverse_TraverseListTree(left, app, fn),
+        traverse_TraverseListTree(right, app, fn),
+        (mapped_left, mapped_right) -> BranchTraverseListTree(mapped_left, mapped_right),
+      )
+
+# Traverse a list by first building a balanced pure tree, keeping applicative depth logarithmic.
+def traverse_balanced_List[g: * -> *, a, b](items: List[a], app: Applicative[g], fn: a -> g[b]) -> g[List[b]]:
+  size = items.foldl_List(0, (acc, _) -> acc.add(1))
+  (item_tree, _) = take_TraverseListTree(items, size)
+  traverse_TraverseListTree(item_tree, app, fn).map_app(app, tree -> prepend_TraverseListTree(tree, []))
 
 def traverse_from_traverse_map[f: * -> *](
   traverse_fn: forall g: * -> *, a, b. (f[a], Applicative[g], a -> g[b]) -> g[f[b]],
@@ -238,11 +289,7 @@ def laws_Traverse[f: * -> *, a, b, c](
   ])
 
 def traverse_List_local[g: * -> *, a, b](items: List[a], app: Applicative[g], fn: a -> g[b]) -> g[List[b]]:
-  rev_mapped = items.foldl_List(
-    app.pure([]),
-    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
-  )
-  rev_mapped.map_app(app, rev_items -> rev_items.reverse())
+  traverse_balanced_List(items, app, fn)
 
 def foldable_List_local() -> Foldable[List]:
   foldable_from_folds(

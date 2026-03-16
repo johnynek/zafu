@@ -1,0 +1,87 @@
+package Zafu/Control/IterStateTests
+
+from Bosatsu/Collection/Array import from_List_Array
+from Zafu/Control/IterState import (
+  IterState,
+  Continue,
+  Done,
+  done,
+  continue,
+  value,
+  foldl_List as foldl_iterstate_List,
+  foldr_List as foldr_iterstate_List,
+  foldl_Array as foldl_iterstate_Array,
+  foldr_Array as foldr_iterstate_Array,
+  map_continue,
+  map_done,
+)
+from Zafu/Testing/HedgeHog import (
+  Gen,
+  Prop,
+  int_between_Gen,
+  list_Gen,
+  forall_Prop,
+  suite_Prop,
+  run_Prop,
+)
+
+rand_int: Gen[Int] = int_between_Gen(-128, 128)
+
+rand_list_int: Gen[List[Int]] = list_Gen(rand_int)
+
+def foldr_list_model(list: List[Int], init: Int) -> Int:
+  list.reverse().foldl_List(init, (acc, item) -> item.sub(acc))
+
+foldl_prop: Prop = forall_Prop(
+  rand_list_int,
+  "foldl_List Continue path agrees with list foldl",
+  list -> (
+    expected = list.foldl_List(0, add)
+    actual = value(foldl_iterstate_List(list, 0, (acc, item) -> continue(acc.add(item))))
+    Assertion(actual.eq_Int(expected), "foldl_List law")
+  ),
+)
+
+foldr_prop: Prop = forall_Prop(
+  rand_list_int,
+  "foldr_List Continue path agrees with list model",
+  list -> (
+    expected = foldr_list_model(list, 0)
+    actual = value(foldr_iterstate_List(list, 0, (item, acc) -> continue(item.sub(acc))))
+    Assertion(actual.eq_Int(expected), "foldr_List law")
+  ),
+)
+
+iterstate_props: Prop = suite_Prop(
+  "IterState properties",
+  [
+    foldl_prop,
+    foldr_prop,
+  ],
+)
+
+tests = TestSuite("IterState tests", [
+  Assertion(done(1) matches Done(1), "done helper"),
+  Assertion(continue(2) matches Continue(2), "continue helper"),
+  Assertion(value(done(1)).eq_Int(1), "value Done"),
+  Assertion(value(continue(2)).eq_Int(2), "value Continue"),
+  Assertion(value(foldl_iterstate_List([1, 2, 3], 0, (acc, item) -> continue(acc.add(item)))).eq_Int(6), "foldl_List"),
+  Assertion(
+    value(foldl_iterstate_List([1, 2, 3], 0, (acc, item) -> done(acc.add(item)) if item.eq_Int(2) else continue(acc.add(item)))).eq_Int(3),
+    "foldl_List short-circuit",
+  ),
+  Assertion(value(foldr_iterstate_List([1, 2, 3], 0, (item, acc) -> continue(item.sub(acc)))).eq_Int(2), "foldr_List"),
+  Assertion(
+    value(foldl_iterstate_Array(from_List_Array([1, 2, 3]), 0, (acc, item) -> continue(acc.add(item)))).eq_Int(6),
+    "foldl_Array",
+  ),
+  Assertion(
+    value(foldr_iterstate_Array(from_List_Array([1, 2, 3]), 0, (item, acc) -> continue(item.sub(acc)))).eq_Int(2),
+    "foldr_Array",
+  ),
+  Assertion(map_continue(continue(2), x -> x.add(1)) matches Continue(3), "map_continue Continue"),
+  Assertion(map_continue(done(2), x -> x.add(1)) matches Done(2), "map_continue Done"),
+  Assertion(map_done(done(2), x -> x.add(1)) matches Done(3), "map_done Done"),
+  Assertion(map_done(continue(2), x -> x.add(1)) matches Continue(2), "map_done Continue"),
+  run_Prop(iterstate_props, 180, 20260315),
+])

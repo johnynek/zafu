@@ -27,6 +27,7 @@ from Zafu/Abstract/Monad import (
   Monad,
   monad_from_applicative_flat_map_tailrec_steps,
 )
+from Zafu/Abstract/Traverse import traverse_balanced_List
 from Zafu/Collection/LazyList import (
   LazyList,
   empty_LazyList,
@@ -37,7 +38,7 @@ from Zafu/Collection/LazyList import (
   filter_map as filter_map_LazyList,
   filter as filter_native_LazyList,
   flat_map as flat_map_LazyList,
-  lazy_singleton,
+  singleton as singleton_LazyList,
   Cons as Cons_LazyList,
   Empty as Empty_LazyList,
 )
@@ -79,6 +80,7 @@ from Zafu/Testing/HedgeHog/Seed import (
 )
 from Zafu/Testing/HedgeHog/Size import (
   Size,
+  to_Int as to_Int_Size,
   size_for_sample,
   golden as golden_Size,
 )
@@ -91,17 +93,23 @@ export (
   map_Gen,
   map2_Gen,
   flat_map_Gen,
+  traverse_Gen,
+  sequence_Gen,
   fixed_size_Gen,
   scale_Gen,
   smaller_Gen,
+  product_applicative_Gen,
   monad_Gen,
   unit_Gen,
   bool_Gen,
   comparison_Gen,
   int_Gen,
   int32_Gen,
+  int_range_Gen,
+  int_between_Gen,
   uint32_Gen,
   pos_Int_Gen,
+  geometric_Int_Gen,
   ascii_char_Gen,
   char_Gen,
   short_ascii_Gen,
@@ -109,12 +117,16 @@ export (
   float64_Gen,
   unit_Float64_Gen,
   option_Gen,
+  exact_list_Gen,
   list_Gen,
+  with_bounded_uint32_Gen,
   tuple2_Gen,
   tuple3_Gen,
   tuple4_Gen,
   Prop,
+  forall_show_Prop,
   forall_Prop,
+  forall_True_Prop,
   suite_Prop,
   run_Prop,
 )
@@ -219,6 +231,25 @@ def map2_Gen(left: Gen[a], right: Gen[b], fn: (a, b) -> c) -> Gen[c]:
     map_LazyTree(paired_values, value -> (seed2, value))
   ))
 
+# Product applicative using map2_Gen's paired shrink trees.
+# This generally shrinks better for independent products, but it is not the
+# Applicative aligned with flat_map_Gen / monad_Gen because map2_Gen does not
+# preserve the same left-to-right sequencing semantics.
+product_applicative_Gen: Applicative[Gen] = applicative_from_pure_map_map2(
+  const_Gen,
+  map_Gen,
+  map2_Gen,
+)
+
+# Traverse a list with a generator-producing function.
+def traverse_Gen(items: List[a], fn: a -> Gen[b]) -> Gen[List[b]]:
+  traverse_balanced_List(items, product_applicative_Gen, fn)
+
+# Sequence a list of generators into a generator of lists.
+def sequence_Gen(gens: List[Gen[a]]) -> Gen[List[a]]:
+  traverse_Gen(gens, gen -> gen)
+
+# Applicative instance aligned with flat_map_Gen, preserving monad-compatible sequencing.
 applicative_Gen: Applicative[Gen] = applicative_from_pure_map_map2(
   const_Gen,
   map_Gen,
@@ -424,7 +455,7 @@ def shrink_positive(i: Int) -> LazyList[Int]:
     empty_LazyList
   else:
     concat_LazyList(
-      lazy_singleton(() -> 1),
+      singleton_LazyList(1),
       filter_LazyList(shrink_Int(i), v -> cmp_Int(v, 0) matches GT),
     )
 
@@ -433,7 +464,7 @@ def shrink_Comparison_Index(i: Int) -> LazyList[Int]:
     case 0:
       empty_LazyList
     case 1:
-      from_List_LazyList([0])
+      singleton_LazyList(0)
     case _:
       from_List_LazyList([1, 0])
 
@@ -478,11 +509,10 @@ def shrink_nonneg_Float64(value: Float64) -> LazyList[Float64]:
     shrink_from_to_Float64(0.0, value)
 
 def exact_list_Gen(length: Int, gen: Gen[a]) -> Gen[List[a]]:
-  recur length:
-    case _ if cmp_Int(length, 0) matches LT | EQ:
-      const_Gen([])
-    case _:
-      map2_Gen(gen, exact_list_Gen(length.sub(1), gen), (head, tail) -> [head, *tail])
+  if cmp_Int(length, 0) matches LT | EQ:
+    const_Gen([])
+  else:
+    sequence_Gen(replicate_List(gen, length))
 
 def list_of_range_Gen(length_range: Range, gen: Gen[a]) -> Gen[List[a]]:
     gen_len = range_to_Gen(length_range, shrink_non_negative)
@@ -573,17 +603,63 @@ uint32_Gen: Gen[Int] = sampled_Gen(
   shrink_non_negative,
 )
 
+# Bound an unsigned-like Int into [0, upper), clamping to 0 when upper <= 0.
+def bounded_uint32(raw: Int, upper: Int) -> Int:
+  if cmp_Int(upper, 0) matches LT | EQ:
+    0
+  else:
+    mod_Int(raw, upper)
+
+# Generator for Int values in [low, high), clamped to low when high <= low.
+def int_between_Gen(low: Int, high_exclusive: Int) -> Gen[Int]:
+  map_Gen(uint32_Gen, raw -> (
+    width = high_exclusive.sub(low)
+    low.add(bounded_uint32(raw, width))
+  ))
+
+# Generator for Int values in [0, upper), clamped to 0 when upper <= 0.
+def int_range_Gen(upper: Int) -> Gen[Int]:
+  int_between_Gen(0, upper)
+
 # Generator for positive Int values.
 pos_Int_Gen: Gen[Int] = sampled_Gen(
   pos_int_sampler,
   shrink_positive,
 )
 
+def sample_geometric_Int(size: Size, seed: Seed, p: Float64) -> (Seed, Int):
+  # Size-scaled retry cap bounds low-probability long-tail execution paths.
+  max_steps = to_Int_Size(size).mul(8).add(1)
+
+  def go(rem: Int, current_seed: Seed, count: Int) -> (Seed, Int):
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        (current_seed, count)
+      case _:
+        (next_seed, roll) = choose_Float64(current_seed, float_zero, float_one)
+        if cmp_Float64(roll, p) matches LT | EQ:
+          (next_seed, count)
+        else:
+          go(rem.sub(1), next_seed, count.add(1))
+
+  go(max_steps, seed, 0)
+
+# Generator for non-negative Int values with geometric distribution by mean.
+def geometric_Int_Gen(mean: Float64) -> Gen[Int]:
+  # Invalid or non-positive means collapse to a deterministic length of 0.
+  if not_Bool(is_finite(mean)):
+    const_Gen(0)
+  elif cmp_Float64(mean, float_zero) matches LT | EQ:
+    const_Gen(0)
+  else:
+    # mean = (1 - p) / p  =>  p = 1 / (mean + 1)
+    p = divf(float_one, subf(mean, -1.0))
+    sampled_Gen((size, seed) -> sample_geometric_Int(size, seed, p), shrink_non_negative)
+
 ascii_printable_Range = linear_Range(32, 127)
 utf8_multibyte_Range = linear_Range(128, 2048)
 char_tag_Range = linear_Range(0, 2)
 short_string_length_Range = linear_Range(0, 24)
-short_list_length_Range = linear_Range(0, 16)
 
 # Generator for printable ASCII characters.
 ascii_char_Gen: Gen[Char] = sampled_Gen(
@@ -644,7 +720,14 @@ def option_Gen(gen: Gen[a]) -> Gen[Option[a]]:
 
 # Generator for short lists of generated values.
 def list_Gen(gen: Gen[a]) -> Gen[List[a]]:
-  list_of_range_Gen(short_list_length_Range, gen)
+  len <- flat_map_Gen(geometric_Int_Gen(10.0))
+  exact_list_Gen(len, gen)
+
+# Pair generated values with an independent bounded Int derived from the value.
+def with_bounded_uint32_Gen(base: Gen[a], upper: a -> Int, shift: Int) -> Gen[(a, Int)]:
+  map2_Gen(base, uint32_Gen, (value, raw) -> (
+    (value, bounded_uint32(raw, upper(value)).add(shift))
+  ))
 
 # Combine two generators into a generator for pairs.
 def tuple2_Gen(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
@@ -666,7 +749,7 @@ def run_count(prop: Prop, count: Int, seed: Seed) -> (Seed, Test):
   run(count, seed)
 
 # Build a property by testing generated values and shrinking failures.
-def forall_Prop(gen: Gen[a], name: String, show: a -> String, test_fn: a -> Test) -> Prop:
+def forall_show_Prop(gen: Gen[a], name: String, show: a -> String, test_fn: a -> Test) -> Prop:
   Prop((count, seed) -> (
     (next_seed, samples) = sample_trees(gen, count, seed)
     test = match first_failure_and_shrunk_samples(samples, test_fn):
@@ -677,6 +760,10 @@ def forall_Prop(gen: Gen[a], name: String, show: a -> String, test_fn: a -> Test
         Assertion(False, render_failure(name, show, original, shrunk, failure))
     (next_seed, test)
   ))
+
+# Common-case property builder with default sample rendering.
+def forall_Prop(gen: Gen[a], name: String, test_fn: a -> Test) -> Prop:
+  forall_show_Prop(gen, name, _ -> name, test_fn)
 
 # Group several properties under a named test suite.
 def suite_Prop(name: String, props: List[Prop]) -> Prop:
@@ -733,16 +820,16 @@ def show_Int_List(list: List[Int]) -> String:
                 else: go([hs, ",", *rev_parts], t)
     concat_String(["[", *go([], list)])
 
-def always_valid_prop(gen: Gen[a], name: String, show: a -> String, fn: a -> Bool) -> Prop:
-  forall_Prop(gen, name, show, a -> Assertion(fn(a), name))
+def forall_True_Prop(gen: Gen[a], name: String, show: a -> String, fn: a -> Bool) -> Prop:
+  forall_show_Prop(gen, name, show, a -> Assertion(fn(a), name))
 
 predef_generators_prop: Prop = suite_Prop("Predef generators", [
-  always_valid_prop(unit_Gen, "Unit", _ -> "Unit", _ -> True),
-  always_valid_prop(bool_Gen, "Bool", show_Bool, b -> (
+  forall_True_Prop(unit_Gen, "Unit", _ -> "Unit", _ -> True),
+  forall_True_Prop(bool_Gen, "Bool", show_Bool, b -> (
     expected_len = 4 if b else 5
     length_String(show_Bool(b)).eq_Int(expected_len)
   )),
-  always_valid_prop(comparison_Gen, "Comparison", show_Comparison, c -> (
+  forall_True_Prop(comparison_Gen, "Comparison", show_Comparison, c -> (
     idx = match c:
       case LT:
         -1
@@ -755,24 +842,27 @@ predef_generators_prop: Prop = suite_Prop("Predef generators", [
     else:
       abs_Int(idx).eq_Int(1)
   )),
-  always_valid_prop(int_Gen, "Int reflexive", int_to_String, i -> i.eq_Int(i)),
-  always_valid_prop(int32_Gen, "Int32-ish", int_to_String, i -> cmp_Int(abs_Int(i), int32_max) matches LT | EQ),
-  always_valid_prop(uint32_Gen, "UInt32-ish", int_to_String, i -> cmp_Int(i, 0) matches GT | EQ),
-  always_valid_prop(pos_Int_Gen, "Positive Int", int_to_String, i -> cmp_Int(i, 0) matches GT),
-  always_valid_prop(char_Gen, "Char round-trip", show_Char, c -> int_to_Char(char_to_Int(c)) matches Some(_)),
-  always_valid_prop(string_Gen, "String round-trip", s -> s, s -> int_List_to_String(string_to_Int_List(s)) matches Some(_)),
-  always_valid_prop(float64_Gen, "Float64 finite", float64_to_String, is_finite),
-  always_valid_prop(option_Gen(int_Gen), "Option[Int]", show_Option_Int, o -> (
+  forall_True_Prop(int_Gen, "Int reflexive", int_to_String, i -> i.eq_Int(i)),
+  forall_True_Prop(int32_Gen, "Int32-ish", int_to_String, i -> cmp_Int(abs_Int(i), int32_max) matches LT | EQ),
+  forall_True_Prop(uint32_Gen, "UInt32-ish", int_to_String, i -> cmp_Int(i, 0) matches GT | EQ),
+  forall_True_Prop(pos_Int_Gen, "Positive Int", int_to_String, i -> cmp_Int(i, 0) matches GT),
+  forall_True_Prop(int_range_Gen(7), "Int range [0,7)", int_to_String, i -> and_Bool(cmp_Int(i, 0) matches GT | EQ, cmp_Int(i, 7) matches LT)),
+  forall_True_Prop(int_between_Gen(-3, 4), "Int range [-3,4)", int_to_String, i -> and_Bool(cmp_Int(i, -3) matches GT | EQ, cmp_Int(i, 4) matches LT)),
+  forall_True_Prop(geometric_Int_Gen(10.0), "Geometric Int >= 0", int_to_String, i -> cmp_Int(i, 0) matches GT | EQ),
+  forall_True_Prop(char_Gen, "Char round-trip", show_Char, c -> int_to_Char(char_to_Int(c)) matches Some(_)),
+  forall_True_Prop(string_Gen, "String round-trip", s -> s, s -> int_List_to_String(string_to_Int_List(s)) matches Some(_)),
+  forall_True_Prop(float64_Gen, "Float64 finite", float64_to_String, is_finite),
+  forall_True_Prop(option_Gen(int_Gen), "Option[Int]", show_Option_Int, o -> (
     match o:
       case None:
         True
       case Some(i):
         i.eq_Int(i)
   )),
-  always_valid_prop(list_Gen(int_Gen), "List[Int]", show_Int_List, list -> eq_List(eq_Int)(list.reverse().reverse(), list)),
-  always_valid_prop(tuple2_Gen(int_Gen, bool_Gen), "Tuple2[Int, Bool]", _ -> "tuple2", ((i, b)) -> i.eq_Int(i) if b else i.eq_Int(i)),
-  always_valid_prop(tuple3_Gen(int_Gen, bool_Gen, char_Gen), "Tuple3", _ -> "tuple3", ((i, _, c)) -> and_Bool(i.eq_Int(i), char_to_Int(c).eq_Int(char_to_Int(c)))),
-  always_valid_prop(tuple4_Gen(int_Gen, bool_Gen, char_Gen, string_Gen), "Tuple4", _ -> "tuple4", ((i, _, c, s)) -> and_Bool(i.eq_Int(i), and_Bool(char_to_Int(c).eq_Int(char_to_Int(c)), int_List_to_String(string_to_Int_List(s)) matches Some(_)))),
+  forall_True_Prop(list_Gen(int_Gen), "List[Int]", show_Int_List, list -> eq_List(eq_Int)(list.reverse().reverse(), list)),
+  forall_True_Prop(tuple2_Gen(int_Gen, bool_Gen), "Tuple2[Int, Bool]", _ -> "tuple2", ((i, b)) -> i.eq_Int(i) if b else i.eq_Int(i)),
+  forall_True_Prop(tuple3_Gen(int_Gen, bool_Gen, char_Gen), "Tuple3", _ -> "tuple3", ((i, _, c)) -> and_Bool(i.eq_Int(i), char_to_Int(c).eq_Int(char_to_Int(c)))),
+  forall_True_Prop(tuple4_Gen(int_Gen, bool_Gen, char_Gen, string_Gen), "Tuple4", _ -> "tuple4", ((i, _, c, s)) -> and_Bool(i.eq_Int(i), and_Bool(char_to_Int(c).eq_Int(char_to_Int(c)), int_List_to_String(string_to_Int_List(s)) matches Some(_)))),
 ])
 
 non_one_int_Range = linear_Range(2, 1026)
@@ -818,12 +908,18 @@ def shrink_frontier_witness() -> Test:
   tree = LazyTree(
     10,
     from_List_LazyList([
-      LazyTree(5, from_List_LazyList([singleton_LazyTree(0)])),
+      LazyTree(5, singleton_LazyList(singleton_LazyTree(0))),
       singleton_LazyTree(1),
     ]),
   )
   shrunk = shrink_tree_to_smallest(tree, i -> Assertion(cmp_Int(i, 0) matches LT | EQ, "expected non-positive"))
   Assertion(shrunk.eq_Int(1), "shrink should revisit later siblings after a chosen branch stops failing, got ${int_to_String(shrunk)}")
+
+def deep_sequence_witness() -> Test:
+  deep_count = 100000
+  ((_, values)) = root_LazyTree(run_Gen(exact_list_Gen(deep_count, const_Gen(1)), size_for_sample(0, 1), seed_from_Int(7)))
+  total = values.foldl_List(0, add)
+  Assertion(and_Bool(list_size(values).eq_Int(deep_count), total.eq_Int(deep_count)), "sequence_Gen deep stack-safe")
 
 tests = TestSuite("Zafu/Testing/HedgeHog tests", [
   run_Prop(predef_generators_prop, 60, 4242),
@@ -831,4 +927,5 @@ tests = TestSuite("Zafu/Testing/HedgeHog tests", [
   shrink_int_witness(),
   shrink_list_witness(),
   shrink_frontier_witness(),
+  deep_sequence_witness(),
 ])

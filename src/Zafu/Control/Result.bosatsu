@@ -463,7 +463,7 @@ tests = TestSuite("Result tests", [
   ),
   Assertion(
     monad_Result.tailrec_steps(5, 0, seed -> (
-      if cmp_Int(seed, 2) matches EQ:
+      if seed matches 2:
         Err(99)
       else:
         Ok(Continue(seed.add(1)))

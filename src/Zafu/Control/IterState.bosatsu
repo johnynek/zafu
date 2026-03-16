@@ -2,7 +2,6 @@ package Zafu/Control/IterState
 
 from Bosatsu/Collection/Array import (
   Array,
-  from_List_Array,
   size_Array,
   get_Array,
 )
@@ -99,28 +98,3 @@ def map_done(state: IterState[c, d], fn: d -> e) -> IterState[c, e]:
       Continue(cont_value)
     case Done(done_value):
       Done(fn(done_value))
-
-tests = TestSuite("IterState tests", [
-  Assertion(done(1) matches Done(1), "done helper"),
-  Assertion(continue(2) matches Continue(2), "continue helper"),
-  Assertion(value(done(1)).eq_Int(1), "value Done"),
-  Assertion(value(continue(2)).eq_Int(2), "value Continue"),
-  Assertion(value(foldl_List([1, 2, 3], 0, (acc, item) -> continue(acc.add(item)))).eq_Int(6), "foldl_List"),
-  Assertion(
-    value(foldl_List([1, 2, 3], 0, (acc, item) -> done(acc.add(item)) if item.eq_Int(2) else continue(acc.add(item)))).eq_Int(3),
-    "foldl_List short-circuit",
-  ),
-  Assertion(value(foldr_List([1, 2, 3], 0, (item, acc) -> continue(item.sub(acc)))).eq_Int(2), "foldr_List"),
-  Assertion(
-    value(foldl_Array(from_List_Array([1, 2, 3]), 0, (acc, item) -> continue(acc.add(item)))).eq_Int(6),
-    "foldl_Array",
-  ),
-  Assertion(
-    value(foldr_Array(from_List_Array([1, 2, 3]), 0, (item, acc) -> continue(item.sub(acc)))).eq_Int(2),
-    "foldr_Array",
-  ),
-  Assertion(map_continue(continue(2), x -> x.add(1)) matches Continue(3), "map_continue Continue"),
-  Assertion(map_continue(done(2), x -> x.add(1)) matches Done(2), "map_continue Done"),
-  Assertion(map_done(done(2), x -> x.add(1)) matches Done(3), "map_done Done"),
-  Assertion(map_done(continue(2), x -> x.add(1)) matches Continue(2), "map_done Continue"),
-])
