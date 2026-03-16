@@ -58,6 +58,7 @@ export (
   foldl,
   flat_map,
   from_List,
+  interleave,
   to_List,
   map,
   uncons,
@@ -138,6 +139,16 @@ def filter_map(ll: LazyList[a], fn: a -> Option[b]) -> LazyList[b]:
           )
         case None:
           filter_map(get_Lazy(tail), fn)
+
+# interleave two LazyLists lazily
+def interleave[a](left: LazyList[a], right: LazyList[a]) -> LazyList[a]:
+    recur (left, right):
+        case (Empty, _): right
+        case (_, Empty): left
+        case (Cons(lh, lt), Cons(rh, rt)):
+            tail_list = lazy(() -> interleave(get_Lazy(lt), get_Lazy(rt)))
+            Cons(lh, lazy(() -> Cons(rh, tail_list)))
+            
 
 # Extracts the head and remaining tail if the list is non-empty.
 def uncons(ll: LazyList[a]) -> Option[(Lazy[a], Lazy[LazyList[a]])]:

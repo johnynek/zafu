@@ -31,6 +31,7 @@ from Zafu/Collection/LazyList import (
   empty_LazyList,
   concat as concat_LazyList,
   from_List as from_List_LazyList,
+  interleave as interleave_LazyList,
   map as map_LazyList,
   filter_map as filter_map_LazyList,
   filter as filter_native_LazyList,
@@ -44,6 +45,7 @@ from Zafu/Collection/LazyTree import (
   singleton as singleton_LazyTree,
   map as map_LazyTree,
   flat_map as flat_map_LazyTree,
+  zip_map as zip_map_LazyTree,
   unfold as unfold_LazyTree,
 )
 from Zafu/Control/IterState import (
@@ -127,6 +129,8 @@ def children_LazyTree(tree: LazyTree[a]) -> LazyList[LazyTree[a]]:
 def drop_seed_Tree(tree: LazyTree[(Seed, a)]) -> LazyTree[a]:
   map_LazyTree(tree, ((_, value)) -> value)
 
+max_shrink_depth: Int = 4096
+
 def with_extra_children(tree: LazyTree[a], extra_children: List[LazyTree[a]]) -> LazyTree[a]:
   match extra_children:
     case []:
@@ -134,8 +138,6 @@ def with_extra_children(tree: LazyTree[a], extra_children: List[LazyTree[a]]) ->
     case _:
       LazyTree(value, children0) = tree
       LazyTree(value, concat_LazyList(from_List_LazyList(extra_children), children0))
-
-max_shrink_depth: Int = 4096
 
 def tree_from_shrinks(next_seed: Seed, value: a, shrink: a -> LazyList[a]) -> LazyTree[(Seed, a)]:
   unfold_LazyTree(
@@ -164,6 +166,9 @@ def sampled_Gen(run_value: (Size, Seed) -> (Seed, a), shrink: a -> LazyList[a]) 
     tree_from_shrinks(next_seed, value, shrink)
   ))
 
+def range_to_Gen(range: Range, shrink: Int -> LazyList[Int]) -> Gen[Int]:
+    sampled_Gen((size, seed) -> sample_Int(range, size, seed), shrink)
+
 # Lift a sampler with no shrink candidates into a generator.
 def no_shrink_Gen(run_value: (Size, Seed) -> (Seed, a)) -> Gen[a]:
   Gen((size, seed) -> (
@@ -186,6 +191,11 @@ def flat_map_Gen(gen: Gen[a], fn: a -> Gen[b]) -> Gen[b]:
     ((next_seed, value)) -> run_Gen(fn(value), size, next_seed),
   ))
 
+def sequential_map2_Gen(left: Gen[a], right: Gen[b], fn: (a, b) -> c) -> Gen[c]:
+    left_value <- flat_map_Gen(left)
+    right_value <- map_Gen(right)
+    fn(left_value, right_value)
+
 # Override the size seen by a generator.
 def fixed_size_Gen(gen: Gen[a], fixed_size: Size) -> Gen[a]:
   Gen((_, seed) -> run_Gen(gen, fixed_size, seed))
@@ -199,14 +209,19 @@ def smaller_Gen(gen: Gen[a]) -> Gen[a]:
   scale_Gen(gen, size -> golden_Size(size))
 
 def map2_Gen(left: Gen[a], right: Gen[b], fn: (a, b) -> c) -> Gen[c]:
-    left_value <- flat_map_Gen(left)
-    right_value <- map_Gen(right)
-    fn(left_value, right_value)
+  Gen((size, seed0) -> (
+    left_tree = run_Gen(left, size, seed0)
+    (seed1, _) = root_LazyTree(left_tree)
+    right_tree = run_Gen(right, size, seed1)
+    (seed2, _) = root_LazyTree(right_tree)
+    paired_values = zip_map_LazyTree(max_shrink_depth, drop_seed_Tree(left_tree), drop_seed_Tree(right_tree), fn)
+    map_LazyTree(paired_values, value -> (seed2, value))
+  ))
 
 applicative_Gen: Applicative[Gen] = applicative_from_pure_map_map2(
   const_Gen,
   map_Gen,
-  map2_Gen,
+  sequential_map2_Gen,
 )
 
 def tailrec_steps_Gen(max_steps: Int, init: a, step: a -> Gen[IterState[a, b]]) -> Gen[IterState[a, b]]:
@@ -272,33 +287,35 @@ def first_failure(test: Test) -> Option[(List[String], String)]:
 
   go(max_suite_depth, [([], test)])
 
-def first_failing_tree(values: LazyList[LazyTree[a]], test_fn: a -> Test) -> Option[LazyTree[a]]:
+def split_first_failing_tree(values: LazyList[LazyTree[a]], test_fn: a -> Test) -> Option[(LazyTree[a], LazyList[LazyTree[a]])]:
   recur values:
     case Empty_LazyList:
       None
     case Cons_LazyList(head, tail):
       tree = get_Lazy(head)
+      rest = get_Lazy(tail)
       if test_fn(root_LazyTree(tree)).first_failure() matches None:
-        first_failing_tree(get_Lazy(tail), test_fn)
+        split_first_failing_tree(rest, test_fn)
       else:
-        Some(tree)
+        Some((tree, rest))
 
 max_shrink_steps: Int = 512
 
-# we take the first child that fails, so, the first child should be the biggest shrink
+# Keep a frontier of failing candidates so early siblings stay in play while
+# still giving priority to earlier children.
 def shrink_tree_to_smallest(current: LazyTree[a], test_fn: a -> Test) -> a:
-  def go(rem: Int, tree: LazyTree[a]) -> a:
+  def go(rem: Int, best: LazyTree[a], frontier: LazyList[LazyTree[a]]) -> a:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
-        root_LazyTree(tree)
+        root_LazyTree(best)
       case _:
-        match first_failing_tree(children_LazyTree(tree), test_fn):
+        match split_first_failing_tree(frontier, test_fn):
           case None:
-            root_LazyTree(tree)
-          case Some(next):
-            go(rem.sub(1), next)
+            root_LazyTree(best)
+          case Some((next, rest)):
+            go(rem.sub(1), next, interleave_LazyList(children_LazyTree(next), rest))
 
-  go(max_shrink_steps, current)
+  go(max_shrink_steps, current, children_LazyTree(current))
 
 def render_suite_path(path: List[String]) -> String:
   match path:
@@ -464,25 +481,12 @@ def exact_list_Gen(length: Int, gen: Gen[a]) -> Gen[List[a]]:
     case _ if cmp_Int(length, 0) matches LT | EQ:
       const_Gen([])
     case _:
-      head <- flat_map_Gen(gen)
-      tail <- exact_list_Gen(length.sub(1), gen).map_Gen()
-      [head, *tail]
+      map2_Gen(gen, exact_list_Gen(length.sub(1), gen), (head, tail) -> [head, *tail])
 
 def list_of_range_Gen(length_range: Range, gen: Gen[a]) -> Gen[List[a]]:
-  Gen((size, seed) -> (
-    (seed1, length) = sample_Int(length_range, size, seed)
-    tree = run_Gen(exact_list_Gen(length, gen), size, seed1)
-    (seed2, items) = root_LazyTree(tree)
-    extra_children = match items:
-      case []:
-        []
-      case [head, *tail]:
-        [
-          singleton_LazyTree((seed2, tail)),
-          singleton_LazyTree((seed2, [head])),
-        ]
-    with_extra_children(tree, extra_children)
-  ))
+    gen_len = range_to_Gen(length_range, shrink_non_negative)
+    len <- flat_map_Gen(gen_len)
+    exact_list_Gen(len, gen)
 
 def comparison_from_index(i: Int) -> Comparison:
   match i:
@@ -533,13 +537,13 @@ comparison_tag_Range = linear_Range(0, 3)
 
 # Generator for Bool values.
 bool_Gen: Gen[Bool] = map_Gen(
-  sampled_Gen((size, seed) -> sample_Int(bool_tag_Range, size, seed), shrink_non_negative),
+  range_to_Gen(bool_tag_Range, shrink_non_negative),
   i -> i.eq_Int(1),
 )
 
 # Generator for LT, EQ, and GT values.
 comparison_Gen: Gen[Comparison] = map_Gen(
-  sampled_Gen((size, seed) -> sample_Int(comparison_tag_Range, size, seed), shrink_Comparison_Index),
+  range_to_Gen(comparison_tag_Range, shrink_Comparison_Index),
   comparison_from_index,
 )
 
@@ -643,15 +647,15 @@ def list_Gen(gen: Gen[a]) -> Gen[List[a]]:
 
 # Combine two generators into a generator for pairs.
 def tuple2_Gen(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
-  flat_map_Gen(left, left_value -> map_Gen(right, right_value -> (left_value, right_value)))
+  map2_Gen(left, right, (left_value, right_value) -> (left_value, right_value))
 
 # Combine three generators into a generator for triples.
 def tuple3_Gen(ga: Gen[a], gb: Gen[b], gc: Gen[c]) -> Gen[(a, b, c)]:
-  flat_map_Gen(ga, a0 -> flat_map_Gen(gb, b0 -> map_Gen(gc, c0 -> (a0, b0, c0))))
+  map2_Gen(ga, tuple2_Gen(gb, gc), (a0, (b0, c0)) -> (a0, b0, c0))
 
 # Combine four generators into a generator for 4-tuples.
 def tuple4_Gen(ga: Gen[a], gb: Gen[b], gc: Gen[c], gd: Gen[d]) -> Gen[(a, b, c, d)]:
-  flat_map_Gen(ga, a0 -> flat_map_Gen(gb, b0 -> flat_map_Gen(gc, c0 -> map_Gen(gd, d0 -> (a0, b0, c0, d0)))))
+  map2_Gen(tuple2_Gen(ga, gb), tuple2_Gen(gc, gd), ((a0, b0), (c0, d0)) -> (a0, b0, c0, d0))
 
 # HedgeHog property that expands into a Test after sampling.
 struct Prop(run: (Int, Seed) -> (Seed, Test))
@@ -719,7 +723,14 @@ def show_Option_Int(opt: Option[Int]) -> String:
       "Some(${int_to_String(i)})"
 
 def show_Int_List(list: List[Int]) -> String:
-  "List(size=${int_to_String(list_size(list))})"
+    def go(rev_parts, list):
+        loop list:
+            case []: rev_parts.reverse_concat(["]"])
+            case [h, *t]:
+                hs = int_to_String(h)
+                if rev_parts matches []: go([hs], t)
+                else: go([hs, ",", *rev_parts], t)
+    concat_String(["[", *go([], list)])
 
 def always_valid_prop(gen: Gen[a], name: String, show: a -> String, fn: a -> Bool) -> Prop:
   forall_Prop(gen, name, show, a -> Assertion(fn(a), name))
@@ -802,9 +813,21 @@ def shrink_list_witness() -> Test:
       shrunk_sz = list_size(shrunk)
       Assertion(and_Bool(not_Bool(orig_sz.eq_Int(0)), shrunk_sz.eq_Int(1)), "list shrink should reach size 1, got size ${int_to_String(shrunk_sz)} from ${int_to_String(orig_sz)}")
 
+def shrink_frontier_witness() -> Test:
+  tree = LazyTree(
+    10,
+    from_List_LazyList([
+      LazyTree(5, from_List_LazyList([singleton_LazyTree(0)])),
+      singleton_LazyTree(1),
+    ]),
+  )
+  shrunk = shrink_tree_to_smallest(tree, i -> Assertion(cmp_Int(i, 0) matches LT | EQ, "expected non-positive"))
+  Assertion(shrunk.eq_Int(1), "shrink should revisit later siblings after a chosen branch stops failing, got ${int_to_String(shrunk)}")
+
 tests = TestSuite("Zafu/Testing/HedgeHog tests", [
   run_Prop(predef_generators_prop, 60, 4242),
   suite_recursion_witness(),
   shrink_int_witness(),
   shrink_list_witness(),
+  shrink_frontier_witness(),
 ])
