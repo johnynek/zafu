@@ -604,7 +604,7 @@ pos_Int_Gen: Gen[Int] = sampled_Gen(
 )
 
 def sample_geometric_Int(size: Size, seed: Seed, p: Float64) -> (Seed, Int):
-  # Size-scaled retry cap bounds outlier long-tail execution paths.
+  # Size-scaled retry cap bounds tail-risk long-tail execution paths.
   max_steps = to_Int_Size(size).mul(8).add(1)
 
   def go(rem: Int, current_seed: Seed, count: Int) -> (Seed, Int):
