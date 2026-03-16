@@ -10,18 +10,15 @@ from Bosatsu/Collection/Array import (
   slice_Array,
   reverse_Array,
 )
-from Bosatsu/Rand import (
-  Rand,
-  int_range,
-  geometric_Int,
-  map_Rand,
-  flat_map_Rand,
-  prod_Rand,
-  sequence_Rand,
-)
-from Bosatsu/Testing/Properties import (
+from Zafu/Testing/HedgeHog import (
+  Gen as Rand,
   Prop,
-  forall_Prop,
+  uint32_Gen,
+  const_Gen,
+  map_Gen as map_Rand,
+  flat_map_Gen as flat_map_Rand,
+  tuple2_Gen as prod_Rand,
+  forall_Prop as forall_Prop_hh,
   suite_Prop,
   run_Prop,
 )
@@ -695,6 +692,27 @@ def deep_concat_chain(size: Int) -> Chain[Int]:
       case _:
         loop_deep(rem.sub(1), concat(acc, singleton(rem)))
   loop_deep(size, empty)
+
+def int_range(upper: Int) -> Rand[Int]:
+  map_Rand(uint32_Gen, raw -> (
+    if cmp_Int(upper, 0) matches LT | EQ:
+      0
+    else:
+      mod_Int(raw, upper)
+  ))
+
+geometric_Int: Rand[Int] = map_Rand(uint32_Gen, raw -> mod_Int(raw, 24))
+
+def sequence_Rand(rands: List[Rand[a]]) -> Rand[List[a]]:
+  # Fold left to avoid building a deep recursive chain for long generated lists.
+  rev = rands.foldl_List(
+    const_Gen([]),
+    (acc, next) -> map_Rand(prod_Rand(acc, next), ((rev_list, item)) -> [item, *rev_list]),
+  )
+  map_Rand(rev, list -> list.reverse())
+
+def forall_Prop(gen: Rand[a], name: String, test_fn: a -> Test) -> Prop:
+  forall_Prop_hh(gen, name, _ -> name, test_fn)
 
 rand_int: Rand[Int] = map_Rand(int_range(256), i -> i.sub(128))
 

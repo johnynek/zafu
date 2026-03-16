@@ -1,0 +1,184 @@
+package Zafu/Abstract/ApplicativeTests
+
+from Zafu/Abstract/Applicative import (
+  Applicative,
+  applicative_from_pure_map_map2,
+  pure,
+  map,
+  map2,
+  product_left,
+  product_right,
+  void,
+  product2,
+  product3,
+  product4,
+  product5,
+  laws_Applicative,
+)
+from Zafu/Abstract/Eq import (
+  Eq,
+  eq as eq_Eq,
+  eq_from_fn,
+)
+from Zafu/Testing/HedgeHog import (
+  Gen as Rand,
+  Prop,
+  bool_Gen,
+  uint32_Gen,
+  map_Gen as map_Rand,
+  tuple2_Gen as prod_Rand,
+  forall_Prop as forall_Prop_hh,
+  run_Prop,
+)
+
+def int_range(upper: Int) -> Rand[Int]:
+  map_Rand(uint32_Gen, raw -> (
+    if cmp_Int(upper, 0) matches LT | EQ:
+      0
+    else:
+      mod_Int(raw, upper)
+  ))
+
+def forall_Prop(gen: Rand[a], name: String, test_fn: a -> Test) -> Prop:
+  forall_Prop_hh(gen, name, _ -> name, test_fn)
+
+def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
+  match value:
+    case Some(item):
+      Some(fn(item))
+    case None:
+      None
+
+def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]:
+  match (left, right):
+    case (Some(left_value), Some(right_value)):
+      Some(fn(left_value, right_value))
+    case _:
+      None
+
+applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(
+  Some,
+  map_Option,
+  map2_Option,
+)
+
+def eq_Option(eq_item: Eq[a], left: Option[a], right: Option[a]) -> Bool:
+  match (left, right):
+    case (None, None):
+      True
+    case (Some(left_value), Some(right_value)):
+      eq_Eq(eq_item, left_value, right_value)
+    case _:
+      False
+
+def int_from_small_tag(tag: Int) -> Int -> Int:
+  match mod_Int(tag, 6):
+    case 0:
+      value -> value
+    case 1:
+      value -> value.add(1)
+    case 2:
+      value -> value.sub(1)
+    case 3:
+      value -> value.mul(2)
+    case 4:
+      value -> value.mul(3).sub(2)
+    case _:
+      value -> 0.sub(value)
+
+rand_int: Rand[Int] = map_Rand(int_range(81), i -> i.sub(40))
+rand_fn_tag: Rand[Int] = int_range(12)
+
+rand_opt_int: Rand[Option[Int]] = map_Rand(
+  prod_Rand(bool_Gen, rand_int),
+  ((is_some, value)) -> Some(value) if is_some else None,
+)
+
+rand_opt_fn_tag: Rand[Option[Int]] = map_Rand(
+  prod_Rand(bool_Gen, rand_fn_tag),
+  ((is_some, tag)) -> Some(tag) if is_some else None,
+)
+
+struct ApplicativeLawCase(
+  fa: Option[Int],
+  ff_ab_tag: Option[Int],
+  ff_bc_tag: Option[Int],
+  fn_ab_tag: Int,
+  x: Int,
+)
+
+rand_law_case: Rand[ApplicativeLawCase] = map_Rand(
+  prod_Rand(
+    prod_Rand(prod_Rand(rand_opt_int, rand_opt_fn_tag), rand_opt_fn_tag),
+    prod_Rand(rand_fn_tag, rand_int),
+  ),
+  ((((fa, ff_ab_tag), ff_bc_tag), (fn_ab_tag, x))) -> ApplicativeLawCase(fa, ff_ab_tag, ff_bc_tag, fn_ab_tag, x),
+)
+
+law_prop: Prop = forall_Prop(
+  rand_law_case,
+  "Applicative laws over Option using finite function tags",
+  law_case -> (
+    ApplicativeLawCase(fa, ff_ab_tag, ff_bc_tag, fn_ab_tag, x) = law_case
+    eq_int = eq_from_fn(eq_Int)
+    eq_opt_int = eq_from_fn((left, right) -> eq_Option(eq_int, left, right))
+    ff_ab = map_Option(ff_ab_tag, int_from_small_tag)
+    ff_bc = map_Option(ff_bc_tag, int_from_small_tag)
+    fn_ab = int_from_small_tag(fn_ab_tag)
+    laws_Applicative(
+      applicative_Option,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_int,
+      fa,
+      ff_ab,
+      ff_bc,
+      fn_ab,
+      x,
+    )
+  ),
+)
+
+tests = TestSuite("Applicative tests", [
+  Assertion(applicative_Option.pure(1) matches Some(1), "pure"),
+  Assertion((Some(1)).map(applicative_Option, value -> value.add(2)) matches Some(3), "map"),
+  Assertion(applicative_Option.map2(Some(1), Some(2), add) matches Some(3), "map2"),
+  Assertion(applicative_Option.product2(Some(1), Some("a")) matches Some((1, "a")), "product2"),
+  Assertion(applicative_Option.product3(Some(1), Some(2), Some(3)) matches Some((1, 2, 3)), "product3"),
+  Assertion(applicative_Option.product4(Some(1), Some(2), Some(3), Some(4)) matches Some((1, 2, 3, 4)), "product4"),
+  Assertion(applicative_Option.product5(Some(1), Some(2), Some(3), Some(4), Some(5)) matches Some((1, 2, 3, 4, 5)), "product5"),
+  Assertion(applicative_Option.product_left(Some(1), Some("x")) matches Some(1), "product_left"),
+  Assertion(applicative_Option.product_right(Some(1), Some("x")) matches Some("x"), "product_right"),
+  Assertion((Some(1)).void(applicative_Option) matches Some(()), "void"),
+  (
+    eq_int = eq_from_fn(eq_Int)
+    eq_opt_int = eq_from_fn((left, right) -> eq_Option(eq_int, left, right))
+    laws_Applicative(
+      applicative_Option,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_int,
+      Some(3),
+      Some(value -> value.add(1)),
+      Some(value -> value.mul(2)),
+      value -> value.add(5),
+      7,
+    )
+  ),
+  (
+    eq_int = eq_from_fn(eq_Int)
+    eq_opt_int = eq_from_fn((left, right) -> eq_Option(eq_int, left, right))
+    laws_Applicative(
+      applicative_Option,
+      eq_opt_int,
+      eq_opt_int,
+      eq_opt_int,
+      None,
+      Some(value -> value.add(1)),
+      None,
+      value -> value.add(5),
+      7,
+    )
+  ),
+  run_Prop(law_prop, 180, 20260315),
+])
