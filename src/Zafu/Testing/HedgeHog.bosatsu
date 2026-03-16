@@ -16,6 +16,7 @@ from Bosatsu/Num/Float64 import (
   float64_to_String,
   int_to_Float64,
   is_finite,
+  mulf,
   subf,
 )
 from Zafu/Abstract/Applicative import (
@@ -471,7 +472,7 @@ def shrink_from_to_Float64(from_v: Float64, to_v: Float64) -> LazyList[Float64]:
 # start at 0 and then bounce +/- up to abs(value)
 def shrink_Float64(value: Float64) -> LazyList[Float64]:
     shrink_from_to_Float64(0.0, value) \
-      .flat_map_LazyList(i -> from_List_LazyList([i, i.timesf(-1.0)]))
+      .flat_map_LazyList(i -> from_List_LazyList([i, mulf(i, -1.0)]))
 
 def shrink_nonneg_Float64(value: Float64) -> LazyList[Float64]:
     shrink_from_to_Float64(0.0, value)
