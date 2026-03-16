@@ -604,7 +604,7 @@ pos_Int_Gen: Gen[Int] = sampled_Gen(
 )
 
 def sample_geometric_Int(size: Size, seed: Seed, p: Float64) -> (Seed, Int):
-  # Bound retries by size so very small p cannot loop forever.
+  # Bound retries by size to prevent pathological long-tail loops.
   max_steps = to_Int_Size(size).mul(8).add(1)
 
   def go(rem: Int, current_seed: Seed, count: Int) -> (Seed, Int):
