@@ -604,7 +604,7 @@ pos_Int_Gen: Gen[Int] = sampled_Gen(
 )
 
 def sample_geometric_Int(size: Size, seed: Seed, p: Float64) -> (Seed, Int):
-  # Bound retries by size so geometric sampling always terminates in finite time.
+  # Bound retries by size so geometric sampling terminates even for tiny p.
   max_steps = to_Int_Size(size).mul(8).add(1)
 
   def go(rem: Int, current_seed: Seed, count: Int) -> (Seed, Int):
