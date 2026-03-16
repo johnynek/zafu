@@ -1454,6 +1454,8 @@ rand_list_with_slice_bounds: Rand[(List[Int], Int, Int)] = map_Rand(
 
 rand_deep_len: Rand[Int] = map_Rand(int_range(3072), i -> i.add(1024))
 
+# Keep length-dependent generation here: these deep samples intentionally stress
+# concat behavior on large RRB shapes and need the chosen size wired into list creation.
 rand_deep_list_int: Rand[List[Int]] = flat_map_Rand(
   rand_deep_len,
   len -> sequence_Rand(replicate_List(rand_int, len))
