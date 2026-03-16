@@ -35,7 +35,7 @@ from Zafu/Testing/HedgeHog import (
   const_Gen,
   map_Gen as map_Rand,
   flat_map_Gen as flat_map_Rand,
-  tuple2_Gen as prod_Rand,
+  map2_Gen as map2_Rand,
   forall_Prop as forall_Prop_hh,
   suite_Prop,
   run_Prop,
@@ -54,6 +54,9 @@ def int_range(upper: Int) -> Rand[Int]:
     else:
       mod_Int(raw, upper)
   ))
+
+def prod_Rand(left: Rand[a], right: Rand[b]) -> Rand[(a, b)]:
+  map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
 
 def sequence_Rand(rands: List[Rand[a]]) -> Rand[List[a]]:
   # Fold left to avoid building a deep recursive chain for long generated lists.
