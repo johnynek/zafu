@@ -7,11 +7,10 @@ from Bosatsu/List import (
 from Zafu/Testing/HedgeHog import (
   Gen,
   Prop,
-  int_range_Gen,
-  list_Gen as list_Rand,
-  map_Gen as map_Rand,
-  map2_Gen as map2_Rand,
-  forall_Prop as forall_Prop_hh,
+  int_between_Gen,
+  list_Gen,
+  tuple2_Gen,
+  forall_Prop,
   suite_Prop,
   run_Prop,
 )
@@ -420,17 +419,11 @@ def deep_insert(count: Int) -> Heap[Int]:
   go(count, empty(ord_Int))
 
 
-def prod_Rand(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
-  map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
+rand_int: Gen[Int] = int_between_Gen(-128, 128)
 
-def forall_Prop(gen: Gen[a], name: String, test_fn: a -> Test) -> Prop:
-  forall_Prop_hh(gen, name, _ -> name, test_fn)
+rand_list_int: Gen[List[Int]] = list_Gen(rand_int)
 
-rand_int: Gen[Int] = map_Rand(int_range_Gen(256), i -> i.sub(128))
-
-rand_list_int: Gen[List[Int]] = list_Rand(rand_int)
-
-rand_list_pair: Gen[(List[Int], List[Int])] = prod_Rand(rand_list_int, rand_list_int)
+rand_list_pair: Gen[(List[Int], List[Int])] = tuple2_Gen(rand_list_int, rand_list_int)
 
 roundtrip_prop: Prop = forall_Prop(
   rand_list_int,

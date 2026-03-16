@@ -4,11 +4,10 @@ from Bosatsu/List import eq_List
 from Zafu/Testing/HedgeHog import (
   Gen,
   Prop,
-  int_range_Gen,
-  list_Gen as list_Rand,
-  map_Gen as map_Rand,
-  map2_Gen as map2_Rand,
-  forall_Prop as forall_Prop_hh,
+  int_between_Gen,
+  list_Gen,
+  tuple2_Gen,
+  forall_Prop,
   suite_Prop,
   run_Prop,
 )
@@ -318,7 +317,7 @@ def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]
 applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
-  if cmp_Int(mod_Int(value, 2), 0) matches EQ:
+  if mod_Int(value, 2) matches 0:
     Some(value)
   else:
     None
@@ -386,17 +385,11 @@ def deep_enqueue(size: Int) -> Queue[Int]:
   loop_deep(size, empty)
 
 
-def prod_Rand(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
-  map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
+rand_int: Gen[Int] = int_between_Gen(-128, 128)
 
-def forall_Prop(gen: Gen[a], name: String, test_fn: a -> Test) -> Prop:
-  forall_Prop_hh(gen, name, _ -> name, test_fn)
+rand_list_int: Gen[List[Int]] = list_Gen(rand_int)
 
-rand_int: Gen[Int] = map_Rand(int_range_Gen(256), i -> i.sub(128))
-
-rand_list_int: Gen[List[Int]] = list_Rand(rand_int)
-
-rand_list_pair: Gen[(List[Int], List[Int])] = prod_Rand(rand_list_int, rand_list_int)
+rand_list_pair: Gen[(List[Int], List[Int])] = tuple2_Gen(rand_list_int, rand_list_int)
 
 roundtrip_prop: Prop = forall_Prop(
   rand_list_int,
@@ -434,7 +427,7 @@ peek_prop: Prop = forall_Prop(
   ))
 
 enqueue_prop: Prop = forall_Prop(
-  prod_Rand(rand_list_int, rand_int),
+  tuple2_Gen(rand_list_int, rand_int),
   "enqueue appends to the back",
   ((list, item)) -> (
     queue = from_List(list)
@@ -444,7 +437,7 @@ enqueue_prop: Prop = forall_Prop(
   ))
 
 push_stack_prop: Prop = forall_Prop(
-  prod_Rand(rand_list_int, rand_int),
+  tuple2_Gen(rand_list_int, rand_int),
   "push_stack prepends to the front",
   ((list, item)) -> (
     queue = from_List(list)

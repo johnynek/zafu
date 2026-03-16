@@ -33,6 +33,7 @@ export (
   concat,
   cons,
   lazy_singleton,
+  singleton,
   cons_take,
   filter,
   filter_map,
@@ -69,6 +70,9 @@ def cons(head: Lazy[a], tail: Lazy[LazyList[a]]) -> LazyList[a]:
 
 def lazy_singleton(item: () -> a) -> LazyList[a]:
   Cons(lazy(item), lazy_empty)
+
+def singleton(item: a) -> LazyList[a]:
+  lazy_singleton(() -> item)
 
 # Builds a lazy list view over an existing strict list.
 def from_List(lst: List[a]) -> LazyList[a]:

@@ -350,7 +350,7 @@ def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]
 applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
-  if cmp_Int(mod_Int(value, 2), 0) matches EQ:
+  if mod_Int(value, 2) matches 0:
     Some(value)
   else:
     None

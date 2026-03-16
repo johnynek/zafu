@@ -9,6 +9,7 @@ from Zafu/Abstract/Monad import tailrec_steps
 from Zafu/Collection/LazyList import (
   LazyList,
   empty_LazyList,
+  singleton as singleton_LazyList,
   from_List as from_List_LazyList,
   Empty as EmptyLazyList,
 )
@@ -31,12 +32,12 @@ from Zafu/Control/IterState import (
 from Zafu/Testing/HedgeHog import (
   Gen,
   Prop,
-  int_range_Gen,
-  sequence_Gen,
-  map_Gen as map_Rand,
-  flat_map_Gen as flat_map_Rand,
-  map2_Gen as map2_Rand,
-  forall_Prop as forall_Prop_hh,
+  exact_list_Gen,
+  int_between_Gen,
+  map_Gen,
+  flat_map_Gen,
+  tuple2_Gen,
+  forall_Prop,
   suite_Prop,
   run_Prop,
 )
@@ -47,12 +48,6 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
-
-def prod_Rand(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
-  map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
-
-def forall_Prop(gen: Gen[a], name: String, test_fn: a -> Test) -> Prop:
-  forall_Prop_hh(gen, name, _ -> name, test_fn)
 
 eq_Int_inst: Eq[Int] = eq_from_fn(eq_Int)
 
@@ -72,21 +67,21 @@ bounded_tree_depth = 3
 bounded_tree_min_branch = 2
 bounded_tree_max_branch = 3
 
-rand_tree_value: Gen[Int] = map_Rand(int_range_Gen(41), i -> i.sub(20))
-rand_small_offset: Gen[Int] = map_Rand(int_range_Gen(17), i -> i.sub(8))
-rand_small_positive: Gen[Int] = map_Rand(int_range_Gen(3), i -> i.add(1))
-rand_tail_goal: Gen[Int] = map_Rand(int_range_Gen(4), i -> i.add(1))
-rand_child_count: Gen[Int] = map_Rand(int_range_Gen(bounded_tree_max_branch.sub(bounded_tree_min_branch).add(1)), i -> i.add(bounded_tree_min_branch))
+rand_tree_value: Gen[Int] = int_between_Gen(-20, 21)
+rand_small_offset: Gen[Int] = int_between_Gen(-8, 9)
+rand_small_positive: Gen[Int] = int_between_Gen(1, 4)
+rand_tail_goal: Gen[Int] = int_between_Gen(1, 5)
+rand_child_count: Gen[Int] = int_between_Gen(bounded_tree_min_branch, bounded_tree_max_branch.add(1))
 
 def rand_bounded_tree(depth: Int) -> Gen[LazyTree[Int]]:
   recur depth:
     case _ if cmp_Int(depth, 0) matches LT | EQ:
-      map_Rand(rand_tree_value, singleton)
+      map_Gen(rand_tree_value, singleton)
     case _:
       child_gen = rand_bounded_tree(depth.sub(1))
-      flat_map_Rand(prod_Rand(rand_tree_value, rand_child_count), ((value, child_count)) -> (
-        map_Rand(
-          sequence_Gen(replicate_List(child_gen, child_count)),
+      flat_map_Gen(tuple2_Gen(rand_tree_value, rand_child_count), ((value, child_count)) -> (
+        map_Gen(
+          exact_list_Gen(child_count, child_gen),
           children -> LazyTree(value, from_List_LazyList(children)),
         )
       ))
@@ -105,14 +100,14 @@ struct MonadLawConfig(
   tail_goal: Int,
 )
 
-rand_monad_law_config: Gen[MonadLawConfig] = map_Rand(
-  prod_Rand(
-    prod_Rand(rand_tree_value, rand_small_offset),
-    prod_Rand(
-      prod_Rand(rand_small_offset, rand_small_offset),
-      prod_Rand(
-        prod_Rand(rand_small_offset, rand_small_positive),
-        prod_Rand(int_range_Gen(3), rand_tail_goal),
+rand_monad_law_config: Gen[MonadLawConfig] = map_Gen(
+  tuple2_Gen(
+    tuple2_Gen(rand_tree_value, rand_small_offset),
+    tuple2_Gen(
+      tuple2_Gen(rand_small_offset, rand_small_offset),
+      tuple2_Gen(
+        tuple2_Gen(rand_small_offset, rand_small_positive),
+        tuple2_Gen(int_between_Gen(0, 3), rand_tail_goal),
       ),
     ),
   ),
@@ -131,7 +126,7 @@ rand_monad_law_config: Gen[MonadLawConfig] = map_Rand(
   ),
 )
 
-rand_tree_and_law_config: Gen[(LazyTree[Int], MonadLawConfig)] = prod_Rand(rand_law_tree, rand_monad_law_config)
+rand_tree_and_law_config: Gen[(LazyTree[Int], MonadLawConfig)] = tuple2_Gen(rand_law_tree, rand_monad_law_config)
 
 def law_fn_ab(config: MonadLawConfig) -> Int -> LazyTree[Int]:
   MonadLawConfig(_, ab_root_shift, ab_child_shift, _, _, _, _, _, _) = config
@@ -139,7 +134,7 @@ def law_fn_ab(config: MonadLawConfig) -> Int -> LazyTree[Int]:
     value.add(ab_root_shift),
     from_List_LazyList([
       singleton(value.sub(ab_root_shift)),
-      LazyTree(value.add(ab_child_shift), from_List_LazyList([singleton(value.mul(2).add(ab_child_shift))])),
+      LazyTree(value.add(ab_child_shift), singleton_LazyList(singleton(value.mul(2).add(ab_child_shift)))),
     ]),
   )
 
@@ -228,7 +223,7 @@ sample_tree: LazyTree[Int] = LazyTree(
   1,
   from_List_LazyList([
     singleton(2),
-    LazyTree(3, from_List_LazyList([singleton(4)])),
+    LazyTree(3, singleton_LazyList(singleton(4))),
   ]),
 )
 
@@ -285,13 +280,13 @@ tests = TestSuite("LazyTree tests", [
       11,
       from_List_LazyList([
         singleton(10),
-        LazyTree(12, from_List_LazyList([singleton(20)])),
-        LazyTree(13, from_List_LazyList([singleton(30)])),
+        LazyTree(12, singleton_LazyList(singleton(20))),
+        LazyTree(13, singleton_LazyList(singleton(30))),
       ]),
     )
     actual = flat_map(
       LazyTree(1, from_List_LazyList([singleton(2), singleton(3)])),
-      value -> LazyTree(value.add(10), from_List_LazyList([singleton(value.mul(10))])),
+      value -> LazyTree(value.add(10), singleton_LazyList(singleton(value.mul(10)))),
     )
     Assertion(eq_Eq(eq_LazyTree_Int, actual, expected), "flat_map grafts mapped children before descendants")
   ),
@@ -302,14 +297,14 @@ tests = TestSuite("LazyTree tests", [
   (
     unfolded = unfold(2, 1, value -> value, value -> (
       if cmp_Int(value, 3) matches LT:
-        from_List_LazyList([value.add(1)])
+        singleton_LazyList(value.add(1))
       else:
         empty_LazyList
     ))
     expected = LazyTree(
       1,
       from_List_LazyList([
-        LazyTree(2, from_List_LazyList([singleton(3)])),
+        LazyTree(2, singleton_LazyList(singleton(3))),
       ]),
     )
     Assertion(eq_Eq(eq_LazyTree_Int, unfolded, expected), "unfold respects depth")

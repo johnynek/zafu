@@ -18,12 +18,10 @@ from Bosatsu/Num/Float64 import (
 from Zafu/Testing/HedgeHog import (
   Gen,
   Prop,
-  uint32_Gen,
-  int_range_Gen,
-  list_Gen as list_Rand,
-  map_Gen as map_Rand,
-  map2_Gen as map2_Rand,
-  forall_Prop as forall_Prop_hh,
+  int_between_Gen,
+  list_Gen,
+  with_bounded_uint32_Gen,
+  forall_Prop,
   suite_Prop,
   run_Prop,
 )
@@ -44,13 +42,11 @@ from Zafu/Abstract/Foldable import (
 from Zafu/Abstract/Applicative import (
   Applicative,
   applicative_from_pure_map_map2,
-  pure,
-  map as map_app,
-  map2,
 )
 from Zafu/Abstract/Traverse import (
   Traverse,
   traverse,
+  traverse_balanced_List,
   traverse_specialized,
 )
 
@@ -145,11 +141,7 @@ def map(items: List[a], fn: a -> b) -> List[b]:
   items.map_List(fn)
 
 def traverse_List_fn[g: * -> *, a, b](items: List[a], app: Applicative[g], fn: a -> g[b]) -> g[List[b]]:
-  rev_mapped = items.foldl_List(
-    app.pure([]),
-    (acc, item) -> app.map2(acc, fn(item), (rev_items, mapped_item) -> [mapped_item, *rev_items]),
-  )
-  rev_mapped.map_app(app, rev_items -> rev_items.reverse())
+  traverse_balanced_List(items, app, fn)
 
 def flat_map(items: List[a], fn: a -> List[b]) -> List[b]:
   items.flat_map_List(fn)
@@ -267,7 +259,7 @@ applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(
 )
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
-  if cmp_Int(mod_Int(value, 2), 0) matches EQ:
+  if mod_Int(value, 2) matches 0:
     Some(value)
   else:
     None
@@ -282,36 +274,13 @@ def mk_range(n: Int) -> List[Int]:
   go(n, [])
 
 
-def prod_Rand(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
-  map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
+rand_int: Gen[Int] = int_between_Gen(-128, 128)
 
-def forall_Prop(gen: Gen[a], name: String, test_fn: a -> Test) -> Prop:
-  forall_Prop_hh(gen, name, _ -> name, test_fn)
+rand_list_int: Gen[List[Int]] = list_Gen(rand_int)
 
-rand_int: Gen[Int] = map_Rand(int_range_Gen(256), i -> i.sub(128))
+rand_list_with_count: Gen[(List[Int], Int)] = with_bounded_uint32_Gen(rand_list_int, list -> size(list).add(8), -4)
 
-rand_list_int: Gen[List[Int]] = list_Rand(rand_int)
-
-rand_list_with_count: Gen[(List[Int], Int)] = map_Rand(prod_Rand(rand_list_int, uint32_Gen), ((list, raw)) -> (
-  # Keep list and count generation independent so shrinking can minimize each side.
-  upper = size(list).add(8)
-  bounded =
-    if cmp_Int(upper, 0) matches LT | EQ:
-      0
-    else:
-      mod_Int(raw, upper)
-  (list, bounded.sub(4))
-))
-
-rand_list_with_non_negative_count: Gen[(List[Int], Int)] = map_Rand(prod_Rand(rand_list_int, uint32_Gen), ((list, raw)) -> (
-  upper = size(list).add(8)
-  bounded =
-    if cmp_Int(upper, 0) matches LT | EQ:
-      0
-    else:
-      mod_Int(raw, upper)
-  (list, bounded)
-))
+rand_list_with_non_negative_count: Gen[(List[Int], Int)] = with_bounded_uint32_Gen(rand_list_int, list -> size(list).add(8), 0)
 
 split_at_concat_prop: Prop = forall_Prop(
   rand_list_with_count,

@@ -15,11 +15,13 @@ from Bosatsu/Collection/Array import (
 from Zafu/Testing/HedgeHog import (
   Gen,
   Prop,
+  bool_Gen,
+  int_between_Gen,
   int_range_Gen,
-  list_Gen as list_Rand,
-  map_Gen as map_Rand,
-  map2_Gen as map2_Rand,
-  forall_Prop as forall_Prop_hh,
+  list_Gen,
+  map_Gen,
+  tuple2_Gen,
+  forall_Prop,
   suite_Prop,
   run_Prop
 )
@@ -904,18 +906,12 @@ def model_from_items(items: List[(Int, Int)]) -> List[(Int, Int)]:
   ))
 
 
-def prod_Rand(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
-  map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
+rand_key: Gen[Int] = int_between_Gen(-48, 48)
+rand_value: Gen[Int] = int_between_Gen(-128, 128)
+rand_bool: Gen[Bool] = bool_Gen
 
-def forall_Prop(gen: Gen[a], name: String, test_fn: a -> Test) -> Prop:
-  forall_Prop_hh(gen, name, _ -> name, test_fn)
-
-rand_key: Gen[Int] = map_Rand(int_range_Gen(96), i -> i.sub(48))
-rand_value: Gen[Int] = map_Rand(int_range_Gen(256), i -> i.sub(128))
-rand_bool: Gen[Bool] = map_Rand(int_range_Gen(2), i -> i.eq_Int(0))
-
-rand_op: Gen[Op] = map_Rand(
-  prod_Rand(prod_Rand(prod_Rand(int_range_Gen(4), rand_key), rand_value), rand_bool),
+rand_op: Gen[Op] = map_Gen(
+  tuple2_Gen(tuple2_Gen(tuple2_Gen(int_range_Gen(4), rand_key), rand_value), rand_bool),
   ((((tag, key), value), drop)) -> (
     match mod_Int(tag, 4):
       case 0:
@@ -928,9 +924,9 @@ rand_op: Gen[Op] = map_Rand(
         AlterValue(key, value, drop)
   ))
 
-rand_ops: Gen[List[Op]] = list_Rand(rand_op)
+rand_ops: Gen[List[Op]] = list_Gen(rand_op)
 
-rand_item_list: Gen[List[(Int, Int)]] = list_Rand(prod_Rand(rand_key, rand_value))
+rand_item_list: Gen[List[(Int, Int)]] = list_Gen(tuple2_Gen(rand_key, rand_value))
 
 hash_int_collision: Hash[Int] = hash_specialized(_ -> 0, eq_Int_inst)
 hash_int_shifted: Hash[Int] = hash_specialized(i -> normalize_61(i + 17), eq_Int_inst)
@@ -974,7 +970,7 @@ transform_prop: Prop = forall_Prop(
   ))
 
 union_cross_hash_prop: Prop = forall_Prop(
-  prod_Rand(rand_item_list, rand_item_list),
+  tuple2_Gen(rand_item_list, rand_item_list),
   "union_with is correct across differing hash dictionaries",
   ((left_items, right_items)) -> (
     left = from_List(hash_Int, left_items)
@@ -997,7 +993,7 @@ union_cross_hash_prop: Prop = forall_Prop(
   ))
 
 intersection_difference_prop: Prop = forall_Prop(
-  prod_Rand(rand_item_list, rand_item_list),
+  tuple2_Gen(rand_item_list, rand_item_list),
   "intersection_with and difference agree with model",
   ((left_items, right_items)) -> (
     left = from_List(hash_Int, left_items)
@@ -1032,7 +1028,7 @@ intersection_difference_prop: Prop = forall_Prop(
   ))
 
 adapter_prop: Prop = forall_Prop(
-  prod_Rand(rand_item_list, rand_item_list),
+  tuple2_Gen(rand_item_list, rand_item_list),
   "eq/hash adapters are coherent on map equality",
   ((left_items, right_items)) -> (
     left = from_List(hash_Int, left_items)

@@ -681,7 +681,7 @@ foldable_Array: Foldable[Array] = foldable_specialized(
   (items, monoid, fn) -> foldl_Array(items, empty_Monoid(monoid), (acc, item) -> combine_Monoid(monoid, acc, fn(item))),
   foldl_state_Array,
   foldr_state_Array,
-  (items) -> cmp_Int(size_Array(items), 0) matches EQ,
+  (items) -> size_Array(items) matches 0,
   size_Array,
   to_List_Array,
 )
@@ -736,7 +736,7 @@ def traverse_Array_fn[g: * -> *, a, b](items: Array[a], app: Applicative[g], fn:
   rev_mapped.map(app, rev_items -> from_List_Array(rev_items.reverse()))
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
-  if cmp_Int(mod_Int(value, 2), 0) matches EQ:
+  if mod_Int(value, 2) matches 0:
     Some(value)
   else:
     None
@@ -3255,7 +3255,7 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   ),
   (
     arr = from_List_Array([1, 2, 3])
-    Assertion(cmp_Int(arr.foldl(foldable_Array, 0, add), 6) matches EQ, "foldable_Array foldl")
+    Assertion(arr.foldl(foldable_Array, 0, add) matches 6, "foldable_Array foldl")
   ),
   (
     arr = from_List_Array([1, 2, 3, 4])
@@ -3266,17 +3266,17 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
       else:
         continue(next)
     ))
-    Assertion(cmp_Int(total, 6) matches EQ, "foldable_Array foldl_iter")
+    Assertion(total matches 6, "foldable_Array foldl_iter")
   ),
   (
     arr = from_List_Array([1, 2, 3])
     total = foldr_iter_fold(arr, foldable_Array, 0, (item, acc) -> (
-      if cmp_Int(item, 2) matches EQ:
+      if item matches 2:
         done(item.add(acc))
       else:
         continue(item.add(acc))
     ))
-    Assertion(cmp_Int(total, 5) matches EQ, "foldable_Array foldr_iter")
+    Assertion(total matches 5, "foldable_Array foldr_iter")
   ),
   (
     arr = from_List_Array([1, 2, 3])
@@ -3284,7 +3284,7 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   ),
   (
     arr = from_List_Array([1, 2, 3])
-    Assertion(cmp_Int(arr.size(foldable_Array), 3) matches EQ, "foldable_Array size")
+    Assertion(arr.size(foldable_Array) matches 3, "foldable_Array size")
   ),
   Assertion(
     applicative_Option.map2(Some(1), Some(2), add) matches Some(3),

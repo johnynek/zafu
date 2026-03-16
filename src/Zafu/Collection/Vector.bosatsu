@@ -23,14 +23,14 @@ from Bosatsu/Collection/Array import (
 from Zafu/Testing/HedgeHog import (
   Gen,
   Prop,
-  uint32_Gen,
-  int_range_Gen,
-  sequence_Gen,
-  list_Gen as list_Rand,
-  map_Gen as map_Rand,
-  flat_map_Gen as flat_map_Rand,
-  map2_Gen as map2_Rand,
-  forall_Prop as forall_Prop_hh,
+  exact_list_Gen,
+  int_between_Gen,
+  list_Gen,
+  map_Gen,
+  flat_map_Gen,
+  tuple2_Gen,
+  with_bounded_uint32_Gen,
+  forall_Prop,
   suite_Prop,
   run_Prop,
 )
@@ -1341,7 +1341,7 @@ def map2_Option(left: Option[a], right: Option[b], fn: (a, b) -> c) -> Option[c]
 applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(Some, map_Option, map2_Option)
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
-  if cmp_Int(mod_Int(value, 2), 0) matches EQ:
+  if mod_Int(value, 2) matches 0:
     Some(value)
   else:
     None
@@ -1400,54 +1400,37 @@ int_add_semigroup = semigroup_from_combine(add)
 int_add_monoid = monoid_from_combine(0, add)
 
 
-def prod_Rand(left: Gen[a], right: Gen[b]) -> Gen[(a, b)]:
-  map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
+rand_int: Gen[Int] = int_between_Gen(-128, 128)
 
-def forall_Prop(gen: Gen[a], name: String, test_fn: a -> Test) -> Prop:
-  forall_Prop_hh(gen, name, _ -> name, test_fn)
+rand_list_int: Gen[List[Int]] = list_Gen(rand_int)
 
-rand_int: Gen[Int] = map_Rand(int_range_Gen(256), i -> i.sub(128))
+rand_list_with_index: Gen[(List[Int], Int)] = with_bounded_uint32_Gen(rand_list_int, list -> size_List(list).add(3), -1)
 
-rand_list_int: Gen[List[Int]] = list_Rand(rand_int)
+rand_list_with_index_item: Gen[(List[Int], Int, Int)] = map_Gen(
+  tuple2_Gen(with_bounded_uint32_Gen(rand_list_int, list -> size_List(list).add(4), -2), rand_int),
+  (((list, idx), item)) -> (list, idx, item)
+)
 
-def bounded_uint32(raw: Int, upper: Int) -> Int:
-  if cmp_Int(upper, 0) matches LT | EQ:
-    0
-  else:
-    mod_Int(raw, upper)
-
-rand_list_with_index: Gen[(List[Int], Int)] = map_Rand(prod_Rand(rand_list_int, uint32_Gen), ((list, raw)) -> (
-  # Keep components independent so shrinking can reduce list and index separately.
-  upper = size_List(list).add(3)
-  (list, bounded_uint32(raw, upper).sub(1))
-))
-
-rand_list_with_index_item: Gen[(List[Int], Int, Int)] = map_Rand(
-  prod_Rand(rand_list_int, prod_Rand(uint32_Gen, rand_int)),
-  ((list, (raw_idx, item))) -> (
-    upper = size_List(list).add(4)
-    (list, bounded_uint32(raw_idx, upper).sub(2), item)
+rand_list_with_slice_bounds: Gen[(List[Int], Int, Int)] = flat_map_Gen(
+  with_bounded_uint32_Gen(rand_list_int, list -> size_List(list).add(6), -2),
+  ((list, start)) -> (
+    map_Gen(
+      int_between_Gen(-2, size_List(list).add(4)),
+      end -> (list, start, end)
+    )
   )
 )
 
-rand_list_with_slice_bounds: Gen[(List[Int], Int, Int)] = map_Rand(
-  prod_Rand(rand_list_int, prod_Rand(uint32_Gen, uint32_Gen)),
-  ((list, (raw_start, raw_end))) -> (
-    upper = size_List(list).add(6)
-    (list, bounded_uint32(raw_start, upper).sub(2), bounded_uint32(raw_end, upper).sub(2))
-  )
-)
-
-rand_deep_len: Gen[Int] = map_Rand(int_range_Gen(3072), i -> i.add(1024))
+rand_deep_len: Gen[Int] = int_between_Gen(1024, 4096)
 
 # Keep length-dependent generation here: these deep samples intentionally stress
 # concat behavior on large RRB shapes and need the chosen size wired into list creation.
-rand_deep_list_int: Gen[List[Int]] = flat_map_Rand(
+rand_deep_list_int: Gen[List[Int]] = flat_map_Gen(
   rand_deep_len,
-  len -> sequence_Gen(replicate_List(rand_int, len))
+  len -> exact_list_Gen(len, rand_int)
 )
 
-rand_list_pair: Gen[(List[Int], List[Int])] = prod_Rand(rand_list_int, rand_list_int)
+rand_list_pair: Gen[(List[Int], List[Int])] = tuple2_Gen(rand_list_int, rand_list_int)
 
 size_prop: Prop = forall_Prop(
   rand_list_int,
@@ -1468,7 +1451,7 @@ index_prop: Prop = forall_Prop(
   ))
 
 append_prop: Prop = forall_Prop(
-  prod_Rand(rand_list_int, rand_int),
+  tuple2_Gen(rand_list_int, rand_int),
   "append agrees with list append",
   ((list, item)) -> (
     vec = from_List(list)
@@ -1478,7 +1461,7 @@ append_prop: Prop = forall_Prop(
   ))
 
 prepend_prop: Prop = forall_Prop(
-  prod_Rand(rand_list_int, rand_int),
+  tuple2_Gen(rand_list_int, rand_int),
   "prepend agrees with list prepend",
   ((list, item)) -> (
     vec = from_List(list)
@@ -1583,7 +1566,7 @@ combine_all_prop: Prop = forall_Prop(
   ))
 
 zip_prop: Prop = forall_Prop(
-  prod_Rand(rand_list_int, rand_list_int),
+  tuple2_Gen(rand_list_int, rand_list_int),
   "zip agrees with list zip",
   ((left, right)) -> (
     expected = zip_List(left, right)
@@ -1592,7 +1575,7 @@ zip_prop: Prop = forall_Prop(
   ))
 
 concat_prop: Prop = forall_Prop(
-  prod_Rand(rand_list_int, rand_list_int),
+  tuple2_Gen(rand_list_int, rand_list_int),
   "concat matches list concat",
   ((left, right)) -> (
     vec = concat(from_List(left), from_List(right))
@@ -1603,7 +1586,7 @@ concat_prop: Prop = forall_Prop(
   ))
 
 concat_deep_iso_prop: Prop = forall_Prop(
-  prod_Rand(rand_deep_list_int, rand_deep_list_int),
+  tuple2_Gen(rand_deep_list_int, rand_deep_list_int),
   "concat (deep trees) isomorphic to list concat",
   ((left, right)) -> (
     vec = concat(from_List(left), from_List(right))
