@@ -37,6 +37,7 @@ from Zafu/Collection/LazyList import (
   empty_LazyList,
   concat as concat_LazyList,
   from_List as from_List_LazyList,
+  interleave as interleave_LazyList,
   map as map_LazyList,
   Cons as ConsLazyList,
   Empty as EmptyLazyList,
@@ -54,6 +55,7 @@ export (
   singleton,
   map,
   flat_map,
+  zip_map,
   prune,
   unfold,
   expand,
@@ -128,6 +130,25 @@ def unfold(depth: Int, init: b, inject: b -> a, expand_fn: b -> LazyList[b]) -> 
         )
 
   LazyTree(inject(init), unfold_forest(depth, expand_fn(init)))
+
+# Combine two trees by interleaving one-step shrinks from either side.
+def zip_map(depth: Int, left: LazyTree[a], right: LazyTree[b], fn: (a, b) -> c) -> LazyTree[c]:
+  unfold(
+    depth,
+    (left, right),
+    ((left_tree, right_tree)) -> (
+      LazyTree(left_value, _) = left_tree
+      LazyTree(right_value, _) = right_tree
+      fn(left_value, right_value)
+    ),
+    ((left_tree, right_tree)) -> (
+      LazyTree(_, left_children) = left_tree
+      LazyTree(_, right_children) = right_tree
+      left_shrinks = map_LazyList(left_children, left_child -> (left_child, right_tree))
+      right_shrinks = map_LazyList(right_children, right_child -> (left_tree, right_child))
+      interleave_LazyList(left_shrinks, right_shrinks)
+    ),
+  )
 
 def expand(tree: LazyTree[a], depth: Int, expand_fn: a -> LazyList[a]) -> LazyTree[a]:
   recur depth:
@@ -447,6 +468,22 @@ tests = TestSuite("LazyTree tests", [
       value -> LazyTree(value.add(10), from_List_LazyList([singleton(value.mul(10))])),
     )
     Assertion(eq_Eq(eq_LazyTree_Int, actual, expected), "flat_map grafts mapped children before descendants")
+  ),
+  (
+    expected = LazyTree(
+      11,
+      from_List_LazyList([
+        LazyTree(12, from_List_LazyList([singleton(22)])),
+        LazyTree(21, from_List_LazyList([singleton(22)])),
+      ]),
+    )
+    actual = zip_map(
+      100,
+      LazyTree(1, from_List_LazyList([singleton(2)])),
+      LazyTree(10, from_List_LazyList([singleton(20)])),
+      (left, right) -> left.add(right),
+    )
+    Assertion(eq_Eq(eq_LazyTree_Int, actual, expected), "zip_map interleaves one-sided shrinks from both trees")
   ),
   (
     expected = LazyTree(1, empty_LazyList)
