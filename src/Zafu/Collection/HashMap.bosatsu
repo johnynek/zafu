@@ -16,9 +16,8 @@ from Zafu/Testing/HedgeHog import (
   Gen as Rand,
   Prop,
   uint32_Gen,
-  const_Gen,
+  list_Gen as list_Rand,
   map_Gen as map_Rand,
-  flat_map_Gen as flat_map_Rand,
   map2_Gen as map2_Rand,
   forall_Prop as forall_Prop_hh,
   suite_Prop,
@@ -912,18 +911,8 @@ def int_range(upper: Int) -> Rand[Int]:
       mod_Int(raw, upper)
   ))
 
-geometric_Int: Rand[Int] = map_Rand(uint32_Gen, raw -> mod_Int(raw, 24))
-
 def prod_Rand(left: Rand[a], right: Rand[b]) -> Rand[(a, b)]:
   map2_Rand(left, right, (left_value, right_value) -> (left_value, right_value))
-
-def sequence_Rand(rands: List[Rand[a]]) -> Rand[List[a]]:
-  # Fold left to avoid building a deep recursive chain for long generated lists.
-  rev = rands.foldl_List(
-    const_Gen([]),
-    (acc, next) -> map_Rand(prod_Rand(acc, next), ((rev_list, item)) -> [item, *rev_list]),
-  )
-  map_Rand(rev, list -> list.reverse())
 
 def forall_Prop(gen: Rand[a], name: String, test_fn: a -> Test) -> Prop:
   forall_Prop_hh(gen, name, _ -> name, test_fn)
@@ -946,15 +935,9 @@ rand_op: Rand[Op] = map_Rand(
         AlterValue(key, value, drop)
   ))
 
-rand_ops: Rand[List[Op]] = flat_map_Rand(
-  geometric_Int,
-  len -> sequence_Rand(replicate_List(rand_op, len))
-)
+rand_ops: Rand[List[Op]] = list_Rand(rand_op)
 
-rand_item_list: Rand[List[(Int, Int)]] = flat_map_Rand(
-  geometric_Int,
-  len -> sequence_Rand(replicate_List(prod_Rand(rand_key, rand_value), len))
-)
+rand_item_list: Rand[List[(Int, Int)]] = list_Rand(prod_Rand(rand_key, rand_value))
 
 hash_int_collision: Hash[Int] = hash_specialized(_ -> 0, eq_Int_inst)
 hash_int_shifted: Hash[Int] = hash_specialized(i -> normalize_61(i + 17), eq_Int_inst)
