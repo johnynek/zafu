@@ -627,6 +627,7 @@ def geometric_Int_Gen(mean: Float64) -> Gen[Int]:
   elif cmp_Float64(mean, float_zero) matches LT | EQ:
     const_Gen(0)
   else:
+    # mean = (1 - p) / p  =>  p = 1 / (mean + 1)
     p = divf(float_one, subf(mean, -1.0))
     sampled_Gen((size, seed) -> sample_geometric_Int(size, seed, p), shrink_non_negative)
 
