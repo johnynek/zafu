@@ -312,14 +312,25 @@ rand_list_int: Rand[List[Int]] = flat_map_Rand(
   len -> sequence_Rand(replicate_List(rand_int, len))
 )
 
-rand_list_with_count: Rand[(List[Int], Int)] = flat_map_Rand(rand_list_int, list -> (
+rand_list_with_count: Rand[(List[Int], Int)] = map_Rand(prod_Rand(rand_list_int, uint32_Gen), ((list, raw)) -> (
+  # Keep list and count generation independent so shrinking can minimize each side.
   upper = size(list).add(8)
-  map_Rand(int_range(upper), i -> (list, i.sub(4)))
+  bounded =
+    if cmp_Int(upper, 0) matches LT | EQ:
+      0
+    else:
+      mod_Int(raw, upper)
+  (list, bounded.sub(4))
 ))
 
-rand_list_with_non_negative_count: Rand[(List[Int], Int)] = flat_map_Rand(rand_list_int, list -> (
+rand_list_with_non_negative_count: Rand[(List[Int], Int)] = map_Rand(prod_Rand(rand_list_int, uint32_Gen), ((list, raw)) -> (
   upper = size(list).add(8)
-  map_Rand(int_range(upper), i -> (list, i))
+  bounded =
+    if cmp_Int(upper, 0) matches LT | EQ:
+      0
+    else:
+      mod_Int(raw, upper)
+  (list, bounded)
 ))
 
 split_at_concat_prop: Prop = forall_Prop(
