@@ -55,6 +55,7 @@ from Zafu/Text/Parse import (
   product10,
   product01,
   keep_left,
+  keep_right,
   optional,
   rep,
   rep0,
@@ -147,11 +148,7 @@ json_space_char = char_where(is_json_space, "JSON whitespace")
 
 def token(parser):
   ws = map0(rep0(json_space_char), _ -> Unit)
-  trailing = keep_left(parser, ws)
-  map(product01(ws, trailing), pair -> (
-    (_, value) = pair
-    value
-  ))
+  keep_right(ws, keep_left(parser, ws))
 
 def nonempty_chars_to_String(chars) -> String:
   char_List_to_String(to_List_NonEmptyList(chars))
