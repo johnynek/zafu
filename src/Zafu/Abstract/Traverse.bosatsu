@@ -77,12 +77,6 @@ def eq_List(eq_item: Eq[a], left: List[a], right: List[a]) -> Bool:
         False
   go(left, right)
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(
   Some,
   (value, fn) -> (
@@ -350,7 +344,7 @@ tests = TestSuite("Traverse tests", [
     match deep_items.traverse(list_traverse, applicative_Option, item -> Some(item.add(1))):
       case Some(mapped):
         Assertion(
-          and_Bool(mapped.foldl_List(0, add).eq_Int(expected_sum), size_List(mapped).eq_Int(deep_count)),
+          and(mapped.foldl_List(0, add).eq_Int(expected_sum), size_List(mapped).eq_Int(deep_count)),
           "deep traverse stack-safe",
         )
       case None:
@@ -367,7 +361,7 @@ tests = TestSuite("Traverse tests", [
     mapped = deep_items.map(derived, item -> item.add(1))
     expected_sum = deep_count.mul(deep_count.add(1)).div(2).add(deep_count)
     Assertion(
-      and_Bool(mapped.foldl_List(0, add).eq_Int(expected_sum), size_List(mapped).eq_Int(deep_count)),
+      and(mapped.foldl_List(0, add).eq_Int(expected_sum), size_List(mapped).eq_Int(deep_count)),
       "deep derived map stack-safe via Eval",
     )
   ),

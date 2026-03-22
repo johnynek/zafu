@@ -102,17 +102,11 @@ struct Foldable[f: * -> *](
   to_List_fn: forall a. f[a] -> List[a],
 )
 
-def not_Bool(value: Bool) -> Bool:
-  if value:
-    False
-  else:
-    True
-
 def eq_Bool(left: Bool, right: Bool) -> Bool:
   if left:
     right
   else:
-    not_Bool(right)
+    not(right)
 
 reverse_List = reverse
 
@@ -266,7 +260,7 @@ def is_empty[f: * -> *](fa: f[a], inst: Foldable[f]) -> Bool:
   is_empty_fn(fa)
 
 def non_empty[f: * -> *](fa: f[a], inst: Foldable[f]) -> Bool:
-  not_Bool(fa.is_empty(inst))
+  not(fa.is_empty(inst))
 
 def size[f: * -> *](fa: f[a], inst: Foldable[f]) -> Int:
   Foldable { size_fn, ... } = inst
@@ -612,7 +606,7 @@ def laws_Foldable[f: * -> *](inst: Foldable[f], eq_item: Eq[a], fa: f[a]) -> Tes
 
   size_law = Assertion(fa.size(inst).eq_Int(size_List(list_view)), "size equals to_List length")
   is_empty_law = Assertion(eq_Bool(fa.is_empty(inst), fa.size(inst).eq_Int(0)), "is_empty from size")
-  non_empty_law = Assertion(eq_Bool(fa.non_empty(inst), not_Bool(fa.is_empty(inst))), "non_empty negates is_empty")
+  non_empty_law = Assertion(eq_Bool(fa.non_empty(inst), not(fa.is_empty(inst))), "non_empty negates is_empty")
   foldl_law = Assertion(
     eq_List(eq_item, reverse_List(fa.foldl(inst, [], (acc, item) -> [item, *acc])), list_view),
     "foldl order matches to_List",

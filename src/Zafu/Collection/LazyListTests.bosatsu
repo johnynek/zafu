@@ -51,12 +51,6 @@ from Zafu/Testing/HedgeHog import (
   run_Prop,
 )
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 def eq_list_by_fn(eq_item: (a, a) -> Bool, left: List[a], right: List[a]) -> Bool:
   eq_Eq(eq_List_Collection(eq_from_fn(eq_item)), left, right)
 
@@ -78,7 +72,7 @@ def eq_uncons(actual: Option[(Lazy[Int], Lazy[LazyList[Int]])], expected: Option
     case (None, None):
       True
     case (Some((actual_head, actual_tail)), Some((expected_head, expected_tail))):
-      and_Bool(
+      and(
         get_Lazy(actual_head).eq_Int(expected_head),
         eq_list_by_fn(eq_Int, to_List(get_Lazy(actual_tail)), expected_tail)
       )
@@ -131,7 +125,7 @@ cons_prop: Prop = forall_Prop(
     match uncons(ll):
       case Some((actual_head, actual_tail)):
         Assertion(
-          and_Bool(
+          and(
             get_Lazy(actual_head).eq_Int(head),
             eq_list_by_fn(eq_Int, to_List(get_Lazy(actual_tail)), tail_list)
           ),
@@ -149,7 +143,7 @@ cons_strict_prop: Prop = forall_Prop(
     match uncons(ll):
       case Some((actual_head, actual_tail)):
         Assertion(
-          and_Bool(
+          and(
             get_Lazy(actual_head).eq_Int(head),
             eq_list_by_fn(eq_Int, to_List(get_Lazy(actual_tail)), tail_list)
           ),
@@ -265,7 +259,7 @@ tests = TestSuite("LazyList tests", [
   Assertion(
     match uncons(concat_LazyList(from_List([1, 2]), from_List([3, 4]))):
       case Some((head, tail)):
-        and_Bool(get_Lazy(head).eq_Int(1), to_List(get_Lazy(tail)) matches [2, 3, 4])
+        and(get_Lazy(head).eq_Int(1), to_List(get_Lazy(tail)) matches [2, 3, 4])
       case None:
         False,
     "concat/uncons sanity"
@@ -313,7 +307,7 @@ tests = TestSuite("LazyList tests", [
         case Some((head1, tail1)):
           match uncons(get_Lazy(tail1)):
             case Some((head2, _)):
-              and_Bool(get_Lazy(head1).eq_Int(2), get_Lazy(head2).eq_Int(4))
+              and(get_Lazy(head1).eq_Int(2), get_Lazy(head2).eq_Int(4))
             case None:
               False
         case None:
@@ -327,7 +321,7 @@ tests = TestSuite("LazyList tests", [
     expected_sum = 20000.mul(20001).div(2)
     deep_sum = foldl(deep, 0, add)
     Assertion(
-      and_Bool(
+      and(
         size_List(deep_list).eq_Int(20000),
         deep_sum.eq_Int(expected_sum)
       ),

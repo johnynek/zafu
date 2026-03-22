@@ -99,12 +99,6 @@ enum OutputStyle:
 usage_line = "usage: json-format [--compact|--spaces2|--spaces4]"
 read_chunk_size = 4096
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 double_quote_char: Char = .'\"'
 backslash_char: Char = .'\\'
 minus_char: Char = .'-'
@@ -205,7 +199,7 @@ json_string_content_parser: Parser[String] = (
 
 def is_nonzero_digit(ch: Char) -> Bool:
   code = char_to_Int(ch)
-  and_Bool(cmp_Int(code, 48) matches GT, cmp_Int(code, 57) matches LT | EQ)
+  and(cmp_Int(code, 48) matches GT, cmp_Int(code, 57) matches LT | EQ)
 
 digit_char = char_where(is_ascii_digit, "digit")
 nonzero_digit_char = char_where(is_nonzero_digit, "non-zero digit")

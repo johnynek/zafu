@@ -15,23 +15,11 @@ struct Eq[a](
   neq_fn: (a, a) -> Bool,
 )
 
-def not_Bool(value: Bool) -> Bool:
-  if value:
-    False
-  else:
-    True
-
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 def eq_Bool(left: Bool, right: Bool) -> Bool:
   if left:
     right
   else:
-    not_Bool(right)
+    not(right)
 
 # Constructor that allows supplying both operations.
 def eq_specialized(eq_fn: (a, a) -> Bool, neq_fn: (a, a) -> Bool) -> Eq[a]:
@@ -39,7 +27,7 @@ def eq_specialized(eq_fn: (a, a) -> Bool, neq_fn: (a, a) -> Bool) -> Eq[a]:
 
 # Constructor from equality; inequality is derived.
 def eq_from_fn(eq_fn: (a, a) -> Bool) -> Eq[a]:
-  Eq(eq_fn, (left, right) -> not_Bool(eq_fn(left, right)))
+  Eq(eq_fn, (left, right) -> not(eq_fn(left, right)))
 
 def eq(inst: Eq[a], left: a, right: a) -> Bool:
   Eq(eq_fn, _) = inst
@@ -57,13 +45,13 @@ def laws_Eq(inst: Eq[a], x: a, y: a, z: a) -> Test:
   reflexive = Assertion(eq(inst, x, x), "reflexive")
   symmetric = Assertion(eq_Bool(eq(inst, x, y), eq(inst, y, x)), "symmetric")
   transitive = Assertion(
-    if and_Bool(eq(inst, x, y), eq(inst, y, z)):
+    if and(eq(inst, x, y), eq(inst, y, z)):
       eq(inst, x, z)
     else:
       True,
     "transitive",
   )
-  neq_consistent = Assertion(eq_Bool(neq(inst, x, y), not_Bool(eq(inst, x, y))), "neq consistent")
+  neq_consistent = Assertion(eq_Bool(neq(inst, x, y), not(eq(inst, x, y))), "neq consistent")
   TestSuite("Eq laws", [reflexive, symmetric, transitive, neq_consistent])
 
 tests = TestSuite("Eq tests", [

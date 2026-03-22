@@ -32,16 +32,10 @@ hash_modulus: Int = 2305843009213693951
 mix_prime: Int = 1099511628211
 mix_add: Int = 1469598103934665603
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 def in_range_61(value: Int) -> Bool:
   non_negative = cmp_Int(value, 0) matches EQ | GT
   below_modulus = cmp_Int(value, hash_modulus) matches LT
-  and_Bool(non_negative, below_modulus)
+  and(non_negative, below_modulus)
 
 def normalize_61(raw: Int) -> Int:
   modded = mod_Int(raw, hash_modulus)
@@ -86,7 +80,7 @@ def laws_Hash(inst: Hash[a], x: a, y: a, z: a) -> Test:
   hy = hash(inst, y)
   hz = hash(inst, z)
   in_range = Assertion(
-    and_Bool(and_Bool(in_range_61(hx), in_range_61(hy)), in_range_61(hz)),
+    and(and(in_range_61(hx), in_range_61(hy)), in_range_61(hz)),
     "range invariant",
   )
   coherent_xy = Assertion(

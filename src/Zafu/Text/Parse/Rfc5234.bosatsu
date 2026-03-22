@@ -27,15 +27,9 @@ export (
   dquote,
 )
 
-def or_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    True
-  else:
-    right
-
 def is_space_or_tab(ch: Char) -> Bool:
   code = char_to_Int(ch)
-  or_Bool(code.eq_Int(32), code.eq_Int(9))
+  or(code.eq_Int(32), code.eq_Int(9))
 
 alpha = char_where(is_ascii_alpha, "ALPHA")
 digit = char_where(is_ascii_digit, "DIGIT")

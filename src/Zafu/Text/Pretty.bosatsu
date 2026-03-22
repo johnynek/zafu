@@ -120,24 +120,6 @@ enum Doc:
 # Output: a reusable renderer instance for type `a`.
 struct Document[a](to_doc_fn: a -> Doc)
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
-def or_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    True
-  else:
-    right
-
-def not_Bool(value: Bool) -> Bool:
-  if value:
-    False
-  else:
-    True
-
 def max_Int(a: Int, b: Int) -> Int:
   match cmp_Int(a, b):
     case LT:
@@ -491,7 +473,7 @@ def flatten_boolean(root: Doc) -> (Doc, Bool):
           case Concat(_, left, right):
             (left_flat, left_changed) = loop(next_fuel, left)
             (right_flat, right_changed) = loop(next_fuel, right)
-            (append(left_flat, right_flat), or_Bool(left_changed, right_changed))
+            (append(left_flat, right_flat), or(left_changed, right_changed))
           case Nest(indent, inner):
             (flat_doc, changed) = loop(next_fuel, inner)
             (Nest(indent, flat_doc), changed)
@@ -691,7 +673,7 @@ def is_empty(doc: Doc) -> Bool:
 # Input: any document.
 # Output: `True` when `doc` has visible output.
 def non_empty(doc: Doc) -> Bool:
-  not_Bool(is_empty(doc))
+  not(is_empty(doc))
 
 # Computes the maximum rendered line width of `doc`.
 # Input: any document.
@@ -1283,7 +1265,7 @@ tests = TestSuite("Pretty tests", [
   (
     docu = document_Option(document_Int)
     Assertion(
-      and_Bool(
+      and(
         eq_rendered(render(to_Doc(docu, None), 80), "None"),
         eq_rendered(render(to_Doc(docu, Some(9)), 80), "Some(9)")
       ),
@@ -1294,7 +1276,7 @@ tests = TestSuite("Pretty tests", [
     deep = deep_doc(20000)
     wide_text = rendered_to_string(render_wide_stream(deep))
     Assertion(
-      and_Bool(
+      and(
         cmp_Int(max_width(deep), 0) matches GT | EQ,
         cmp_Int(length_String(wide_text), 0) matches GT
       ),

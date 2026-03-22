@@ -112,23 +112,11 @@ enum HashMap:
   Empty(hash_key: Hash[k])
   Root(hash_key: Hash[k], size: Int, root: Node[k, v])
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
-def not_Bool(value: Bool) -> Bool:
-  if value:
-    False
-  else:
-    True
-
 def eq_Bool(left: Bool, right: Bool) -> Bool:
   if left:
     right
   else:
-    not_Bool(right)
+    not(right)
 
 def fragment(entry_hash: Int, shift: Int) -> Int:
   (entry_hash >> shift) & fragment_mask
@@ -171,7 +159,7 @@ def single_entry_node(entry: Entry[k, v], shift: Int) -> Node[k, v]:
 def collapse_indexed(data_bitmap: Int, entries: Array[Entry[k, v]], node_bitmap: Int, children: Array[Node[k, v]]) -> Option[Node[k, v]]:
   entry_cnt = size_Array(entries)
   child_cnt = size_Array(children)
-  if and_Bool(entry_cnt.eq_Int(0), child_cnt.eq_Int(0)):
+  if and(entry_cnt.eq_Int(0), child_cnt.eq_Int(0)):
     None
   else:
     Some(Indexed(data_bitmap, entries, node_bitmap, children))
@@ -185,7 +173,7 @@ def find_entry_index(entries: Array[Entry[k, v]], key_hash: Int, key: k, eq_key:
       case _:
         match get_Array(entries, idx):
           case Some(Entry(entry_hash, entry_key, _)):
-            if and_Bool(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
+            if and(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
               Some(idx)
             else:
               go(rem - 1, idx + 1)
@@ -233,7 +221,7 @@ def insert_entry_node_fuel(node: Node[k, v], entry: Entry[k, v], eq_key: Eq[k], 
             data_idx = bitmap_index(data_bitmap, bit)
             match get_Array(entries, data_idx):
               case Some(current):
-                same_key = and_Bool(entry_hash(current).eq_Int(entry_hash(entry)), eq_Eq(eq_key, entry_key(current), entry_key(entry)))
+                same_key = and(entry_hash(current).eq_Int(entry_hash(entry)), eq_Eq(eq_key, entry_key(current), entry_key(entry)))
                 if same_key:
                   (Indexed(data_bitmap, set_or_self_Array(entries, data_idx, entry), node_bitmap, children), 0)
                 else:
@@ -299,7 +287,7 @@ def remove_entry_node_fuel(node: Node[k, v], key_hash: Int, key: k, eq_key: Eq[k
             data_idx = bitmap_index(data_bitmap, bit)
             match get_Array(entries, data_idx):
               case Some(current):
-                same_key = and_Bool(entry_hash(current).eq_Int(key_hash), eq_Eq(eq_key, entry_key(current), key))
+                same_key = and(entry_hash(current).eq_Int(key_hash), eq_Eq(eq_key, entry_key(current), key))
                 if same_key:
                   next_entries = array_remove(entries, data_idx)
                   next_data_bitmap = data_bitmap.xor_Int(bit)
@@ -367,7 +355,7 @@ def get_node_fuel(node: Node[k, v], key_hash: Int, key: k, eq_key: Eq[k], shift:
             data_idx = bitmap_index(data_bitmap, bit)
             match get_Array(entries, data_idx):
               case Some(Entry(entry_hash, entry_key, value)):
-                if and_Bool(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
+                if and(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
                   Some(value)
                 else:
                   None
@@ -757,7 +745,7 @@ def model_eq(left: List[(Int, Int)], right: List[(Int, Int)]) -> Bool:
     left.foldl_List(True, (ok, item) -> (
       if ok:
         (key, value) = item
-        and_Bool(ok, eq_Eq(eq_opt_int, model_get(right, key), Some(value)))
+        and(ok, eq_Eq(eq_opt_int, model_get(right, key), Some(value)))
       else:
         False
     ))
@@ -771,7 +759,7 @@ def map_matches_model(map: HashMap[Int, Int], model: List[(Int, Int)]) -> Bool:
         (key, value) = item
         got = get(map, key)
         eq_opt_int = eq_Option(eq_Int_inst)
-        and_Bool(ok, eq_Eq(eq_opt_int, got, Some(value)))
+        and(ok, eq_Eq(eq_opt_int, got, Some(value)))
       else:
         False
     ))
@@ -790,9 +778,9 @@ def apply_put(map: HashMap[Int, Int], model: List[(Int, Int)], key: Int, value: 
   (
     next_map,
     next_model,
-    and_Bool(
-      and_Bool(map_matches_model(next_map, next_model), invariants_ok(next_map)),
-      and_Bool(
+    and(
+      and(map_matches_model(next_map, next_model), invariants_ok(next_map)),
+      and(
         eq_Eq(eq_opt_int, get(next_map, key), Some(value)),
         contains_key(next_map, key)
       )
@@ -805,9 +793,9 @@ def apply_delete(map: HashMap[Int, Int], model: List[(Int, Int)], key: Int, eq_o
   (
     next_map,
     next_model,
-    and_Bool(
-      and_Bool(map_matches_model(next_map, next_model), invariants_ok(next_map)),
-      and_Bool(
+    and(
+      and(map_matches_model(next_map, next_model), invariants_ok(next_map)),
+      and(
         eq_Bool(contains_key(next_map, key), model_contains(next_model, key)),
         eq_Eq(eq_opt_int, get(next_map, key), model_get(next_model, key))
       )
@@ -818,7 +806,7 @@ def apply_query(map: HashMap[Int, Int], model: List[(Int, Int)], key: Int, eq_op
   expected = model_get(model, key)
   actual = get(map, key)
   contains_ok = eq_Bool(contains_key(map, key), model_contains(model, key))
-  (map, model, and_Bool(and_Bool(eq_Eq(eq_opt_int, actual, expected), contains_ok), map_matches_model(map, model)))
+  (map, model, and(and(eq_Eq(eq_opt_int, actual, expected), contains_ok), map_matches_model(map, model)))
 
 def apply_alter(map: HashMap[Int, Int], model: List[(Int, Int)], key: Int, value: Int, drop: Bool) -> (HashMap[Int, Int], List[(Int, Int)], Bool):
   next_map = alter(map, key, current -> (
@@ -838,8 +826,8 @@ def apply_alter(map: HashMap[Int, Int], model: List[(Int, Int)], key: Int, value
   (
     next_map,
     next_model,
-    and_Bool(
-      and_Bool(map_matches_model(next_map, next_model), invariants_ok(next_map)),
+    and(
+      and(map_matches_model(next_map, next_model), invariants_ok(next_map)),
       eq_Bool(contains_key(next_map, key), model_contains(next_model, key))
     )
   )
@@ -860,11 +848,11 @@ def run_ops(hash_key: Hash[Int], ops: List[Op]) -> Bool:
   def go(rem: List[Op], map: HashMap[Int, Int], model: List[(Int, Int)], ok: Bool) -> Bool:
     loop rem:
       case []:
-        and_Bool(and_Bool(ok, map_matches_model(map, model)), invariants_ok(map))
+        and(and(ok, map_matches_model(map, model)), invariants_ok(map))
       case [op, *tail]:
         if ok:
           (next_map, next_model, step_ok) = apply_op(map, model, op)
-          go(tail, next_map, next_model, and_Bool(ok, step_ok))
+          go(tail, next_map, next_model, and(ok, step_ok))
         else:
           False
   go(ops, empty(hash_key), [], True)
@@ -926,13 +914,13 @@ transform_prop: Prop = forall_Prop(
         (key, value) = item
         expected = Some(key.mul(7).add(value))
         got = get(transformed, key)
-        and_Bool(ok, eq_Eq(eq_opt_int, got, expected))
+        and(ok, eq_Eq(eq_opt_int, got, expected))
       else:
         False
     ))
     Assertion(
-      and_Bool(
-        and_Bool(size(map).eq_Int(size(transformed)), invariants_ok(transformed)),
+      and(
+        and(size(map).eq_Int(size(transformed)), invariants_ok(transformed)),
         lookups_ok
       ),
       "transform laws"
@@ -959,7 +947,7 @@ union_cross_hash_prop: Prop = forall_Prop(
           model_updated(acc, key, right_v)
     ))
 
-    Assertion(and_Bool(map_matches_model(merged, merged_model), invariants_ok(merged)), "union cross-hash")
+    Assertion(and(map_matches_model(merged, merged_model), invariants_ok(merged)), "union cross-hash")
   ))
 
 intersection_difference_prop: Prop = forall_Prop(
@@ -989,9 +977,9 @@ intersection_difference_prop: Prop = forall_Prop(
     ))
 
     Assertion(
-      and_Bool(
-        and_Bool(map_matches_model(inter, inter_model), map_matches_model(diff, diff_model)),
-        and_Bool(invariants_ok(inter), invariants_ok(diff))
+      and(
+        and(map_matches_model(inter, inter_model), map_matches_model(diff, diff_model)),
+        and(invariants_ok(inter), invariants_ok(diff))
       ),
       "intersection/difference model"
     )
@@ -1012,7 +1000,7 @@ adapter_prop: Prop = forall_Prop(
       hash_Hash(map_hash, left).eq_Int(hash_Hash(map_hash, right))
     else:
       True
-    Assertion(and_Bool(coherent, eq_Bool(equal, model_eq(left_model, right_model))), "adapter coherence")
+    Assertion(and(coherent, eq_Bool(equal, model_eq(left_model, right_model))), "adapter coherence")
   ))
 
 hashmap_props: Prop = suite_Prop(
@@ -1029,14 +1017,14 @@ hashmap_props: Prop = suite_Prop(
 tests = TestSuite("HashMap tests", [
   (
     m = empty(hash_Int)
-    Assertion(and_Bool(is_empty(m), and_Bool(size(m).eq_Int(0), invariants_ok(m))), "empty sanity")
+    Assertion(and(is_empty(m), and(size(m).eq_Int(0), invariants_ok(m))), "empty sanity")
   ),
   (
     m = singleton(hash_Int, 3, 9)
     eq_opt_int = eq_Option(eq_Int_inst)
     Assertion(
-      and_Bool(
-        and_Bool(size(m).eq_Int(1), contains_key(m, 3)),
+      and(
+        and(size(m).eq_Int(1), contains_key(m, 3)),
         eq_Eq(eq_opt_int, get(m, 3), Some(9))
       ),
       "singleton sanity"
@@ -1046,8 +1034,8 @@ tests = TestSuite("HashMap tests", [
     m = from_List(hash_Int, [(1, 10), (2, 20), (1, 30)])
     eq_opt_int = eq_Option(eq_Int_inst)
     Assertion(
-      and_Bool(
-        and_Bool(size(m).eq_Int(2), eq_Eq(eq_opt_int, get(m, 1), Some(30))),
+      and(
+        and(size(m).eq_Int(2), eq_Eq(eq_opt_int, get(m, 1), Some(30))),
         invariants_ok(m)
       ),
       "from_List last-write-wins"
@@ -1061,9 +1049,9 @@ tests = TestSuite("HashMap tests", [
     m4 = remove(m3, 2)
     eq_opt_int = eq_Option(eq_Int_inst)
     Assertion(
-      and_Bool(
-        and_Bool(
-          and_Bool(eq_Eq(eq_opt_int, get(m4, 1), Some(11)), eq_Eq(eq_opt_int, get(m4, 2), None)),
+      and(
+        and(
+          and(eq_Eq(eq_opt_int, get(m4, 1), Some(11)), eq_Eq(eq_opt_int, get(m4, 2), None)),
           eq_Eq(eq_opt_int, get(m4, 3), Some(33))
         ),
         invariants_ok(m4)
@@ -1076,7 +1064,7 @@ tests = TestSuite("HashMap tests", [
     m1 = alter(m0, 5, _ -> Some(50))
     m2 = alter(m1, 5, _ -> Some(55))
     m3 = alter(m2, 5, _ -> None)
-    Assertion(and_Bool(and_Bool(size(m3).eq_Int(0), contains_key(m3, 5) matches False), invariants_ok(m3)), "alter insert/update/delete")
+    Assertion(and(and(size(m3).eq_Int(0), contains_key(m3, 5) matches False), invariants_ok(m3)), "alter insert/update/delete")
   ),
   (
     m0 = from_List(hash_Int, [(1, 1), (2, 2), (3, 3)])
@@ -1084,9 +1072,9 @@ tests = TestSuite("HashMap tests", [
     m2 = map_values(m0, value -> value.mul(10))
     eq_opt_int = eq_Option(eq_Int_inst)
     Assertion(
-      and_Bool(
-        and_Bool(eq_Eq(eq_opt_int, get(m1, 3), Some(6)), eq_Eq(eq_opt_int, get(m2, 2), Some(20))),
-        and_Bool(size(m1).eq_Int(3), invariants_ok(m1))
+      and(
+        and(eq_Eq(eq_opt_int, get(m1, 3), Some(6)), eq_Eq(eq_opt_int, get(m2, 2), Some(20))),
+        and(size(m1).eq_Int(3), invariants_ok(m1))
       ),
       "transform/map_values"
     )
@@ -1099,12 +1087,12 @@ tests = TestSuite("HashMap tests", [
     diff = difference(left, right)
     eq_opt_int = eq_Option(eq_Int_inst)
     Assertion(
-      and_Bool(
-        and_Bool(
-          and_Bool(eq_Eq(eq_opt_int, get(merged, 2), Some(27)), eq_Eq(eq_opt_int, get(inter, 2), Some(13))),
+      and(
+        and(
+          and(eq_Eq(eq_opt_int, get(merged, 2), Some(27)), eq_Eq(eq_opt_int, get(inter, 2), Some(13))),
           eq_Eq(eq_opt_int, get(diff, 2), None)
         ),
-        and_Bool(invariants_ok(merged), and_Bool(invariants_ok(inter), invariants_ok(diff)))
+        and(invariants_ok(merged), and(invariants_ok(inter), invariants_ok(diff)))
       ),
       "bulk ops sanity"
     )

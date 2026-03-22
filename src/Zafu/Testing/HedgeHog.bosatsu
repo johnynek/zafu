@@ -294,18 +294,6 @@ monad_Gen: Monad[Gen] = monad_from_applicative_flat_map_tailrec_steps(
   tailrec_steps_Gen,
 )
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
-def not_Bool(value: Bool) -> Bool:
-  if value:
-    False
-  else:
-    True
-
 max_suite_depth: Int = 65536
 
 def first_failure(test: Test) -> Option[(List[String], String)]:
@@ -660,7 +648,7 @@ def sample_geometric_Int(size: Size, seed: Seed, p: Float64) -> (Seed, Int):
 # Generator for non-negative Int values with geometric distribution by mean.
 def geometric_Int_Gen(mean: Float64) -> Gen[Int]:
   # Invalid or non-positive means collapse to a deterministic length of 0.
-  if not_Bool(is_finite(mean)):
+  if not(is_finite(mean)):
     const_Gen(0)
   elif cmp_Float64(mean, float_zero) matches LT | EQ:
     const_Gen(0)
@@ -859,8 +847,8 @@ predef_generators_prop: Prop = suite_Prop("Predef generators", [
   forall_True_Prop(int32_Gen, "Int32-ish", int_to_String, i -> cmp_Int(abs_Int(i), int32_max) matches LT | EQ),
   forall_True_Prop(uint32_Gen, "UInt32-ish", int_to_String, i -> cmp_Int(i, 0) matches GT | EQ),
   forall_True_Prop(pos_Int_Gen, "Positive Int", int_to_String, i -> cmp_Int(i, 0) matches GT),
-  forall_True_Prop(int_range_Gen(7), "Int range [0,7)", int_to_String, i -> and_Bool(cmp_Int(i, 0) matches GT | EQ, cmp_Int(i, 7) matches LT)),
-  forall_True_Prop(int_between_Gen(-3, 4), "Int range [-3,4)", int_to_String, i -> and_Bool(cmp_Int(i, -3) matches GT | EQ, cmp_Int(i, 4) matches LT)),
+  forall_True_Prop(int_range_Gen(7), "Int range [0,7)", int_to_String, i -> and(cmp_Int(i, 0) matches GT | EQ, cmp_Int(i, 7) matches LT)),
+  forall_True_Prop(int_between_Gen(-3, 4), "Int range [-3,4)", int_to_String, i -> and(cmp_Int(i, -3) matches GT | EQ, cmp_Int(i, 4) matches LT)),
   forall_True_Prop(geometric_Int_Gen(10.0), "Geometric Int >= 0", int_to_String, i -> cmp_Int(i, 0) matches GT | EQ),
   forall_True_Prop(char_Gen, "Char round-trip", show_Char, c -> int_to_Char(char_to_Int(c)) matches Some(_)),
   forall_True_Prop(string_Gen, "String round-trip", s -> s, s -> int_List_to_String(string_to_Int_List(s)) matches Some(_)),
@@ -874,8 +862,8 @@ predef_generators_prop: Prop = suite_Prop("Predef generators", [
   )),
   forall_True_Prop(list_Gen(int_Gen), "List[Int]", show_Int_List, list -> eq_Int_List(list.reverse().reverse(), list)),
   forall_True_Prop(tuple2_Gen(int_Gen, bool_Gen), "Tuple2[Int, Bool]", _ -> "tuple2", ((i, b)) -> i.eq_Int(i) if b else i.eq_Int(i)),
-  forall_True_Prop(tuple3_Gen(int_Gen, bool_Gen, char_Gen), "Tuple3", _ -> "tuple3", ((i, _, c)) -> and_Bool(i.eq_Int(i), char_to_Int(c).eq_Int(char_to_Int(c)))),
-  forall_True_Prop(tuple4_Gen(int_Gen, bool_Gen, char_Gen, string_Gen), "Tuple4", _ -> "tuple4", ((i, _, c, s)) -> and_Bool(i.eq_Int(i), and_Bool(char_to_Int(c).eq_Int(char_to_Int(c)), int_List_to_String(string_to_Int_List(s)) matches Some(_)))),
+  forall_True_Prop(tuple3_Gen(int_Gen, bool_Gen, char_Gen), "Tuple3", _ -> "tuple3", ((i, _, c)) -> and(i.eq_Int(i), char_to_Int(c).eq_Int(char_to_Int(c)))),
+  forall_True_Prop(tuple4_Gen(int_Gen, bool_Gen, char_Gen, string_Gen), "Tuple4", _ -> "tuple4", ((i, _, c, s)) -> and(i.eq_Int(i), and(char_to_Int(c).eq_Int(char_to_Int(c)), int_List_to_String(string_to_Int_List(s)) matches Some(_)))),
 ])
 
 non_one_int_Range = linear_Range(2, 1026)
@@ -895,9 +883,9 @@ def suite_recursion_witness() -> Test:
     Assertion(True, "top passes"),
     TestSuite("inner", [Assertion(False, "inner fails")]),
   ])
-  passes = not_Bool(nested.first_failure() matches None)
+  passes = not(nested.first_failure() matches None)
   has_message = nested.first_failure() matches Some((["outer", "inner"], "inner fails"))
-  Assertion(and_Bool(passes, has_message), "suite recursion should inspect child tests")
+  Assertion(and(passes, has_message), "suite recursion should inspect child tests")
 
 def shrink_int_witness() -> Test:
   match first_failure_and_shrunk(non_one_int_Gen(), 20, 99, i -> Assertion(i.add(i).eq_Int(i), "2*x == x")):
@@ -906,7 +894,7 @@ def shrink_int_witness() -> Test:
     case Some((original, shrunk)):
       small = shrunk.eq_Int(1)
       not_already_small = cmp_Int(original, 1) matches GT
-      Assertion(and_Bool(small, not_already_small), "int shrink should reach 1, got ${int_to_String(shrunk)} from ${int_to_String(original)}")
+      Assertion(and(small, not_already_small), "int shrink should reach 1, got ${int_to_String(shrunk)} from ${int_to_String(original)}")
 
 def shrink_list_witness() -> Test:
   match first_failure_and_shrunk(non_empty_int_list_Gen(), 20, 123, list -> Assertion(list matches [], "expected empty list")):
@@ -915,7 +903,7 @@ def shrink_list_witness() -> Test:
     case Some((original, shrunk)):
       orig_sz = list_size(original)
       shrunk_sz = list_size(shrunk)
-      Assertion(and_Bool(not_Bool(orig_sz.eq_Int(0)), shrunk_sz.eq_Int(1)), "list shrink should reach size 1, got size ${int_to_String(shrunk_sz)} from ${int_to_String(orig_sz)}")
+      Assertion(and(not(orig_sz.eq_Int(0)), shrunk_sz.eq_Int(1)), "list shrink should reach size 1, got size ${int_to_String(shrunk_sz)} from ${int_to_String(orig_sz)}")
 
 def shrink_frontier_witness() -> Test:
   tree = LazyTree(
@@ -932,7 +920,7 @@ def deep_sequence_witness() -> Test:
   deep_count = 100000
   ((_, values)) = root_LazyTree(run_Gen(exact_list_Gen(deep_count, const_Gen(1)), size_for_sample(0, 1), seed_from_Int(7)))
   total = values.foldl_List(0, add)
-  Assertion(and_Bool(list_size(values).eq_Int(deep_count), total.eq_Int(deep_count)), "sequence_Gen deep stack-safe")
+  Assertion(and(list_size(values).eq_Int(deep_count), total.eq_Int(deep_count)), "sequence_Gen deep stack-safe")
 
 tests = TestSuite("Zafu/Testing/HedgeHog tests", [
   run_Prop(predef_generators_prop, 60, 4242),

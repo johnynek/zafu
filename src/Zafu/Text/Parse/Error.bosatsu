@@ -63,12 +63,6 @@ struct DistinctList[a](
   items: List[a],
 )
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 def string_eq(left: String, right: String) -> Bool:
   cmp_String(left, right) matches EQ
 
@@ -82,7 +76,7 @@ def expectation_eq(left: Expectation, right: Expectation) -> Bool:
     case (ExpectedString(value_left), ExpectedString(value_right)):
       string_eq(value_left, value_right)
     case (InRange(low_left, high_left), InRange(low_right, high_right)):
-      and_Bool(char_eq(low_left, low_right), char_eq(high_left, high_right))
+      and(char_eq(low_left, low_right), char_eq(high_left, high_right))
     case (ExpectedEnd, ExpectedEnd):
       True
     case (ExpectedPredicate(label_left), ExpectedPredicate(label_right)):

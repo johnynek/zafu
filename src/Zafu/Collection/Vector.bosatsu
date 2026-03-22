@@ -1318,12 +1318,6 @@ def eq_Option(eq_fn)(left: Option[a], right: Option[a]) -> Bool:
     case _:
       False
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 def eq_list_by_fn(eq_item: (a, a) -> Bool, left: List[a], right: List[a]) -> Bool:
   eq_Eq(eq_List_Collection(eq_from_fn(eq_item)), left, right)
 
@@ -1380,7 +1374,7 @@ def foldr_list_model(list: List[Int], init: Int) -> Int:
 def eq_Int_pair(left: (Int, Int), right: (Int, Int)) -> Bool:
   (left_0, left_1) = left
   (right_0, right_1) = right
-  and_Bool(left_0.eq_Int(right_0), left_1.eq_Int(right_1))
+  and(left_0.eq_Int(right_0), left_1.eq_Int(right_1))
 
 def slice_list_model(list: List[Int], start: Int, end: Int) -> List[Int]:
   arr = from_List_Array(list)
@@ -1524,7 +1518,7 @@ split_at_prop: Prop = forall_Prop(
     actual_right = to_List(actual_right_vec)
     same_left = eq_list_by_fn(eq_Int, actual_left, expected_left)
     same_right = eq_list_by_fn(eq_Int, actual_right, expected_right)
-    Assertion(and_Bool(same_left, same_right), "split_at ${int_to_String(count)}")
+    Assertion(and(same_left, same_right), "split_at ${int_to_String(count)}")
   ))
 
 split_at_concat_prop: Prop = forall_Prop(
@@ -1545,7 +1539,7 @@ split_at_take_drop_prop: Prop = forall_Prop(
     (front, back) = split_at(vec, count)
     same_take = eq_list_by_fn(eq_Int, to_List(front), to_List(take(vec, count)))
     same_drop = eq_list_by_fn(eq_Int, to_List(back), to_List(drop(vec, count)))
-    Assertion(and_Bool(same_take, same_drop), "split_at take/drop law")
+    Assertion(and(same_take, same_drop), "split_at take/drop law")
   ))
 
 combine_all_option_prop: Prop = forall_Prop(
@@ -1585,7 +1579,7 @@ concat_prop: Prop = forall_Prop(
     expected = [*left, *right]
     same_list = eq_list_by_fn(eq_Int, to_List(vec), expected)
     same_size = size(vec).eq_Int(size_List(expected))
-    Assertion(and_Bool(same_list, same_size), "concat law")
+    Assertion(and(same_list, same_size), "concat law")
   ))
 
 concat_deep_iso_prop: Prop = forall_Prop(
@@ -1601,7 +1595,7 @@ concat_deep_iso_prop: Prop = forall_Prop(
       eq_Option(eq_Int)(index(vec, left_sz), index_List(expected, left_sz))
     else:
       True
-    Assertion(and_Bool(and_Bool(same_list, same_size), boundary_ok), "deep concat iso")
+    Assertion(and(and(same_list, same_size), boundary_ok), "deep concat iso")
   ))
 
 eq_instance_prop: Prop = forall_Prop(
@@ -1776,7 +1770,7 @@ tests = TestSuite("Vector tests", [
   Assertion(
     (
       (front, back) = split_at(from_List([1, 2, 3]), 2)
-      and_Bool(eq_list_by_fn(eq_Int, to_List(front), [1, 2]), eq_list_by_fn(eq_Int, to_List(back), [3]))
+      and(eq_list_by_fn(eq_Int, to_List(front), [1, 2]), eq_list_by_fn(eq_Int, to_List(back), [3]))
     ),
     "split_at sanity"),
   Assertion(combine_all_option(from_List([1, 2, 3]), int_add_semigroup) matches Some(6), "combine_all_option sanity"),

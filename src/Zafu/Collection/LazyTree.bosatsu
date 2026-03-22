@@ -179,12 +179,6 @@ monad_LazyTree: Monad[LazyTree] = monad_from_applicative_flat_map_tailrec_steps(
   tailrec_steps_LazyTree,
 )
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 def eq_LazyTree(eq_item: Eq[a]) -> Eq[LazyTree[a]]:
   def eq_forest(left_children: LazyList[LazyTree[a]], right_children: LazyList[LazyTree[a]]) -> Bool:
     recur (left_children, right_children):
@@ -193,9 +187,9 @@ def eq_LazyTree(eq_item: Eq[a]) -> Eq[LazyTree[a]]:
       case (ConsLazyList(left_head, left_tail), ConsLazyList(right_head, right_tail)):
         LazyTree(left_value, left_grandchildren) = get_Lazy(left_head)
         LazyTree(right_value, right_grandchildren) = get_Lazy(right_head)
-        and_Bool(
+        and(
           eq_Eq(eq_item, left_value, right_value),
-          and_Bool(
+          and(
             eq_forest(left_grandchildren, right_grandchildren),
             eq_forest(get_Lazy(left_tail), get_Lazy(right_tail)),
           ),
@@ -206,7 +200,7 @@ def eq_LazyTree(eq_item: Eq[a]) -> Eq[LazyTree[a]]:
   eq_from_fn((left, right) -> (
     LazyTree(left_value, left_children) = left
     LazyTree(right_value, right_children) = right
-    and_Bool(
+    and(
       eq_Eq(eq_item, left_value, right_value),
       eq_forest(left_children, right_children),
     )
