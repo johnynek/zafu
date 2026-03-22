@@ -105,15 +105,6 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
-def or_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    True
-  else:
-    right
-
-def string_eq(left: String, right: String) -> Bool:
-  cmp_String(left, right) matches EQ
-
 double_quote_char: Char = .'\"'
 backslash_char: Char = .'\\'
 minus_char: Char = .'-'
@@ -169,8 +160,7 @@ unescaped_string_chunk: Parser[String] = (
 hex_digit_char = char_where(is_ascii_hex, "hex digit")
 
 simple_escape_chunk: Parser[String] = (
-  map(product(char(backslash_char), char_in(simple_escape_chars)), pair -> (
-    (_, escaped_char) = pair
+  map(product(char(backslash_char), char_in(simple_escape_chars)), ((_, escaped_char)) -> (
     concat_String(["\\", char_to_String(escaped_char)])
   ))
 )
@@ -184,9 +174,7 @@ unicode_escape_chunk: Parser[String] = (
         product(hex_digit_char, hex_digit_char),
       ),
     ),
-    parsed -> (
-      (_, hex_parts) = parsed
-      ((h1, h2), (h3, h4)) = hex_parts
+    ((_, ((h1, h2), (h3, h4)))) -> (
       concat_String([
         "\\u",
         char_to_String(h1),
@@ -209,8 +197,7 @@ json_string_content_parser: Parser[String] = (
       product10(char(double_quote_char), rep0(piece_parser)),
       char(double_quote_char),
     ),
-    parsed -> (
-      ((_, pieces), _) = parsed
+    ((((_, pieces), _))) -> (
       concat_String(pieces)
     ),
   )
@@ -229,16 +216,14 @@ def digits_to_String(head: Char, tail: List[Char]) -> String:
 number_integer_part: Parser[String] = (
   one_of([
     map(char(zero_char), _ -> "0"),
-    map(product10(nonzero_digit_char, rep0(digit_char)), pair -> (
-      (head, tail) = pair
+    map(product10(nonzero_digit_char, rep0(digit_char)), ((head, tail)) -> (
       digits_to_String(head, tail)
     )),
   ])
 )
 
 number_fraction_part: Parser[String] = (
-  map(product(char(dot_char), rep(digit_char)), parsed -> (
-    (_, digits) = parsed
+  map(product(char(dot_char), rep(digit_char)), ((_, digits)) -> (
     concat_String([".", nonempty_chars_to_String(digits)])
   ))
 )
@@ -254,8 +239,7 @@ number_exp_sign0: Parser0[String] = (
 )
 
 number_exp_part: Parser[String] = (
-  map(product(char_in([e_char, upper_e_char]), product01(number_exp_sign0, rep(digit_char))), parsed -> (
-    (exp_mark, (sign_part, digits)) = parsed
+  map(product(char_in([e_char, upper_e_char]), product01(number_exp_sign0, rep(digit_char))), ((exp_mark, (sign_part, digits))) -> (
     concat_String([
       char_to_String(exp_mark),
       sign_part,
@@ -295,14 +279,12 @@ number_sign0: Parser0[String] = (
 )
 
 json_number_parser: Parser[Json] = (
-  core = map(product10(number_integer_part, product0(number_fraction0, number_exp0)), parsed -> (
-    (int_part, (fraction_part, exp_part)) = parsed
+  core = map(product10(number_integer_part, product0(number_fraction0, number_exp0)), ((int_part, (fraction_part, exp_part))) -> (
     concat_String([int_part, fraction_part, exp_part])
   ))
 
   label(
-    map(product01(number_sign0, core), pair -> (
-      (sign_part, rest_part) = pair
+    map(product01(number_sign0, core), ((sign_part, rest_part)) -> (
       JNumber(concat_String([sign_part, rest_part]))
     )),
     "JSON number",
@@ -346,10 +328,7 @@ json_token_parser: Parser[JsonToken] = (
 
 json_tokens_parser: Parser[List[JsonToken]] = (
   tok = token(label(json_token_parser, "JSON token"))
-  map(product10(tok, rep0(tok)), pair -> (
-    (head, tail) = pair
-    [head, *tail]
-  ))
+  map(product10(tok, rep0(tok)), ((head, tail)) -> [head, *tail])
 )
 
 enum BuildFrame:
@@ -547,8 +526,7 @@ def push_compact_fields(fields: List[(String, Json)], level: Int, tail: List[Ren
   match fields.reverse():
     case []:
       tail
-    case [last, *rest_rev]:
-      (last_key, last_value) = last
+    case [(last_key, last_value), *rest_rev]:
       seeded = [
         EmitDoc(json_string_doc(last_key)),
         EmitDoc(text(":")),
@@ -559,8 +537,7 @@ def push_compact_fields(fields: List[(String, Json)], level: Int, tail: List[Ren
         loop rem_rev:
           case []:
             acc
-          case [next, *tail_rev]:
-            (next_key, next_value) = next
+          case [(next_key, next_value), *tail_rev]:
             loop(
               tail_rev,
               [
@@ -585,8 +562,7 @@ def push_pretty_fields(
   match fields.reverse():
     case []:
       tail
-    case [last, *rest_rev]:
-      (last_key, last_value) = last
+    case [(last_key, last_value), *rest_rev]:
       seeded = [
         EmitDoc(indent),
         EmitDoc(json_string_doc(last_key)),
@@ -598,8 +574,7 @@ def push_pretty_fields(
         loop rem_rev:
           case []:
             acc
-          case [next, *tail_rev]:
-            (next_key, next_value) = next
+          case [(next_key, next_value), *tail_rev]:
             loop(
               tail_rev,
               [
@@ -704,14 +679,15 @@ def render_json(value: Json, style: OutputStyle) -> String:
   render(json_doc(value, style), 120)
 
 def parse_style_flag(arg: String) -> Option[OutputStyle]:
-  if or_Bool(string_eq(arg, "--compact"), string_eq(arg, "compact")):
-    Some(Compact)
-  elif or_Bool(string_eq(arg, "--spaces2"), string_eq(arg, "spaces2")):
-    Some(Pretty(2))
-  elif or_Bool(string_eq(arg, "--spaces4"), string_eq(arg, "spaces4")):
-    Some(Pretty(4))
-  else:
-    None
+  match arg:
+    case "--compact" | "compact":
+      Some(Compact)
+    case "--spaces2" | "spaces2":
+      Some(Pretty(2))
+    case "--spaces4" | "spaces4":
+      Some(Pretty(4))
+    case _:
+      None
 
 def parse_args(args: List[String]) -> Result[String, OutputStyle]:
   normalized_args =
