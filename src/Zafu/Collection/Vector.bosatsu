@@ -1,9 +1,5 @@
 package Zafu/Collection/Vector
 
-from Bosatsu/List import (
-  eq_List,
-  zip as zip_List,
-)
 from Bosatsu/Collection/Array import (
   Array,
   empty_Array,
@@ -92,7 +88,10 @@ from Zafu/Abstract/Instances/Predef import (
   ord_Int as ord_Int_inst,
   hash_Int,
 )
-from Zafu/Collection/List import size as size_List
+from Zafu/Collection/List import (
+  size as size_List,
+  zip as zip_List,
+)
 from Zafu/Control/IterState import (
   IterState,
   Done,
@@ -306,7 +305,7 @@ def to_List(vec: Vector[a]) -> List[a]:
   to_List_Array(to_Array(vec))
 
 def choose_child_loop(prefix: Array[Int], target: Int, low: Int, high: Int, fuel: Int) -> Option[Int]:
-  recur fuel:
+  loop fuel:
     case _ if cmp_Int(low, high) matches GT:
       None
     case _ if cmp_Int(fuel, 0) matches GT:
@@ -332,7 +331,7 @@ def choose_child(prefix: Array[Int], target: Int, low: Int, high: Int, fuel: Int
   choose_child_loop(prefix, target, low, high, fuel)
 
 def find_with_loop(current: Vector[a], current_idx: Int, fuel: Int, on_missing: () -> b, on_found: a -> b) -> b:
-  recur fuel:
+  loop fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       on_missing(Unit)
     case _:
@@ -869,7 +868,7 @@ def drop_with_fuel(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
                 node_from_children(height, kept_children)
 
 def next_leaf(stack: List[Vector[a]], fuel: Int) -> Option[(Array[a], List[Vector[a]])]:
-  recur fuel:
+  loop fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       None
     case _:
@@ -893,7 +892,7 @@ def ready_leaf(stack: List[Vector[a]], current: Option[(Array[a], Int)], fuel: I
           None
 
 def eq_chunk(eq_item: Eq[a], left_items: Array[a], left_idx: Int, right_items: Array[a], right_idx: Int, rem: Int) -> Bool:
-  recur rem:
+  loop rem:
     case _ if cmp_Int(rem, 0) matches LT | EQ:
       True
     case _:
@@ -911,7 +910,7 @@ def eq_chunk(eq_item: Eq[a], left_items: Array[a], left_idx: Int, right_items: A
           False
 
 def cmp_chunk(ord_item: Ord[a], left_items: Array[a], left_idx: Int, right_items: Array[a], right_idx: Int, rem: Int) -> Comparison:
-  recur rem:
+  loop rem:
     case _ if cmp_Int(rem, 0) matches LT | EQ:
       EQ
     case _:
@@ -930,7 +929,7 @@ def cmp_chunk(ord_item: Ord[a], left_items: Array[a], left_idx: Int, right_items
           EQ
 
 def hash_chunk(hash_item: Hash[a], items: Array[a], idx: Int, rem: Int, acc: Int) -> Int:
-  recur rem:
+  loop rem:
     case _ if cmp_Int(rem, 0) matches LT | EQ:
       acc
     case _:
@@ -1089,7 +1088,7 @@ def hash_Vector(hash_item: Hash[a]) -> Hash[Vector[a]]:
   )
 
 def zip_chunk_with_fuel(left_items: Array[a], left_idx: Int, right_items: Array[b], right_idx: Int, rem: Int, rev_pairs: List[(a, b)]) -> (Int, Int, List[(a, b)]):
-  recur rem:
+  loop rem:
     case _ if cmp_Int(rem, 0) matches LT | EQ:
       (left_idx, right_idx, rev_pairs)
     case _:
@@ -1111,7 +1110,7 @@ def zip_chunk_with_fuel(left_items: Array[a], left_idx: Int, right_items: Array[
               )
 
 def zip_rev_with_fuel(left_stack: List[Vector[a]], right_stack: List[Vector[b]], left_curr: Option[(Array[a], Int)], right_curr: Option[(Array[b], Int)], rem: Int, rev_pairs: List[(a, b)], fuel: Int) -> List[(a, b)]:
-  recur fuel:
+  loop fuel:
     case _ if cmp_Int(rem, 0) matches LT | EQ:
       rev_pairs
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
@@ -1323,6 +1322,22 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
     right
   else:
     False
+
+def eq_List(eq_item: (a, a) -> Bool) -> (List[a], List[a]) -> Bool:
+  (left, right) -> (
+    def go(left: List[a], right: List[a]) -> Bool:
+      loop (left, right):
+        case ([], []):
+          True
+        case ([left_h, *left_t], [right_h, *right_t]):
+          if eq_item(left_h, right_h):
+            go(left_t, right_t)
+          else:
+            False
+        case _:
+          False
+    go(left, right)
+  )
 
 def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
   match value:

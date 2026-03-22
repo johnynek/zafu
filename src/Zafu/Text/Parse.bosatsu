@@ -953,7 +953,7 @@ def rep0_max(parser: Parser[a], max_items: Int) -> Parser0[List[a]]:
     mk_parser0(
       state -> dispatch(state, spent_state -> (
         def loop_rep(curr_state: ParseState, rem_max: Int, rev_items: List[a]) -> Step[List[a]]:
-          recur rem_max:
+          loop rem_max:
             case _ if cmp_Int(rem_max, 0) matches LT | EQ:
               Success(rev_items.reverse(), curr_state)
             case _:

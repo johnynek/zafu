@@ -1,6 +1,4 @@
 package Zafu/Collection/Deque
-
-from Bosatsu/List import eq_List
 from Zafu/Testing/HedgeHog import (
   Gen,
   Prop,
@@ -31,7 +29,9 @@ from Zafu/Abstract/Traverse import (
   traverse,
   traverse_specialized,
 )
-from Zafu/Collection/List import size as size_List
+from Zafu/Collection/List import (
+  size as size_List,
+)
 from Zafu/Control/IterState import (
   IterState,
   Done,
@@ -299,6 +299,22 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
     right
   else:
     False
+
+def eq_List(eq_item: (a, a) -> Bool) -> (List[a], List[a]) -> Bool:
+  (left, right) -> (
+    def go(left: List[a], right: List[a]) -> Bool:
+      loop (left, right):
+        case ([], []):
+          True
+        case ([left_h, *left_t], [right_h, *right_t]):
+          if eq_item(left_h, right_h):
+            go(left_t, right_t)
+          else:
+            False
+        case _:
+          False
+    go(left, right)
+  )
 
 def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
   match value:

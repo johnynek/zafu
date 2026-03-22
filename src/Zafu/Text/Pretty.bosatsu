@@ -263,7 +263,7 @@ def join_strings_with_sep(parts: List[String], sep: String) -> String:
       ""
     case [head, *tail]:
       def loop(rem: List[String], rev: List[String]) -> String:
-        recur rem:
+        loop rem:
           case []:
             concat_String(rev.reverse())
           case [next, *rest]:
@@ -301,7 +301,7 @@ hard_line: Doc = Line
 
 def lines(value: String) -> List[String]:
   def loop(fuel: Int, rem: String, rev_lines: List[String]) -> List[String]:
-    recur fuel:
+    loop fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         [rem, *rev_lines].reverse()
       case _:
@@ -320,7 +320,7 @@ def intercalate_docs(sep: Doc, docs: List[Doc]) -> Doc:
       empty
     case [head, *tail]:
       def loop(rem: List[Doc], acc: Doc) -> Doc:
-        recur rem:
+        loop rem:
           case []:
             acc
           case [next, *rest]:
@@ -387,7 +387,7 @@ def repeat(doc: Doc, count: Int) -> Doc:
     empty
   else:
     def loop(rem: Int, chunk: Doc, acc: Doc) -> Doc:
-      recur rem:
+      loop rem:
         case _ if cmp_Int(rem, 0) matches LT | EQ:
           acc
         case _:
@@ -647,7 +647,7 @@ def unzero(doc: Doc) -> Doc:
 # Output: `True` only when rendering produces no text or line breaks.
 def is_empty(doc: Doc) -> Bool:
   def loop(fuel: Int, stack: List[Doc]) -> Bool:
-    recur fuel:
+    loop fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         False
       case _:
@@ -698,7 +698,7 @@ def non_empty(doc: Doc) -> Bool:
 # Output: maximum column width reached across all lines.
 def max_width(doc: Doc) -> Int:
   def loop(fuel: Int, pos: Int, stack: List[(Int, Doc)], widest: Int) -> Int:
-    recur fuel:
+    loop fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         max_Int(widest, pos)
       case _:
@@ -739,7 +739,7 @@ enum ReprItem:
 # Output: text document describing internal node structure.
 def representation(doc: Doc) -> Doc:
   def loop(fuel: Int, stack: List[ReprItem], rev: List[String]) -> String:
-    recur fuel:
+    loop fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         concat_String(["...", *rev].reverse())
       case _:
@@ -890,7 +890,7 @@ def prepend_stream_parts(parts: List[String], rest_fn: () -> LazyList[String]) -
 
 def trim_chunk(chunk: String, pending_spaces: Int) -> (Int, List[String]):
   def loop_chunk(fuel: Int, rem: String, pending: Int, rev: List[String]) -> (Int, List[String]):
-    recur fuel:
+    loop fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         (pending, rev.reverse())
       case _:
@@ -970,7 +970,7 @@ def fold_docs(docs: List[Doc], fn: (Doc, Doc) -> Doc) -> Doc:
       empty
     case [head, *tail]:
       def loop(rem: List[Doc], acc: Doc) -> Doc:
-        recur rem:
+        loop rem:
           case []:
             acc
           case [next, *rest]:
@@ -1041,7 +1041,7 @@ def words_from_string(value: String) -> List[String]:
         [char_List_to_String(word_rev.reverse()), *words_rev]
 
   def loop(fuel: Int, rem: String, current_word_rev: List[Char], words_rev: List[String]) -> List[String]:
-    recur fuel:
+    loop fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         flush_word(current_word_rev, words_rev).reverse()
       case _:

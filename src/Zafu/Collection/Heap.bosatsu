@@ -1,9 +1,5 @@
 package Zafu/Collection/Heap
 
-from Bosatsu/List import (
-  eq_List,
-  sort,
-)
 from Zafu/Testing/HedgeHog import (
   Gen,
   Prop,
@@ -14,7 +10,10 @@ from Zafu/Testing/HedgeHog import (
   suite_Prop,
   run_Prop,
 )
-from Zafu/Collection/List import size as size_List
+from Zafu/Collection/List import (
+  size as size_List,
+  sort,
+)
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
@@ -219,13 +218,17 @@ def merge_round(ord: Ord[a], trees: List[Tree[a]]) -> List[Tree[a]]:
 def from_List(ord: Ord[a], items: List[a]) -> Heap[a]:
   trees0 = trees_from_list(items)
   fuel = size_List(items).add(8)
-  trees_final = int_loop(fuel, trees0, (rem, trees) -> (
-    match trees:
-      case [] | [_]:
-        (0, trees)
+  def go(rem: Int, trees: List[Tree[a]]) -> List[Tree[a]]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        trees
       case _:
-        (rem.sub(1), merge_round(ord, trees))
-  ))
+        match trees:
+          case [] | [_]:
+            trees
+          case _:
+            go(rem.sub(1), merge_round(ord, trees))
+  trees_final = go(fuel, trees0)
   match trees_final:
     case []:
       empty(ord)
@@ -351,6 +354,22 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
     right
   else:
     False
+
+def eq_List(eq_item: (a, a) -> Bool) -> (List[a], List[a]) -> Bool:
+  (left, right) -> (
+    def go(left: List[a], right: List[a]) -> Bool:
+      loop (left, right):
+        case ([], []):
+          True
+        case ([left_h, *left_t], [right_h, *right_t]):
+          if eq_item(left_h, right_h):
+            go(left_t, right_t)
+          else:
+            False
+        case _:
+          False
+    go(left, right)
+  )
 
 def sort_Int(list: List[Int]) -> List[Int]:
   sort(Order(cmp_Int), list)

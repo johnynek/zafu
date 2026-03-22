@@ -5,7 +5,6 @@ from Bosatsu/Lazy import (
   lazy,
   get_Lazy,
 )
-from Bosatsu/List import eq_List
 from Zafu/Abstract/Applicative import Applicative
 from Zafu/Abstract/Instances/Predef import (
   applicative_Option,
@@ -13,7 +12,9 @@ from Zafu/Abstract/Instances/Predef import (
 from Zafu/Abstract/Traverse import (
   traverse,
 )
-from Zafu/Collection/List import size as size_List
+from Zafu/Collection/List import (
+  size as size_List,
+)
 from Zafu/Collection/LazyList import (
   LazyList,
   empty_LazyList,
@@ -50,6 +51,22 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
     right
   else:
     False
+
+def eq_List(eq_item: (a, a) -> Bool) -> (List[a], List[a]) -> Bool:
+  (left, right) -> (
+    def go(left: List[a], right: List[a]) -> Bool:
+      loop (left, right):
+        case ([], []):
+          True
+        case ([left_h, *left_t], [right_h, *right_t]):
+          if eq_item(left_h, right_h):
+            go(left_t, right_t)
+          else:
+            False
+        case _:
+          False
+    go(left, right)
+  )
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
   if mod_Int(value, 2) matches 0:
