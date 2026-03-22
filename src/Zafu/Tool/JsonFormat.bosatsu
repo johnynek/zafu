@@ -406,105 +406,87 @@ def begin_container(
 
 def parse_json_tokens(tokens: List[JsonToken]) -> Result[String, Json]:
   def loop(rem: List[JsonToken], stack: List[BuildFrame], root: Option[Json]) -> Result[String, Json]:
-    loop rem:
-      case []:
-        match stack:
-          case []:
-            match root:
-              case Some(value):
-                Ok(value)
-              case None:
-                Err("empty JSON input")
-          case _:
-            Err("unexpected end of JSON input")
-      case [next, *tail]:
-        match next:
-          case TokOpenArr:
-            match begin_container(ArrExpectFirstOrClose([]), stack, root):
-              case Ok((next_stack, next_root)):
-                loop(tail, next_stack, next_root)
-              case Err(msg):
-                Err(msg)
-          case TokOpenObj:
-            match begin_container(ObjExpectFirstKeyOrClose([]), stack, root):
-              case Ok((next_stack, next_root)):
-                loop(tail, next_stack, next_root)
-              case Err(msg):
-                Err(msg)
-          case TokScalar(value):
-            match stack:
-              case [ObjExpectFirstKeyOrClose(fields_rev), *tail_stack]:
-                match value:
-                  case JString(key):
-                    loop(tail, [ObjExpectColon(fields_rev, key), *tail_stack], root)
-                  case _:
-                    Err("JSON object keys must be strings")
-              case [ObjExpectKeyAfterComma(fields_rev), *tail_stack]:
-                match value:
-                  case JString(key):
-                    loop(tail, [ObjExpectColon(fields_rev, key), *tail_stack], root)
-                  case _:
-                    Err("JSON object keys must be strings")
-              case _:
-                match accept_value(value, stack, root):
-                  case Ok((next_stack, next_root)):
-                    loop(tail, next_stack, next_root)
-                  case Err(msg):
-                    Err(msg)
-          case TokColon:
-            match stack:
-              case [ObjExpectColon(fields_rev, key), *tail_stack]:
-                loop(tail, [ObjExpectValue(fields_rev, key), *tail_stack], root)
-              case _:
-                Err("unexpected ':' in JSON input")
-          case TokComma:
-            match stack:
-              case [ArrExpectCommaOrClose(items_rev), *tail_stack]:
-                loop(tail, [ArrExpectValueAfterComma(items_rev), *tail_stack], root)
-              case [ObjExpectCommaOrClose(fields_rev), *tail_stack]:
-                loop(tail, [ObjExpectKeyAfterComma(fields_rev), *tail_stack], root)
-              case _:
-                Err("unexpected ',' in JSON input")
-          case TokCloseArr:
-            match stack:
-              case [ArrExpectFirstOrClose(items_rev), *tail_stack]:
-                match accept_value(JArray(items_rev.reverse()), tail_stack, root):
-                  case Ok((next_stack, next_root)):
-                    loop(tail, next_stack, next_root)
-                  case Err(msg):
-                    Err(msg)
-              case [ArrExpectCommaOrClose(items_rev), *tail_stack]:
-                match accept_value(JArray(items_rev.reverse()), tail_stack, root):
-                  case Ok((next_stack, next_root)):
-                    loop(tail, next_stack, next_root)
-                  case Err(msg):
-                    Err(msg)
-              case [ArrExpectValueAfterComma(_), *_]:
-                Err("array cannot end right after ','")
-              case _:
-                Err("unexpected ']' in JSON input")
-          case TokCloseObj:
-            match stack:
-              case [ObjExpectFirstKeyOrClose(fields_rev), *tail_stack]:
-                match accept_value(JObject(fields_rev.reverse()), tail_stack, root):
-                  case Ok((next_stack, next_root)):
-                    loop(tail, next_stack, next_root)
-                  case Err(msg):
-                    Err(msg)
-              case [ObjExpectCommaOrClose(fields_rev), *tail_stack]:
-                match accept_value(JObject(fields_rev.reverse()), tail_stack, root):
-                  case Ok((next_stack, next_root)):
-                    loop(tail, next_stack, next_root)
-                  case Err(msg):
-                    Err(msg)
-              case [ObjExpectKeyAfterComma(_), *_]:
-                Err("object cannot end right after ','")
-              case [ObjExpectColon(_, _), *_]:
-                Err("expected ':' before '}'")
-              case [ObjExpectValue(_, _), *_]:
-                Err("expected object value before '}'")
-              case _:
-                Err("unexpected '}' in JSON input")
+    loop (rem, stack):
+      case ([], []):
+        match root:
+          case Some(value):
+            Ok(value)
+          case None:
+            Err("empty JSON input")
+      case ([], _):
+        Err("unexpected end of JSON input")
+      case ([TokOpenArr, *tail], current_stack):
+        match begin_container(ArrExpectFirstOrClose([]), current_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokOpenObj, *tail], current_stack):
+        match begin_container(ObjExpectFirstKeyOrClose([]), current_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokScalar(JString(key)), *tail], [ObjExpectFirstKeyOrClose(fields_rev), *tail_stack]):
+        loop(tail, [ObjExpectColon(fields_rev, key), *tail_stack], root)
+      case ([TokScalar(_), *_], [ObjExpectFirstKeyOrClose(_), *_]):
+        Err("JSON object keys must be strings")
+      case ([TokScalar(JString(key)), *tail], [ObjExpectKeyAfterComma(fields_rev), *tail_stack]):
+        loop(tail, [ObjExpectColon(fields_rev, key), *tail_stack], root)
+      case ([TokScalar(_), *_], [ObjExpectKeyAfterComma(_), *_]):
+        Err("JSON object keys must be strings")
+      case ([TokScalar(value), *tail], current_stack):
+        match accept_value(value, current_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokColon, *tail], [ObjExpectColon(fields_rev, key), *tail_stack]):
+        loop(tail, [ObjExpectValue(fields_rev, key), *tail_stack], root)
+      case ([TokColon, *_], _):
+        Err("unexpected ':' in JSON input")
+      case ([TokComma, *tail], [ArrExpectCommaOrClose(items_rev), *tail_stack]):
+        loop(tail, [ArrExpectValueAfterComma(items_rev), *tail_stack], root)
+      case ([TokComma, *tail], [ObjExpectCommaOrClose(fields_rev), *tail_stack]):
+        loop(tail, [ObjExpectKeyAfterComma(fields_rev), *tail_stack], root)
+      case ([TokComma, *_], _):
+        Err("unexpected ',' in JSON input")
+      case ([TokCloseArr, *tail], [ArrExpectFirstOrClose(items_rev), *tail_stack]):
+        match accept_value(JArray(items_rev.reverse()), tail_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokCloseArr, *tail], [ArrExpectCommaOrClose(items_rev), *tail_stack]):
+        match accept_value(JArray(items_rev.reverse()), tail_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokCloseArr, *_], [ArrExpectValueAfterComma(_), *_]):
+        Err("array cannot end right after ','")
+      case ([TokCloseArr, *_], _):
+        Err("unexpected ']' in JSON input")
+      case ([TokCloseObj, *tail], [ObjExpectFirstKeyOrClose(fields_rev), *tail_stack]):
+        match accept_value(JObject(fields_rev.reverse()), tail_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokCloseObj, *tail], [ObjExpectCommaOrClose(fields_rev), *tail_stack]):
+        match accept_value(JObject(fields_rev.reverse()), tail_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokCloseObj, *_], [ObjExpectKeyAfterComma(_), *_]):
+        Err("object cannot end right after ','")
+      case ([TokCloseObj, *_], [ObjExpectColon(_, _), *_]):
+        Err("expected ':' before '}'")
+      case ([TokCloseObj, *_], [ObjExpectValue(_, _), *_]):
+        Err("expected object value before '}'")
+      case ([TokCloseObj, *_], _):
+        Err("unexpected '}' in JSON input")
 
   loop(tokens, [], None)
 
