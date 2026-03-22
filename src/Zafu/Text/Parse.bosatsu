@@ -191,12 +191,6 @@ def dispatch(state: ParseState, run: ParseState -> Step[a]) -> Step[a]:
 def char_eq(left: Char, right: Char) -> Bool:
   eq_Eq(eq_Char, left, right)
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 def parse_chars(
   first_state: ParseState,
   expected: Expectation,
@@ -626,7 +620,7 @@ def product0(left: Parser0[a], right: Parser0[b]) -> Parser0[(a, b)]:
           Failure(left_failure)
     )),
     parser0_cost(left).add(parser0_cost(right)).add(1),
-    and_Bool(parser0_allows_epsilon(left), parser0_allows_epsilon(right)),
+    and(parser0_allows_epsilon(left), parser0_allows_epsilon(right)),
   )
 
 def product10(left: Parser[a], right: Parser0[b]) -> Parser[(a, b)]:
@@ -778,7 +772,7 @@ def soft_product0(left: Parser0[a], right: Parser0[b]) -> Parser0[(a, b)]:
           Failure(left_failure)
     )),
     parser0_cost(left).add(parser0_cost(right)).add(1),
-    and_Bool(parser0_allows_epsilon(left), parser0_allows_epsilon(right)),
+    and(parser0_allows_epsilon(left), parser0_allows_epsilon(right)),
   )
 
 def soft_product10(left: Parser[a], right: Parser0[b]) -> Parser[(a, b)]:

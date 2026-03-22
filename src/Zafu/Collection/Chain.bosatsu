@@ -600,12 +600,6 @@ def eq_Option(eq_fn)(left: Option[a], right: Option[a]) -> Bool:
     case _:
       False
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 def eq_list_by_fn(eq_item: (a, a) -> Bool, left: List[a], right: List[a]) -> Bool:
   eq_Eq(eq_List_Collection(eq_from_fn(eq_item)), left, right)
 
@@ -661,7 +655,7 @@ def eq_uncons_left(
     case (None, None):
       True
     case (Some((actual_head, actual_tail)), Some((expected_head, expected_tail))):
-      and_Bool(
+      and(
         actual_head.eq_Int(expected_head),
         eq_list_by_fn(eq_Int, to_List(actual_tail), expected_tail))
     case _:
@@ -675,7 +669,7 @@ def eq_uncons_right(
     case (None, None):
       True
     case (Some((actual_init, actual_last)), Some((expected_init, expected_last))):
-      and_Bool(
+      and(
         actual_last.eq_Int(expected_last),
         eq_list_by_fn(eq_Int, to_List(actual_init), expected_init))
     case _:
@@ -912,28 +906,28 @@ tests = TestSuite("Chain tests", [
   Assertion(
     match uncons_left(from_List([1, 2, 3])):
       case Some((head, tail)):
-        and_Bool(head.eq_Int(1), tail.to_List() matches [2, 3])
+        and(head.eq_Int(1), tail.to_List() matches [2, 3])
       case None:
         False,
     "uncons_left sanity"),
   Assertion(
     match uncons_right(from_List([1, 2, 3])):
       case Some((init, last)):
-        and_Bool(last.eq_Int(3), init.to_List() matches [1, 2])
+        and(last.eq_Int(3), init.to_List() matches [1, 2])
       case None:
         False,
     "uncons_right sanity"),
   Assertion(
     match uncons_left(from_Array(from_List_Array([1, 2, 3]))):
       case Some((head, tail)):
-        and_Bool(head.eq_Int(1), tail.to_List() matches [2, 3])
+        and(head.eq_Int(1), tail.to_List() matches [2, 3])
       case None:
         False,
     "uncons_left array sanity"),
   Assertion(
     match uncons_right(from_Array(from_List_Array([1, 2, 3]))):
       case Some((init, last)):
-        and_Bool(last.eq_Int(3), init.to_List() matches [1, 2])
+        and(last.eq_Int(3), init.to_List() matches [1, 2])
       case None:
         False,
     "uncons_right array sanity"),
@@ -977,7 +971,7 @@ tests = TestSuite("Chain tests", [
     deep_uncons_left_ok =
       match uncons_left(deep):
         case Some((head, tail)):
-          and_Bool(
+          and(
             head.eq_Int(20000),
             size(tail).eq_Int(19999))
         case None:
@@ -985,20 +979,20 @@ tests = TestSuite("Chain tests", [
     deep_uncons_right_ok =
       match uncons_right(deep):
         case Some((init, last)):
-          and_Bool(
+          and(
             last.eq_Int(1),
             size(init).eq_Int(19999))
         case None:
           False
-    Assertion(and_Bool(
-      and_Bool(
+    Assertion(and(
+      and(
         size(deep).eq_Int(20000),
         size_List(deep_list).eq_Int(20000)),
-      and_Bool(
-        and_Bool(
+      and(
+        and(
           foldl(deep, 0, add).eq_Int(expected_sum),
           foldr(deep, 0, (item, acc) -> item.add(acc)).eq_Int(expected_sum)),
-        and_Bool(
+        and(
           deep_uncons_left_ok,
           deep_uncons_right_ok))),
       "deep stack-safe operations")

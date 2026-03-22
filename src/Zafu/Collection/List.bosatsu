@@ -292,12 +292,6 @@ def ord_List(ord_item: Ord[a]) -> Ord[List[a]]:
 
 eq_List_Int = eq_List(eq_from_fn(eq_Int))
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 applicative_Option: Applicative[Option] = applicative_from_pure_map_map2(
   Some,
   (value, fn) -> (
@@ -355,7 +349,7 @@ split_at_take_drop_prop: Prop = forall_Prop(
     (front, back) = split_at(list, count)
     same_take = eq_Eq(eq_List_Int, front, take(list, count))
     same_drop = eq_Eq(eq_List_Int, back, drop(list, count))
-    Assertion(and_Bool(same_take, same_drop), "split_at take/drop law")
+    Assertion(and(same_take, same_drop), "split_at take/drop law")
   ))
 
 take_size_bound_prop: Prop = forall_Prop(
@@ -434,7 +428,7 @@ tests = TestSuite("Zafu/Collection/List tests", [
     match deep.traverse(traverse_List, applicative_Option, i -> Some(i.add(1))):
       case Some(mapped):
         Assertion(
-          and_Bool(mapped.foldl_List(0, add).eq_Int(expected_sum), size(mapped).eq_Int(deep_count)),
+          and(mapped.foldl_List(0, add).eq_Int(expected_sum), size(mapped).eq_Int(deep_count)),
           "traverse_List deep stack-safe",
         )
       case None:

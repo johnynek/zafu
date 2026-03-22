@@ -61,12 +61,6 @@ def bounds(range: Range, size: Size) -> (Int, Int):
   Range(_, bounds_fn) = range
   bounds_fn(size)
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 # Return the current lower bound for a size.
 def lower_bound(range: Range, size: Size) -> Int:
   (lower, _) = bounds(range, size)
@@ -155,7 +149,7 @@ tests = TestSuite("Zafu/Testing/HedgeHog/Range tests", [
     lower = sample_range.lower_bound(sample_size)
     upper = sample_range.upper_bound(sample_size)
     Assertion(
-      and_Bool(
+      and(
         cmp_Int(sampled_value, lower) matches GT | EQ,
         cmp_Int(sampled_value, upper) matches LT,
       ),

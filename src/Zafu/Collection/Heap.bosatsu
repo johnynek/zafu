@@ -350,12 +350,6 @@ def ord(inst: Ord[a]) -> Ord[Heap[a]]:
 # Property tests
 ############################
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 def eq_list_by_fn(eq_item: (a, a) -> Bool, left: List[a], right: List[a]) -> Bool:
   eq_Eq(eq_List_Collection(eq_from_fn(eq_item)), left, right)
 
@@ -384,7 +378,7 @@ def check_pop_sequence(heap: Heap[a]) -> Bool:
                   True
                 case Some(prev):
                   cmp_Ord(ord, prev, item) matches LT | EQ
-              next_ok = and_Bool(ok, and_Bool(step_size_ok, step_order_ok))
+              next_ok = and(ok, and(step_size_ok, step_order_ok))
               go(fuel.sub(1), next, Some(item), next_ok)
         else:
           False
@@ -536,7 +530,7 @@ heap_props: Prop = suite_Prop(
 tests = TestSuite("Heap tests", [
   (
     h = empty(ord_Int)
-    Assertion(and_Bool(is_empty(h), size(h).eq_Int(0)), "empty sanity")
+    Assertion(and(is_empty(h), size(h).eq_Int(0)), "empty sanity")
   ),
   Assertion(min(empty(ord_Int)) matches None, "empty min"),
   Assertion(pop_min(empty(ord_Int)) matches None, "empty pop"),
@@ -545,7 +539,7 @@ tests = TestSuite("Heap tests", [
   Assertion(
     match pop_min(from_List(ord_Int, [5, 1, 3])):
       case Some((head, tail)):
-        and_Bool(head.eq_Int(1), to_List(tail) matches [3, 5])
+        and(head.eq_Int(1), to_List(tail) matches [3, 5])
       case None:
         False,
     "pop_min sanity"
@@ -559,8 +553,8 @@ tests = TestSuite("Heap tests", [
     expected_sum = 20000.mul(20001).div(2)
     pop_ok = check_pop_sequence(deep)
     Assertion(
-      and_Bool(
-        and_Bool(size(deep).eq_Int(20000), foldl(deep, 0, add).eq_Int(expected_sum)),
+      and(
+        and(size(deep).eq_Int(20000), foldl(deep, 0, add).eq_Int(expected_sum)),
         pop_ok
       ),
       "deep stack-safe operations"

@@ -439,12 +439,6 @@ def to_List_option(items: Option[NonEmptyChain[a]]) -> Option[List[a]]:
     case None:
       None
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
   match value:
     case Some(item):
@@ -513,13 +507,13 @@ decomposition_tests = TestSuite("decomposition", [
   Assertion(
     match uncons(from_prepend(1, from_List_Chain([2, 3]))):
       case (head0, tail0):
-        and_Bool(head0.eq_Int(1), tail0.to_List_Chain() matches [2, 3]),
+        and(head0.eq_Int(1), tail0.to_List_Chain() matches [2, 3]),
     "uncons Prepend",
   ),
   Assertion(
     match uncons(from_append(from_List_Chain([1, 2]), 3)):
       case (head0, tail0):
-        and_Bool(head0.eq_Int(1), tail0.to_List_Chain() matches [2, 3]),
+        and(head0.eq_Int(1), tail0.to_List_Chain() matches [2, 3]),
     "uncons Append",
   ),
   Assertion(last(from_prepend(1, from_List_Chain([2, 3]))).eq_Int(3), "last Prepend"),
@@ -531,13 +525,13 @@ decomposition_tests = TestSuite("decomposition", [
   Assertion(
     match uncons_right(from_prepend(1, from_List_Chain([2, 3]))):
       case (init0, last0):
-        and_Bool(init0.to_List_Chain() matches [1, 2], last0.eq_Int(3)),
+        and(init0.to_List_Chain() matches [1, 2], last0.eq_Int(3)),
     "uncons_right Prepend",
   ),
   Assertion(
     match uncons_right(from_append(from_List_Chain([1, 2]), 3)):
       case (init0, last0):
-        and_Bool(init0.to_List_Chain() matches [1, 2], last0.eq_Int(3)),
+        and(init0.to_List_Chain() matches [1, 2], last0.eq_Int(3)),
     "uncons_right Append",
   ),
   Assertion(size(from_prepend(1, from_List_Chain([2, 3]))).eq_Int(3), "size"),

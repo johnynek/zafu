@@ -101,23 +101,11 @@ enum HashSet:
   Empty(hash_item: Hash[k])
   Root(hash_item: Hash[k], size: Int, root: Node[k])
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
-def not_Bool(value: Bool) -> Bool:
-  if value:
-    False
-  else:
-    True
-
 def eq_Bool(left: Bool, right: Bool) -> Bool:
   if left:
     right
   else:
-    not_Bool(right)
+    not(right)
 
 def fragment(entry_hash: Int, shift: Int) -> Int:
   (entry_hash >> shift) & fragment_mask
@@ -174,7 +162,7 @@ def find_entry_index(entries: Array[Entry[k]], key_hash: Int, key: k, eq_key: Eq
       case _:
         match get_Array(entries, idx):
           case Some(Entry(entry_hash, entry_key)):
-            if and_Bool(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
+            if and(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
               Some(idx)
             else:
               go(rem - 1, idx + 1)
@@ -222,7 +210,7 @@ def insert_entry_node_fuel(node: Node[k], entry: Entry[k], eq_key: Eq[k], shift:
             data_idx = bitmap_index(data_bitmap, bit)
             match get_Array(entries, data_idx):
               case Some(current):
-                same_key = and_Bool(entry_hash(current).eq_Int(entry_hash(entry)), eq_Eq(eq_key, entry_key(current), entry_key(entry)))
+                same_key = and(entry_hash(current).eq_Int(entry_hash(entry)), eq_Eq(eq_key, entry_key(current), entry_key(entry)))
                 if same_key:
                   (Indexed(data_bitmap, set_or_self_Array(entries, data_idx, entry), node_bitmap, children), 0)
                 else:
@@ -288,7 +276,7 @@ def remove_entry_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], 
             data_idx = bitmap_index(data_bitmap, bit)
             match get_Array(entries, data_idx):
               case Some(current):
-                same_key = and_Bool(entry_hash(current).eq_Int(key_hash), eq_Eq(eq_key, entry_key(current), key))
+                same_key = and(entry_hash(current).eq_Int(key_hash), eq_Eq(eq_key, entry_key(current), key))
                 if same_key:
                   next_entries = array_remove(entries, data_idx)
                   next_data_bitmap = data_bitmap.xor_Int(bit)
@@ -356,7 +344,7 @@ def contains_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shif
             data_idx = bitmap_index(data_bitmap, bit)
             match get_Array(entries, data_idx):
               case Some(Entry(entry_hash, entry_key)):
-                and_Bool(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key))
+                and(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key))
               case None:
                 False
           else:
@@ -683,8 +671,8 @@ def apply_add(set: HashSet[Int], model: List[Int], key: Int) -> (HashSet[Int], L
   (
     next_set,
     next_model,
-    and_Bool(
-      and_Bool(set_matches_model(next_set, next_model), invariants_ok(next_set)),
+    and(
+      and(set_matches_model(next_set, next_model), invariants_ok(next_set)),
       contains(next_set, key)
     )
   )
@@ -695,8 +683,8 @@ def apply_delete(set: HashSet[Int], model: List[Int], key: Int) -> (HashSet[Int]
   (
     next_set,
     next_model,
-    and_Bool(
-      and_Bool(set_matches_model(next_set, next_model), invariants_ok(next_set)),
+    and(
+      and(set_matches_model(next_set, next_model), invariants_ok(next_set)),
       eq_Bool(contains(next_set, key), model_contains(next_model, key))
     )
   )
@@ -704,7 +692,7 @@ def apply_delete(set: HashSet[Int], model: List[Int], key: Int) -> (HashSet[Int]
 def apply_query(set: HashSet[Int], model: List[Int], key: Int) -> (HashSet[Int], List[Int], Bool):
   expected = model_contains(model, key)
   actual = contains(set, key)
-  (set, model, and_Bool(eq_Bool(actual, expected), set_matches_model(set, model)))
+  (set, model, and(eq_Bool(actual, expected), set_matches_model(set, model)))
 
 def apply_alter(set: HashSet[Int], model: List[Int], key: Int, present: Bool) -> (HashSet[Int], List[Int], Bool):
   next_set = alter(set, key, _ -> present)
@@ -712,8 +700,8 @@ def apply_alter(set: HashSet[Int], model: List[Int], key: Int, present: Bool) ->
   (
     next_set,
     next_model,
-    and_Bool(
-      and_Bool(set_matches_model(next_set, next_model), invariants_ok(next_set)),
+    and(
+      and(set_matches_model(next_set, next_model), invariants_ok(next_set)),
       eq_Bool(contains(next_set, key), model_contains(next_model, key))
     )
   )
@@ -733,11 +721,11 @@ def run_ops(hash_item: Hash[Int], ops: List[Op]) -> Bool:
   def go(rem: List[Op], set: HashSet[Int], model: List[Int], ok: Bool) -> Bool:
     loop rem:
       case []:
-        and_Bool(and_Bool(ok, set_matches_model(set, model)), invariants_ok(set))
+        and(and(ok, set_matches_model(set, model)), invariants_ok(set))
       case [op, *tail]:
         if ok:
           (next_set, next_model, step_ok) = apply_op(set, model, op)
-          go(tail, next_set, next_model, and_Bool(ok, step_ok))
+          go(tail, next_set, next_model, and(ok, step_ok))
         else:
           False
   go(ops, empty(hash_item), [], True)
@@ -795,7 +783,7 @@ union_cross_hash_prop: Prop = forall_Prop(
 
     merged_model = right_model.foldl_List(left_model, (acc, key) -> model_updated(acc, key))
 
-    Assertion(and_Bool(set_matches_model(merged, merged_model), invariants_ok(merged)), "union cross-hash")
+    Assertion(and(set_matches_model(merged, merged_model), invariants_ok(merged)), "union cross-hash")
   ))
 
 intersection_difference_prop: Prop = forall_Prop(
@@ -820,9 +808,9 @@ intersection_difference_prop: Prop = forall_Prop(
     diff_model = right_model.foldl_List(left_model, (acc, key) -> model_remove(acc, key))
 
     Assertion(
-      and_Bool(
-        and_Bool(set_matches_model(inter, inter_model), set_matches_model(diff, diff_model)),
-        and_Bool(invariants_ok(inter), invariants_ok(diff))
+      and(
+        and(set_matches_model(inter, inter_model), set_matches_model(diff, diff_model)),
+        and(invariants_ok(inter), invariants_ok(diff))
       ),
       "intersection/difference model"
     )
@@ -843,7 +831,7 @@ adapter_prop: Prop = forall_Prop(
       hash_Hash(set_hash, left).eq_Int(hash_Hash(set_hash, right))
     else:
       True
-    Assertion(and_Bool(coherent, eq_Bool(equal, model_eq(left_model, right_model))), "adapter coherence")
+    Assertion(and(coherent, eq_Bool(equal, model_eq(left_model, right_model))), "adapter coherence")
   ))
 
 hashset_props: Prop = suite_Prop(
@@ -859,13 +847,13 @@ hashset_props: Prop = suite_Prop(
 tests = TestSuite("HashSet tests", [
   (
     s = empty(hash_Int)
-    Assertion(and_Bool(is_empty(s), and_Bool(size(s).eq_Int(0), invariants_ok(s))), "empty sanity")
+    Assertion(and(is_empty(s), and(size(s).eq_Int(0), invariants_ok(s))), "empty sanity")
   ),
   (
     s = singleton(hash_Int, 3)
     Assertion(
-      and_Bool(
-        and_Bool(size(s).eq_Int(1), contains(s, 3)),
+      and(
+        and(size(s).eq_Int(1), contains(s, 3)),
         invariants_ok(s)
       ),
       "singleton sanity"
@@ -874,8 +862,8 @@ tests = TestSuite("HashSet tests", [
   (
     s = from_List(hash_Int, [1, 2, 1])
     Assertion(
-      and_Bool(
-        and_Bool(and_Bool(size(s).eq_Int(2), contains(s, 1)), contains(s, 2)),
+      and(
+        and(and(size(s).eq_Int(2), contains(s, 1)), contains(s, 2)),
         invariants_ok(s)
       ),
       "from_List deduplicates"
@@ -888,9 +876,9 @@ tests = TestSuite("HashSet tests", [
     s3 = updated(s2, 3)
     s4 = remove(s3, 2)
     Assertion(
-      and_Bool(
-        and_Bool(
-          and_Bool(contains(s4, 1), contains(s4, 2) matches False),
+      and(
+        and(
+          and(contains(s4, 1), contains(s4, 2) matches False),
           contains(s4, 3)
         ),
         invariants_ok(s4)
@@ -902,7 +890,7 @@ tests = TestSuite("HashSet tests", [
     s0 = empty(hash_Int)
     s1 = alter(s0, 5, _ -> True)
     s2 = alter(s1, 5, _ -> False)
-    Assertion(and_Bool(and_Bool(size(s2).eq_Int(0), contains(s2, 5) matches False), invariants_ok(s2)), "alter insert/delete")
+    Assertion(and(and(size(s2).eq_Int(0), contains(s2, 5) matches False), invariants_ok(s2)), "alter insert/delete")
   ),
   (
     left = from_List(hash_Int, [1, 2])
@@ -911,12 +899,12 @@ tests = TestSuite("HashSet tests", [
     inter = intersection(left, right)
     diff = difference(left, right)
     Assertion(
-      and_Bool(
-        and_Bool(
-          and_Bool(and_Bool(contains(merged, 1), contains(merged, 3)), contains(inter, 2)),
+      and(
+        and(
+          and(and(contains(merged, 1), contains(merged, 3)), contains(inter, 2)),
           contains(diff, 2) matches False
         ),
-        and_Bool(invariants_ok(merged), and_Bool(invariants_ok(inter), invariants_ok(diff)))
+        and(invariants_ok(merged), and(invariants_ok(inter), invariants_ok(diff)))
       ),
       "bulk ops sanity"
     )

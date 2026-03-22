@@ -35,18 +35,6 @@ struct Ord[a](
   max_fn: (a, a) -> a,
 )
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
-def or_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    True
-  else:
-    right
-
 def eq_Comparison(left: Comparison, right: Comparison) -> Bool:
   (left, right) matches (LT, LT) | (EQ, EQ) | (GT, GT)
 
@@ -154,13 +142,13 @@ def laws_Ord(inst: Ord[a], x: a, y: a, z: a) -> Test:
     "antisymmetric",
   )
   transitive = Assertion(
-    if and_Bool(lteq(inst, x, y), lteq(inst, y, z)):
+    if and(lteq(inst, x, y), lteq(inst, y, z)):
       lteq(inst, x, z)
     else:
       True,
     "transitive",
   )
-  total = Assertion(or_Bool(lteq(inst, x, y), lteq(inst, y, x)), "total")
+  total = Assertion(or(lteq(inst, x, y), lteq(inst, y, x)), "total")
   eq_laws = laws_Eq(ord_to_eq(inst), x, y, z)
   TestSuite("Ord laws", [eq_laws, reflexive, antisymmetric, transitive, total])
 

@@ -42,12 +42,6 @@ from Zafu/Testing/HedgeHog import (
   run_Prop,
 )
 
-def and_Bool(left: Bool, right: Bool) -> Bool:
-  if left:
-    right
-  else:
-    False
-
 
 eq_Int_inst: Eq[Int] = eq_from_fn(eq_Int)
 
@@ -205,15 +199,15 @@ def monad_laws_hold(tree: LazyTree[Int], config: MonadLawConfig) -> Bool:
     )),
   )
 
-  and_Bool(
+  and(
     left_identity,
-    and_Bool(
+    and(
       right_identity,
-      and_Bool(
+      and(
         associativity,
-        and_Bool(
+        and(
           map_coherence,
-          and_Bool(tailrec_step_one, tailrec_step_two),
+          and(tailrec_step_one, tailrec_step_two),
         ),
       ),
     ),
