@@ -29,8 +29,8 @@ jobs:
       - name: Generate markdown docs
         run: |
           mkdir -p docs/markdown
-          ./bosatsu lib fetch
-          ./bosatsu lib doc \
+          ./bosatsu fetch
+          ./bosatsu doc \
             --outdir docs/markdown \
             --source_repo_url "https://github.com/${{ github.repository }}/blob/main"
       - name: Validate generated source URLs

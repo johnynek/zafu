@@ -1,16 +1,9 @@
 package Zafu/Collection/List
 
-from Bosatsu/List import (
-  any as any_List,
-  exists as exists_List,
-  get_List as get_List_base,
-  head as head_List,
-  for_all as for_all_List,
-  set_List as set_List_base,
-  sum as sum_List,
-  sort as sort_List,
-  uncons as uncons_List,
-  zip as zip_List,
+from Bosatsu/Collection/Array import (
+  from_List_Array,
+  to_List_Array,
+  sort_Array,
 )
 from Bosatsu/Num/Float64 import (
   addf,
@@ -81,38 +74,103 @@ export (
 )
 
 def any(items: List[Bool]) -> Bool:
-  any_List(items)
+  def go(rem: List[Bool]) -> Bool:
+    loop rem:
+      case []:
+        False
+      case [head, *tail]:
+        if head:
+          True
+        else:
+          go(tail)
+  go(items)
 
 def exists(items: List[a], pred: a -> Bool) -> Bool:
-  exists_List(items, pred)
+  def go(rem: List[a]) -> Bool:
+    loop rem:
+      case []:
+        False
+      case [head, *tail]:
+        if pred(head):
+          True
+        else:
+          go(tail)
+  go(items)
 
 def for_all(items: List[a], pred: a -> Bool) -> Bool:
-  for_all_List(items, pred)
+  def go(rem: List[a]) -> Bool:
+    loop rem:
+      case []:
+        True
+      case [head, *tail]:
+        if pred(head):
+          go(tail)
+        else:
+          False
+  go(items)
 
 def size(items: List[a]) -> Int:
   # Bosatsu/List.size returns Nat; this module's API exposes Int.
   items.foldl_List(0, (acc, _) -> acc.add(1))
 
 def head(items: List[a]) -> Option[a]:
-  head_List(items)
+  match items:
+    case []:
+      None
+    case [item, *_]:
+      Some(item)
 
 def uncons(items: List[a]) -> Option[(a, List[a])]:
-  uncons_List(items)
+  match items:
+    case []:
+      None
+    case [head, *tail]:
+      Some((head, tail))
 
 def get_List(items: List[a], idx: Int) -> Option[a]:
-  get_List_base(items, idx)
+  if cmp_Int(idx, 0) matches LT:
+    None
+  else:
+    def go(rem: List[a], index: Int) -> Option[a]:
+      loop (rem, index):
+        case ([], _):
+          None
+        case ([head, *_], 0):
+          Some(head)
+        case ([_, *tail], _):
+          go(tail, index.sub(1))
+    go(items, idx)
 
 def set_List(items: List[a], idx: Int, value: a) -> Option[List[a]]:
-  set_List_base(items, idx, value)
+  if cmp_Int(idx, 0) matches LT:
+    None
+  else:
+    def go(rem: List[a], index: Int, rev_prefix: List[a]) -> Option[List[a]]:
+      loop (rem, index, rev_prefix):
+        case ([], _, _):
+          None
+        case ([_, *tail], 0, _):
+          prefix = rev_prefix.reverse()
+          Some([*prefix, value, *tail])
+        case ([head, *tail], _, _):
+          go(tail, index.sub(1), [head, *rev_prefix])
+    go(items, idx, [])
 
 def zip(left: List[a], right: List[b]) -> List[(a, b)]:
-  zip_List(left, right)
+  def go(left: List[a], right: List[b], rev_acc: List[(a, b)]) -> List[(a, b)]:
+    loop (left, right, rev_acc):
+      case ([left_h, *left_t], [right_h, *right_t], _):
+        go(left_t, right_t, [(left_h, right_h), *rev_acc])
+      case _:
+        rev_acc.reverse()
+  go(left, right, [])
 
 def sort(order: Order[a], items: List[a]) -> List[a]:
-  sort_List(order, items)
+  Order(cmp) = order
+  to_List_Array(sort_Array(from_List_Array(items), cmp))
 
 def sum(items: List[Int]) -> Int:
-  sum_List(items)
+  items.foldl_List(0, (acc, item) -> acc.add(item))
 
 def sumf(items: List[Float64]) -> Float64:
   items.foldl_List(0.0, addf)
@@ -157,7 +215,7 @@ def filter(items: List[a], pred: a -> Bool) -> List[a]:
 
 def take(items: List[a], size: Int) -> List[a]:
     def go(items: List[a], size: Int, acc: List[a]):
-        recur items:
+        loop items:
             case _ if cmp_Int(size, 0) matches LT | EQ: acc.reverse()
             case []: acc.reverse()
             case [h, *t]:
@@ -166,7 +224,7 @@ def take(items: List[a], size: Int) -> List[a]:
 
 def drop(items: List[a], size: Int) -> List[a]:
     def go(items: List[a], size: Int):
-        recur items:
+        loop items:
             case _ if cmp_Int(size, 0) matches LT | EQ: items
             case []: []
             case [_, *t]: go(t, size.sub(1))
@@ -174,7 +232,7 @@ def drop(items: List[a], size: Int) -> List[a]:
 
 def split_at(items: List[a], size: Int) -> (List[a], List[a]):
     def go(items: List[a], size: Int, acc: List[a]):
-        recur items:
+        loop items:
             case _ if cmp_Int(size, 0) matches LT | EQ: (acc.reverse(), items)
             case []: (acc.reverse(), [])
             case [h, *t]:

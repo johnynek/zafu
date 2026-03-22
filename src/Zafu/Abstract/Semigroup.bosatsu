@@ -36,7 +36,7 @@ struct Semigroup[a](
 # Default repeated-combine implementation with logarithmic combine count.
 def combine_n_positive_from_combine(combine_fn: (a, a) -> a, value: a, n: Int) -> a:
   def go(rem: Int, acc: a, power: a) -> a:
-    recur rem:
+    loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         acc
       case _:
@@ -54,7 +54,7 @@ def combine_map_all_from_combine(combine_fn: (a, a) -> a, head: b, tail: List[b]
 
 def split_at_List(items: List[a], size: Int) -> (List[a], List[a]):
   def go(items: List[a], size: Int, rev_front: List[a]) -> (List[a], List[a]):
-    recur items:
+    loop items:
       case _ if cmp_Int(size, 0) matches LT | EQ:
         (rev_front.reverse(), items)
       case []:

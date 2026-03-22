@@ -14,7 +14,7 @@ jobs:
           sudo apt-get install -y libgc1 libgc-dev pkg-config pandoc
       - name: Fetch Bosatsu CLI and runtime
         run: ./bosatsu --fetch
-      - name: Run lib check, lib test, and dry-run publish
+      - name: Run check, test, and dry-run publish
         run: scripts/test.sh
       - name: Generate docs and convert markdown to HTML
         shell: bash
@@ -24,8 +24,8 @@ jobs:
           # Use the checked-out merge SHA so generated links always match docs input.
           SOURCE_REF="${{ github.sha }}"
           mkdir -p docs/markdown docs/html
-          ./bosatsu lib fetch
-          ./bosatsu lib doc \
+          ./bosatsu fetch
+          ./bosatsu doc \
             --outdir docs/markdown \
             --source_repo_url "https://github.com/${SOURCE_REPO}/blob/${SOURCE_REF}"
           mapfile -t source_urls < <(
