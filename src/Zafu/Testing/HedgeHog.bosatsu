@@ -6,7 +6,6 @@ from Bosatsu/Char import (
   string_to_Int_List,
   int_List_to_String,
 )
-from Bosatsu/List import eq_List
 from Bosatsu/Lazy import (
   get_Lazy, lazy
 )
@@ -182,6 +181,20 @@ def sampled_Gen(run_value: (Size, Seed) -> (Seed, a), shrink: a -> LazyList[a]) 
 def range_to_Gen(range: Range, shrink: Int -> LazyList[Int]) -> Gen[Int]:
     sampled_Gen((size, seed) -> sample_Int(range, size, seed), shrink)
 
+def eq_Int_List(left: List[Int], right: List[Int]) -> Bool:
+  def go(left: List[Int], right: List[Int]) -> Bool:
+    loop (left, right):
+      case ([], []):
+        True
+      case ([left_h, *left_t], [right_h, *right_t]):
+        if left_h.eq_Int(right_h):
+          go(left_t, right_t)
+        else:
+          False
+      case _:
+        False
+  go(left, right)
+
 # Lift a sampler with no shrink candidates into a generator.
 def no_shrink_Gen(run_value: (Size, Seed) -> (Seed, a)) -> Gen[a]:
   Gen((size, seed) -> (
@@ -320,7 +333,7 @@ def first_failure(test: Test) -> Option[(List[String], String)]:
   go(max_suite_depth, [([], test)])
 
 def split_first_failing_tree(values: LazyList[LazyTree[a]], test_fn: a -> Test) -> Option[(LazyTree[a], LazyList[LazyTree[a]])]:
-  recur values:
+  loop values:
     case Empty_LazyList:
       None
     case Cons_LazyList(head, tail):
@@ -859,7 +872,7 @@ predef_generators_prop: Prop = suite_Prop("Predef generators", [
       case Some(i):
         i.eq_Int(i)
   )),
-  forall_True_Prop(list_Gen(int_Gen), "List[Int]", show_Int_List, list -> eq_List(eq_Int)(list.reverse().reverse(), list)),
+  forall_True_Prop(list_Gen(int_Gen), "List[Int]", show_Int_List, list -> eq_Int_List(list.reverse().reverse(), list)),
   forall_True_Prop(tuple2_Gen(int_Gen, bool_Gen), "Tuple2[Int, Bool]", _ -> "tuple2", ((i, b)) -> i.eq_Int(i) if b else i.eq_Int(i)),
   forall_True_Prop(tuple3_Gen(int_Gen, bool_Gen, char_Gen), "Tuple3", _ -> "tuple3", ((i, _, c)) -> and_Bool(i.eq_Int(i), char_to_Int(c).eq_Int(char_to_Int(c)))),
   forall_True_Prop(tuple4_Gen(int_Gen, bool_Gen, char_Gen, string_Gen), "Tuple4", _ -> "tuple4", ((i, _, c, s)) -> and_Bool(i.eq_Int(i), and_Bool(char_to_Int(c).eq_Int(char_to_Int(c)), int_List_to_String(string_to_Int_List(s)) matches Some(_)))),

@@ -134,7 +134,7 @@ def prepare_input(size: Int) -> BenchInput:
 
 def run_iterations(iterations: Int, seed0: Int, run_once: Int -> Int) -> Prog[IOError, Int]:
   def go(rem: Int, seed: Int, sink: Int) -> Prog[IOError, Int]:
-    recur rem:
+    loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         pure(sink)
       case _:

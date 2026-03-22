@@ -99,11 +99,11 @@ fi
 if [[ ${#LIB_NAMES[@]} -gt 0 ]]; then
   for name in "${LIB_NAMES[@]}"; do
     echo "  name = $name"
-    ./bosatsu lib fetch \
+    ./bosatsu fetch \
       --name "$name"
   done
 else
-  ./bosatsu lib fetch
+  ./bosatsu fetch
 fi
 
 publish_repo_root="$REPO_ROOT"
@@ -144,7 +144,7 @@ fi
 
 (
   cd "$publish_repo_root"
-  ./bosatsu lib publish \
+  ./bosatsu publish \
     "${cas_arg[@]}" \
     --outdir "$OUTDIR" \
     --git_sha "$GIT_SHA" \

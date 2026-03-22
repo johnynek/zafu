@@ -275,17 +275,10 @@ def insert_entry_node_fuel(node: Node[k, v], entry: Entry[k, v], eq_key: Eq[k], 
               case Some(first):
                 base = merge_two_entries(first, entry, shift)
                 cnt = size_Array(entries)
-                (_, final_node) = int_loop(cnt + 1, (1, base), (rem, state) -> (
-                  (idx, acc) = state
-                  if cmp_Int(idx, cnt) matches LT:
-                    match get_Array(entries, idx):
-                      case Some(item):
-                        (next_acc, _) = insert_entry_node_fuel(acc, item, eq_key, shift, fuel.sub(1))
-                        (rem.sub(1), (idx + 1, next_acc))
-                      case None:
-                        (rem.sub(1), (idx + 1, acc))
-                  else:
-                    (0, state)
+                rest_entries = slice_Array(entries, 1, cnt)
+                final_node = foldl_Array(rest_entries, base, (acc, item) -> (
+                  (next_acc, _) = insert_entry_node_fuel(acc, item, eq_key, shift, fuel.sub(1))
+                  next_acc
                 ))
                 (final_node, 1)
 
@@ -362,7 +355,7 @@ def remove_entry_node(node: Node[k, v], key_hash: Int, key: k, eq_key: Eq[k], sh
   remove_entry_node_fuel(node, key_hash, key, eq_key, shift, 4096)
 
 def get_node_fuel(node: Node[k, v], key_hash: Int, key: k, eq_key: Eq[k], shift: Int, fuel: Int) -> Option[v]:
-  recur fuel:
+  loop fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       None
     case _:
@@ -521,18 +514,7 @@ def fold_entries_node_fuel(node: Node[k, v], init: b, fn: (b, Entry[k, v]) -> b,
       match node:
         case Indexed(_, entries, _, children):
           acc1 = foldl_Array(entries, init, fn)
-          cnt = size_Array(children)
-          (_, acc_final) = int_loop(cnt + 1, (0, acc1), (rem, state) -> (
-            (idx, acc) = state
-            if cmp_Int(idx, cnt) matches LT:
-              match get_Array(children, idx):
-                case Some(child):
-                  (rem.sub(1), (idx + 1, fold_entries_node_fuel(child, acc, fn, fuel.sub(1))))
-                case None:
-                  (rem.sub(1), (idx + 1, acc))
-            else:
-              (0, state)
-          ))
+          acc_final = foldl_Array(children, acc1, (acc, child) -> fold_entries_node_fuel(child, acc, fn, fuel.sub(1)))
           acc_final
         case Collision(_, entries):
           foldl_Array(entries, init, fn)
@@ -556,19 +538,7 @@ def transform_node_fuel(node: Node[k, v], fn: (k, v) -> w, fuel: Int) -> Node[k,
       match node:
         case Indexed(data_bitmap, entries, node_bitmap, children):
           next_entries = map_Array(entries, ((Entry(entry_hash, key, value)) -> Entry(entry_hash, key, fn(key, value))))
-          cnt = size_Array(children)
-          (_, rev_children) = int_loop(cnt + 1, (0, []), (rem, state) -> (
-            (idx, rev_children) = state
-            if cmp_Int(idx, cnt) matches LT:
-              match get_Array(children, idx):
-                case Some(child):
-                  (rem.sub(1), (idx + 1, [transform_node_fuel(child, fn, fuel.sub(1)), *rev_children]))
-                case None:
-                  (rem.sub(1), (idx + 1, rev_children))
-            else:
-              (0, state)
-          ))
-          next_children = from_List_Array(rev_children.reverse())
+          next_children = map_Array(children, child -> transform_node_fuel(child, fn, fuel.sub(1)))
           Indexed(data_bitmap, next_entries, node_bitmap, next_children)
         case Collision(collision_hash, entries):
           next_entries = map_Array(entries, ((Entry(entry_hash, key, value)) -> Entry(entry_hash, key, fn(key, value))))

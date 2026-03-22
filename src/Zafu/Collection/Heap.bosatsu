@@ -1,9 +1,5 @@
 package Zafu/Collection/Heap
 
-from Bosatsu/List import (
-  eq_List,
-  sort,
-)
 from Zafu/Testing/HedgeHog import (
   Gen,
   Prop,
@@ -14,7 +10,11 @@ from Zafu/Testing/HedgeHog import (
   suite_Prop,
   run_Prop,
 )
-from Zafu/Collection/List import size as size_List
+from Zafu/Collection/List import (
+  eq_List as eq_List_Collection,
+  size as size_List,
+  sort,
+)
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_specialized,
@@ -219,13 +219,17 @@ def merge_round(ord: Ord[a], trees: List[Tree[a]]) -> List[Tree[a]]:
 def from_List(ord: Ord[a], items: List[a]) -> Heap[a]:
   trees0 = trees_from_list(items)
   fuel = size_List(items).add(8)
-  trees_final = int_loop(fuel, trees0, (rem, trees) -> (
-    match trees:
-      case [] | [_]:
-        (0, trees)
+  def go(rem: Int, trees: List[Tree[a]]) -> List[Tree[a]]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        trees
       case _:
-        (rem.sub(1), merge_round(ord, trees))
-  ))
+        match trees:
+          case [] | [_]:
+            trees
+          case _:
+            go(rem.sub(1), merge_round(ord, trees))
+  trees_final = go(fuel, trees0)
   match trees_final:
     case []:
       empty(ord)
@@ -352,6 +356,9 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
+def eq_list_by_fn(eq_item: (a, a) -> Bool, left: List[a], right: List[a]) -> Bool:
+  eq_Eq(eq_List_Collection(eq_from_fn(eq_item)), left, right)
+
 def sort_Int(list: List[Int]) -> List[Int]:
   sort(Order(cmp_Int), list)
 
@@ -432,7 +439,7 @@ roundtrip_prop: Prop = forall_Prop(
     heap = from_List(ord_Int, list)
     expected = sort_Int(list)
     actual = to_List(heap)
-    Assertion(eq_List(eq_Int)(actual, expected), "roundtrip sorted")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "roundtrip sorted")
   ))
 
 size_prop: Prop = forall_Prop(
@@ -482,7 +489,7 @@ eq_prop: Prop = forall_Prop(
   ((left, right)) -> (
     left_heap = from_List(ord_Int, left)
     right_heap = from_List(ord_Int, right)
-    expected = eq_List(eq_Int)(sort_Int(left), sort_Int(right))
+    expected = eq_list_by_fn(eq_Int, sort_Int(left), sort_Int(right))
     heap_eq = eq(eq_Int_inst)
     actual = eq_Eq(heap_eq, left_heap, right_heap)
     Assertion(eq_Eq(eq_Bool_inst, actual, expected), "eq law")
@@ -500,7 +507,7 @@ combine_cross_order_prop: Prop = forall_Prop(
     else:
       sort_Int([*left, *right])
     actual = to_List(combined)
-    Assertion(eq_List(eq_Int)(actual, expected), "cross-order combine")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "cross-order combine")
   ))
 
 invariant_prop: Prop = forall_Prop(

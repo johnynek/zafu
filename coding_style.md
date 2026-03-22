@@ -13,7 +13,7 @@ This guide is for experienced programmers (or coding agents) who want to be prod
 2. Typecheck continuously while editing:
 
 ```bash
-./bosatsu lib check
+./bosatsu check
 ```
 
 3. Keep incomplete code compiling with `todo(...)` stubs.
@@ -28,7 +28,7 @@ This is a key iteration trick: stub unfinished logic, keep `lib check` green, an
 4. Run tests when a unit of work is complete:
 
 ```bash
-./bosatsu lib test
+./bosatsu test
 ```
 
 5. Validate publishability in CI/local without mutating repo config:

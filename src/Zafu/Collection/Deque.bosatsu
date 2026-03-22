@@ -1,6 +1,4 @@
 package Zafu/Collection/Deque
-
-from Bosatsu/List import eq_List
 from Zafu/Testing/HedgeHog import (
   Gen,
   Prop,
@@ -31,7 +29,14 @@ from Zafu/Abstract/Traverse import (
   traverse,
   traverse_specialized,
 )
-from Zafu/Collection/List import size as size_List
+from Zafu/Abstract/Eq import (
+  eq_from_fn,
+  eq as eq_Eq,
+)
+from Zafu/Collection/List import (
+  eq_List as eq_List_Collection,
+  size as size_List,
+)
 from Zafu/Control/IterState import (
   IterState,
   Done,
@@ -300,6 +305,9 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
+def eq_list_by_fn(eq_item: (a, a) -> Bool, left: List[a], right: List[a]) -> Bool:
+  eq_Eq(eq_List_Collection(eq_from_fn(eq_item)), left, right)
+
 def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
   match value:
     case Some(item):
@@ -355,7 +363,7 @@ def eq_dequeue_result(actual: Option[(Int, Queue[Int])], expected: Option[(Int, 
     case (Some((actual_head, actual_tail)), Some((expected_head, expected_tail))):
       and_Bool(
         actual_head.eq_Int(expected_head),
-        eq_List(eq_Int)(to_List(actual_tail), expected_tail)
+        eq_list_by_fn(eq_Int, to_List(actual_tail), expected_tail)
       )
     case _:
       False
@@ -367,7 +375,7 @@ def eq_unqueue_result(actual: Option[(Queue[Int], Int)], expected: Option[(List[
     case (Some((actual_init, actual_last)), Some((expected_init, expected_last))):
       and_Bool(
         actual_last.eq_Int(expected_last),
-        eq_List(eq_Int)(to_List(actual_init), expected_init)
+        eq_list_by_fn(eq_Int, to_List(actual_init), expected_init)
       )
     case _:
       False
@@ -396,7 +404,7 @@ roundtrip_prop: Prop = forall_Prop(
   "to_List(from_List(list)) == list",
   list -> (
     queue = from_List(list)
-    Assertion(eq_List(eq_Int)(to_List(queue), list), "roundtrip")
+    Assertion(eq_list_by_fn(eq_Int, to_List(queue), list), "roundtrip")
   ))
 
 size_prop: Prop = forall_Prop(
@@ -433,7 +441,7 @@ enqueue_prop: Prop = forall_Prop(
     queue = from_List(list)
     expected = [*list, item]
     actual = to_List(enqueue(queue, item))
-    Assertion(eq_List(eq_Int)(actual, expected), "enqueue law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "enqueue law")
   ))
 
 push_stack_prop: Prop = forall_Prop(
@@ -443,7 +451,7 @@ push_stack_prop: Prop = forall_Prop(
     queue = from_List(list)
     expected = [item, *list]
     actual = to_List(push_stack(queue, item))
-    Assertion(eq_List(eq_Int)(actual, expected), "push_stack law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "push_stack law")
   ))
 
 dequeue_prop: Prop = forall_Prop(
@@ -474,7 +482,7 @@ concat_prop: Prop = forall_Prop(
     right_queue = from_List(right)
     expected = [*left, *right]
     actual = to_List(concat(left_queue, right_queue))
-    Assertion(eq_List(eq_Int)(actual, expected), "concat law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "concat law")
   ))
 
 foldl_prop: Prop = forall_Prop(
@@ -502,7 +510,7 @@ eq_prop: Prop = forall_Prop(
   "eq agrees with list equality",
   ((left, right)) -> (
     actual = eq(eq_Int)(from_List(left), from_List(right))
-    expected = eq_List(eq_Int)(left, right)
+    expected = eq_list_by_fn(eq_Int, left, right)
     Assertion(eq_Bool(actual, expected), "eq law")
   ))
 
