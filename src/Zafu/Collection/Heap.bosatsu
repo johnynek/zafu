@@ -11,6 +11,7 @@ from Zafu/Testing/HedgeHog import (
   run_Prop,
 )
 from Zafu/Collection/List import (
+  eq_List as eq_List_Collection,
   size as size_List,
   sort,
 )
@@ -355,21 +356,8 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
-def eq_List(eq_item: (a, a) -> Bool) -> (List[a], List[a]) -> Bool:
-  (left, right) -> (
-    def go(left: List[a], right: List[a]) -> Bool:
-      loop (left, right):
-        case ([], []):
-          True
-        case ([left_h, *left_t], [right_h, *right_t]):
-          if eq_item(left_h, right_h):
-            go(left_t, right_t)
-          else:
-            False
-        case _:
-          False
-    go(left, right)
-  )
+def eq_list_by_fn(eq_item: (a, a) -> Bool, left: List[a], right: List[a]) -> Bool:
+  eq_Eq(eq_List_Collection(eq_from_fn(eq_item)), left, right)
 
 def sort_Int(list: List[Int]) -> List[Int]:
   sort(Order(cmp_Int), list)
@@ -451,7 +439,7 @@ roundtrip_prop: Prop = forall_Prop(
     heap = from_List(ord_Int, list)
     expected = sort_Int(list)
     actual = to_List(heap)
-    Assertion(eq_List(eq_Int)(actual, expected), "roundtrip sorted")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "roundtrip sorted")
   ))
 
 size_prop: Prop = forall_Prop(
@@ -501,7 +489,7 @@ eq_prop: Prop = forall_Prop(
   ((left, right)) -> (
     left_heap = from_List(ord_Int, left)
     right_heap = from_List(ord_Int, right)
-    expected = eq_List(eq_Int)(sort_Int(left), sort_Int(right))
+    expected = eq_list_by_fn(eq_Int, sort_Int(left), sort_Int(right))
     heap_eq = eq(eq_Int_inst)
     actual = eq_Eq(heap_eq, left_heap, right_heap)
     Assertion(eq_Eq(eq_Bool_inst, actual, expected), "eq law")
@@ -519,7 +507,7 @@ combine_cross_order_prop: Prop = forall_Prop(
     else:
       sort_Int([*left, *right])
     actual = to_List(combined)
-    Assertion(eq_List(eq_Int)(actual, expected), "cross-order combine")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "cross-order combine")
   ))
 
 invariant_prop: Prop = forall_Prop(

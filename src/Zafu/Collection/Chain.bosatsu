@@ -40,6 +40,8 @@ from Zafu/Abstract/Traverse import (
 from Zafu/Abstract/Eq import (
   Eq,
   eq_by,
+  eq_from_fn,
+  eq as eq_Eq,
 )
 from Zafu/Abstract/Ord import (
   Ord,
@@ -68,6 +70,7 @@ from Zafu/Abstract/Instances/Predef import (
   hash_List as hash_List_inst,
 )
 from Zafu/Collection/List import (
+  eq_List as eq_List_Collection,
   size as size_List,
   get_List,
 )
@@ -603,21 +606,8 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
-def eq_List(eq_item: (a, a) -> Bool) -> (List[a], List[a]) -> Bool:
-  (left, right) -> (
-    def go(left: List[a], right: List[a]) -> Bool:
-      loop (left, right):
-        case ([], []):
-          True
-        case ([left_h, *left_t], [right_h, *right_t]):
-          if eq_item(left_h, right_h):
-            go(left_t, right_t)
-          else:
-            False
-        case _:
-          False
-    go(left, right)
-  )
+def eq_list_by_fn(eq_item: (a, a) -> Bool, left: List[a], right: List[a]) -> Bool:
+  eq_Eq(eq_List_Collection(eq_from_fn(eq_item)), left, right)
 
 def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
   match value:
@@ -673,7 +663,7 @@ def eq_uncons_left(
     case (Some((actual_head, actual_tail)), Some((expected_head, expected_tail))):
       and_Bool(
         actual_head.eq_Int(expected_head),
-        eq_List(eq_Int)(to_List(actual_tail), expected_tail))
+        eq_list_by_fn(eq_Int, to_List(actual_tail), expected_tail))
     case _:
       False
 
@@ -687,7 +677,7 @@ def eq_uncons_right(
     case (Some((actual_init, actual_last)), Some((expected_init, expected_last))):
       and_Bool(
         actual_last.eq_Int(expected_last),
-        eq_List(eq_Int)(to_List(actual_init), expected_init))
+        eq_list_by_fn(eq_Int, to_List(actual_init), expected_init))
     case _:
       False
 
@@ -728,7 +718,7 @@ roundtrip_prop: Prop = forall_Prop(
   "to_List(from_List(list)) == list",
   list -> (
     actual = to_List(from_List(list))
-    Assertion(eq_List(eq_Int)(actual, list), "roundtrip")
+    Assertion(eq_list_by_fn(eq_Int, actual, list), "roundtrip")
   ))
 
 size_prop: Prop = forall_Prop(
@@ -745,7 +735,7 @@ singleton_prop: Prop = forall_Prop(
   item -> (
     chain = singleton(item)
     as_list = to_List(chain)
-    Assertion(eq_List(eq_Int)(as_list, [item]), "singleton law")
+    Assertion(eq_list_by_fn(eq_Int, as_list, [item]), "singleton law")
   ))
 
 get_prop: Prop = forall_Prop(
@@ -796,7 +786,7 @@ concat_prop: Prop = forall_Prop(
     right_chain = from_List(right)
     actual = to_List(concat(left_chain, right_chain))
     expected = [*left, *right]
-    Assertion(eq_List(eq_Int)(actual, expected), "concat law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "concat law")
   ))
 
 concat_all_prop: Prop = forall_Prop(
@@ -806,7 +796,7 @@ concat_all_prop: Prop = forall_Prop(
     chains = lists.map_List(from_List)
     expected = lists.foldl_List([], (acc, list) -> [*acc, *list])
     actual = to_List(concat_all(chains))
-    Assertion(eq_List(eq_Int)(actual, expected), "concat_all law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "concat_all law")
   ))
 
 prepend_prop: Prop = forall_Prop(
@@ -816,7 +806,7 @@ prepend_prop: Prop = forall_Prop(
     chain = from_List(list)
     actual = to_List(prepend(item, chain))
     expected = [item, *list]
-    Assertion(eq_List(eq_Int)(actual, expected), "prepend law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "prepend law")
   ))
 
 append_prop: Prop = forall_Prop(
@@ -826,7 +816,7 @@ append_prop: Prop = forall_Prop(
     chain = from_List(list)
     actual = to_List(append(chain, item))
     expected = [*list, item]
-    Assertion(eq_List(eq_Int)(actual, expected), "append law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "append law")
   ))
 
 foldl_prop: Prop = forall_Prop(
@@ -857,7 +847,7 @@ map_prop: Prop = forall_Prop(
     fn = i -> i.add(1)
     expected = list.map_List(fn)
     actual = to_List(map(chain, fn))
-    Assertion(eq_List(eq_Int)(actual, expected), "map law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "map law")
   ))
 
 filter_prop: Prop = forall_Prop(
@@ -868,7 +858,7 @@ filter_prop: Prop = forall_Prop(
     keep_even = i -> mod_Int(i, 2).eq_Int(0)
     expected = [i for i in list if keep_even(i)]
     actual = to_List(filter(chain, keep_even))
-    Assertion(eq_List(eq_Int)(actual, expected), "filter law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "filter law")
   ))
 
 flat_map_prop: Prop = forall_Prop(
@@ -879,7 +869,7 @@ flat_map_prop: Prop = forall_Prop(
     fn = i -> from_List([i, i.add(1)])
     expected = flat_map_model(list)
     actual = to_List(chain.flat_map(fn))
-    Assertion(eq_List(eq_Int)(actual, expected), "flat_map law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "flat_map law")
   ))
 
 chain_props: Prop = suite_Prop(

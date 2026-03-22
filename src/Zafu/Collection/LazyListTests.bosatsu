@@ -6,6 +6,10 @@ from Bosatsu/Lazy import (
   get_Lazy,
 )
 from Zafu/Abstract/Applicative import Applicative
+from Zafu/Abstract/Eq import (
+  eq_from_fn,
+  eq as eq_Eq,
+)
 from Zafu/Abstract/Instances/Predef import (
   applicative_Option,
 )
@@ -13,6 +17,7 @@ from Zafu/Abstract/Traverse import (
   traverse,
 )
 from Zafu/Collection/List import (
+  eq_List as eq_List_Collection,
   size as size_List,
 )
 from Zafu/Collection/LazyList import (
@@ -52,21 +57,8 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
-def eq_List(eq_item: (a, a) -> Bool) -> (List[a], List[a]) -> Bool:
-  (left, right) -> (
-    def go(left: List[a], right: List[a]) -> Bool:
-      loop (left, right):
-        case ([], []):
-          True
-        case ([left_h, *left_t], [right_h, *right_t]):
-          if eq_item(left_h, right_h):
-            go(left_t, right_t)
-          else:
-            False
-        case _:
-          False
-    go(left, right)
-  )
+def eq_list_by_fn(eq_item: (a, a) -> Bool, left: List[a], right: List[a]) -> Bool:
+  eq_Eq(eq_List_Collection(eq_from_fn(eq_item)), left, right)
 
 def keep_even_Option_Int(value: Int) -> Option[Int]:
   if mod_Int(value, 2) matches 0:
@@ -88,7 +80,7 @@ def eq_uncons(actual: Option[(Lazy[Int], Lazy[LazyList[Int]])], expected: Option
     case (Some((actual_head, actual_tail)), Some((expected_head, expected_tail))):
       and_Bool(
         get_Lazy(actual_head).eq_Int(expected_head),
-        eq_List(eq_Int)(to_List(get_Lazy(actual_tail)), expected_tail)
+        eq_list_by_fn(eq_Int, to_List(get_Lazy(actual_tail)), expected_tail)
       )
     case _:
       False
@@ -118,7 +110,7 @@ roundtrip_prop: Prop = forall_Prop(
   rand_list_int,
   "to_List(from_List(list)) == list",
   list -> (
-    Assertion(eq_List(eq_Int)(to_List(from_List(list)), list), "roundtrip")
+    Assertion(eq_list_by_fn(eq_Int, to_List(from_List(list)), list), "roundtrip")
   ))
 
 uncons_prop: Prop = forall_Prop(
@@ -141,7 +133,7 @@ cons_prop: Prop = forall_Prop(
         Assertion(
           and_Bool(
             get_Lazy(actual_head).eq_Int(head),
-            eq_List(eq_Int)(to_List(get_Lazy(actual_tail)), tail_list)
+            eq_list_by_fn(eq_Int, to_List(get_Lazy(actual_tail)), tail_list)
           ),
           "cons law"
         )
@@ -159,7 +151,7 @@ cons_strict_prop: Prop = forall_Prop(
         Assertion(
           and_Bool(
             get_Lazy(actual_head).eq_Int(head),
-            eq_List(eq_Int)(to_List(get_Lazy(actual_tail)), tail_list)
+            eq_list_by_fn(eq_Int, to_List(get_Lazy(actual_tail)), tail_list)
           ),
           "cons strict law"
         )
@@ -173,7 +165,7 @@ concat_prop: Prop = forall_Prop(
   ((left, right)) -> (
     expected = [*left, *right]
     actual = to_List(concat_LazyList(from_List(left), from_List(right)))
-    Assertion(eq_List(eq_Int)(actual, expected), "concat law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "concat law")
   ))
 
 map_prop: Prop = forall_Prop(
@@ -183,7 +175,7 @@ map_prop: Prop = forall_Prop(
     fn = i -> i.add(1)
     expected = list.map_List(fn)
     actual = to_List(map(from_List(list), fn))
-    Assertion(eq_List(eq_Int)(actual, expected), "map law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "map law")
   ))
 
 flat_map_prop: Prop = forall_Prop(
@@ -193,7 +185,7 @@ flat_map_prop: Prop = forall_Prop(
     fn = i -> from_List([i, i.add(1)])
     expected = flat_map_model(list)
     actual = to_List(from_List(list).flat_map(fn))
-    Assertion(eq_List(eq_Int)(actual, expected), "flat_map law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "flat_map law")
   ))
 
 filter_prop: Prop = forall_Prop(
@@ -203,7 +195,7 @@ filter_prop: Prop = forall_Prop(
     keep_even = i -> mod_Int(i, 2).eq_Int(0)
     expected = [i for i in list if keep_even(i)]
     actual = to_List(filter(from_List(list), keep_even))
-    Assertion(eq_List(eq_Int)(actual, expected), "filter law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "filter law")
   ))
 
 filter_flat_map_prop: Prop = forall_Prop(
@@ -214,7 +206,7 @@ filter_flat_map_prop: Prop = forall_Prop(
     ll = from_List(list)
     expected = to_List(ll.flat_map(i -> singleton(i) if keep_even(i) else empty_LazyList))
     actual = to_List(filter(ll, keep_even))
-    Assertion(eq_List(eq_Int)(actual, expected), "filter via flat_map law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "filter via flat_map law")
   ))
 
 foldl_prop: Prop = forall_Prop(

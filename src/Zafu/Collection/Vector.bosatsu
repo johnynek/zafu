@@ -89,6 +89,7 @@ from Zafu/Abstract/Instances/Predef import (
   hash_Int,
 )
 from Zafu/Collection/List import (
+  eq_List as eq_List_Collection,
   size as size_List,
   zip as zip_List,
 )
@@ -1323,21 +1324,8 @@ def and_Bool(left: Bool, right: Bool) -> Bool:
   else:
     False
 
-def eq_List(eq_item: (a, a) -> Bool) -> (List[a], List[a]) -> Bool:
-  (left, right) -> (
-    def go(left: List[a], right: List[a]) -> Bool:
-      loop (left, right):
-        case ([], []):
-          True
-        case ([left_h, *left_t], [right_h, *right_t]):
-          if eq_item(left_h, right_h):
-            go(left_t, right_t)
-          else:
-            False
-        case _:
-          False
-    go(left, right)
-  )
+def eq_list_by_fn(eq_item: (a, a) -> Bool, left: List[a], right: List[a]) -> Bool:
+  eq_Eq(eq_List_Collection(eq_from_fn(eq_item)), left, right)
 
 def map_Option(value: Option[a], fn: a -> b) -> Option[b]:
   match value:
@@ -1472,7 +1460,7 @@ append_prop: Prop = forall_Prop(
     vec = from_List(list)
     expected = [*list, item]
     actual = append(vec, item).to_List()
-    Assertion(eq_List(eq_Int)(actual, expected), "append law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "append law")
   ))
 
 prepend_prop: Prop = forall_Prop(
@@ -1482,7 +1470,7 @@ prepend_prop: Prop = forall_Prop(
     vec = from_List(list)
     expected = [item, *list]
     actual = prepend(vec, item).to_List()
-    Assertion(eq_List(eq_Int)(actual, expected), "prepend law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "prepend law")
   ))
 
 updated_prop: Prop = forall_Prop(
@@ -1492,7 +1480,7 @@ updated_prop: Prop = forall_Prop(
     vec = from_List(list)
     expected = updated_list_model(list, idx, item)
     actual = updated(vec, idx, item).to_List()
-    Assertion(eq_List(eq_Int)(actual, expected), "updated at ${int_to_String(idx)}")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "updated at ${int_to_String(idx)}")
   ))
 
 slice_prop: Prop = forall_Prop(
@@ -1502,7 +1490,7 @@ slice_prop: Prop = forall_Prop(
     vec = from_List(list)
     expected = slice_list_model(list, start, end)
     actual = slice(vec, start, end).to_List()
-    Assertion(eq_List(eq_Int)(actual, expected), "slice ${int_to_String(start)} ${int_to_String(end)}")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "slice ${int_to_String(start)} ${int_to_String(end)}")
   ))
 
 take_prop: Prop = forall_Prop(
@@ -1512,7 +1500,7 @@ take_prop: Prop = forall_Prop(
     vec = from_List(list)
     expected = take_list_model(list, count)
     actual = take(vec, count).to_List()
-    Assertion(eq_List(eq_Int)(actual, expected), "take ${int_to_String(count)}")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "take ${int_to_String(count)}")
   ))
 
 drop_prop: Prop = forall_Prop(
@@ -1522,7 +1510,7 @@ drop_prop: Prop = forall_Prop(
     vec = from_List(list)
     expected = drop_list_model(list, count)
     actual = drop(vec, count).to_List()
-    Assertion(eq_List(eq_Int)(actual, expected), "drop ${int_to_String(count)}")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "drop ${int_to_String(count)}")
   ))
 
 split_at_prop: Prop = forall_Prop(
@@ -1534,8 +1522,8 @@ split_at_prop: Prop = forall_Prop(
     (actual_left_vec, actual_right_vec) = split_at(vec, count)
     actual_left = to_List(actual_left_vec)
     actual_right = to_List(actual_right_vec)
-    same_left = eq_List(eq_Int)(actual_left, expected_left)
-    same_right = eq_List(eq_Int)(actual_right, expected_right)
+    same_left = eq_list_by_fn(eq_Int, actual_left, expected_left)
+    same_right = eq_list_by_fn(eq_Int, actual_right, expected_right)
     Assertion(and_Bool(same_left, same_right), "split_at ${int_to_String(count)}")
   ))
 
@@ -1546,7 +1534,7 @@ split_at_concat_prop: Prop = forall_Prop(
     vec = from_List(list)
     (front, back) = split_at(vec, count)
     actual = [*to_List(front), *to_List(back)]
-    Assertion(eq_List(eq_Int)(actual, list), "split_at concat law")
+    Assertion(eq_list_by_fn(eq_Int, actual, list), "split_at concat law")
   ))
 
 split_at_take_drop_prop: Prop = forall_Prop(
@@ -1555,8 +1543,8 @@ split_at_take_drop_prop: Prop = forall_Prop(
   ((list, count)) -> (
     vec = from_List(list)
     (front, back) = split_at(vec, count)
-    same_take = eq_List(eq_Int)(to_List(front), to_List(take(vec, count)))
-    same_drop = eq_List(eq_Int)(to_List(back), to_List(drop(vec, count)))
+    same_take = eq_list_by_fn(eq_Int, to_List(front), to_List(take(vec, count)))
+    same_drop = eq_list_by_fn(eq_Int, to_List(back), to_List(drop(vec, count)))
     Assertion(and_Bool(same_take, same_drop), "split_at take/drop law")
   ))
 
@@ -1586,7 +1574,7 @@ zip_prop: Prop = forall_Prop(
   ((left, right)) -> (
     expected = zip_List(left, right)
     actual = zip(from_List(left), from_List(right)).to_List()
-    Assertion(eq_List(eq_Int_pair)(actual, expected), "zip law")
+    Assertion(eq_list_by_fn(eq_Int_pair, actual, expected), "zip law")
   ))
 
 concat_prop: Prop = forall_Prop(
@@ -1595,7 +1583,7 @@ concat_prop: Prop = forall_Prop(
   ((left, right)) -> (
     vec = concat(from_List(left), from_List(right))
     expected = [*left, *right]
-    same_list = eq_List(eq_Int)(to_List(vec), expected)
+    same_list = eq_list_by_fn(eq_Int, to_List(vec), expected)
     same_size = size(vec).eq_Int(size_List(expected))
     Assertion(and_Bool(same_list, same_size), "concat law")
   ))
@@ -1606,7 +1594,7 @@ concat_deep_iso_prop: Prop = forall_Prop(
   ((left, right)) -> (
     vec = concat(from_List(left), from_List(right))
     expected = [*left, *right]
-    same_list = eq_List(eq_Int)(to_List(vec), expected)
+    same_list = eq_list_by_fn(eq_Int, to_List(vec), expected)
     same_size = size(vec).eq_Int(size_List(expected))
     left_sz = size_List(left)
     boundary_ok = if cmp_Int(left_sz, size_List(expected)) matches LT:
@@ -1687,7 +1675,7 @@ map_prop: Prop = forall_Prop(
     fn = i -> i.add(1)
     expected = list.map_List(fn)
     actual = map(vec, fn).to_List()
-    Assertion(eq_List(eq_Int)(actual, expected), "map law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "map law")
   ))
 
 filter_prop: Prop = forall_Prop(
@@ -1698,7 +1686,7 @@ filter_prop: Prop = forall_Prop(
     keep_even = i -> mod_Int(i, 2).eq_Int(0)
     expected = [i for i in list if keep_even(i)]
     actual = filter(vec, keep_even).to_List()
-    Assertion(eq_List(eq_Int)(actual, expected), "filter law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "filter law")
   ))
 
 flat_map_prop: Prop = forall_Prop(
@@ -1709,7 +1697,7 @@ flat_map_prop: Prop = forall_Prop(
     fn = i -> from_List([i, i.add(1)])
     expected = flat_map_model(list)
     actual = vec.flat_map(fn).to_List()
-    Assertion(eq_List(eq_Int)(actual, expected), "flat_map law")
+    Assertion(eq_list_by_fn(eq_Int, actual, expected), "flat_map law")
   ))
 
 foldl_prop: Prop = forall_Prop(
@@ -1788,7 +1776,7 @@ tests = TestSuite("Vector tests", [
   Assertion(
     (
       (front, back) = split_at(from_List([1, 2, 3]), 2)
-      and_Bool(eq_List(eq_Int)(to_List(front), [1, 2]), eq_List(eq_Int)(to_List(back), [3]))
+      and_Bool(eq_list_by_fn(eq_Int, to_List(front), [1, 2]), eq_list_by_fn(eq_Int, to_List(back), [3]))
     ),
     "split_at sanity"),
   Assertion(combine_all_option(from_List([1, 2, 3]), int_add_semigroup) matches Some(6), "combine_all_option sanity"),
