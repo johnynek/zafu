@@ -56,18 +56,18 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 2. `Args[a]` is an opaque applicative description of the arguments for one command scope.
 3. `Command[a]` adds command metadata such as name, summary, description, footer, aliases, and the `Args[a]` schema for that command.
 4. `ParseResult[a]` is a structured parse outcome rather than just `Result[String, a]`, because the library must distinguish successful parse, help rendering, version rendering, and validation failures.
-5. Internally, `Args[a]` should be modeled first as a non-public typed `enum` whose variants may introduce existential intermediate types.
+5. Internally, `Args[a]` should be modeled first as a non-public typed `enum` whose variants may introduce existential intermediate types and explicit choice nodes.
 6. Bosatsu supports that encoding directly, which makes it reasonable to store the combinator structure itself as the primary representation.
-7. Parsing and help generation can then walk that `Args[a]` tree directly or compile it to a normalized `Schema` and execution plan as a later pass.
+7. Parsing and help generation can then walk that `Args[a]` tree directly or compile it to normalized `Schema` and `ChoiceSchema` artifacts as later passes.
 8. This is applicative in the public API, but not a plain sequential parser internally. Named options are order-insensitive, so the interpreter still needs a normalization step before consuming argv.
 
 ### Representation choice: existential `Args` enum vs compiled schema-only
 
-1. Bosatsu supports existential type binders on enum variants, so a non-public `enum Args[a]` can encode `Map`, `Ap`, `Validate`, and related nodes directly.
+1. Bosatsu supports existential type binders on enum variants, so a non-public `enum Args[a]` can encode `Map`, `Map2`, `OrElse`, `Validate`, and related nodes directly.
 2. That makes an ADT-first design viable and preferable here.
 3. Advantages of the ADT-first design:
 4. there is one explicit source of truth for combinators
-5. help generation can walk the same structure the parser compiler sees
+5. help generation can walk the same structure the parser compiler and choice normalizer see
 6. subcommands stay explicit in the recursive representation
 7. laws and normalization rules are easier to explain against the stored value
 8. Costs of the ADT-first design:
@@ -75,6 +75,7 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 10. some variants introduce existential intermediate types, so the internal implementation is less first-order than a plain record
 11. Those costs are acceptable because the enum is non-public and Bosatsu supports the needed existential encoding explicitly.
 12. A compiled-only `schema + decode_fn` representation is still useful, but it should be the derived execution form, not the primary stored representation.
+13. Making `OrElse` explicit in the stored ADT is important for v1 because help rendering and ambiguity checks need to understand exclusivity directly rather than trying to infer it from arbitrary validation code.
 
 ### Public module layout
 
@@ -103,34 +104,43 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 
 ### `ArgInfo`
 
-1. Sketch: `struct ArgInfo(help: Option[Doc], metavar_override: Option[Doc], group: Option[Doc], hidden: Bool, default_doc: Option[Doc], examples: List[Doc])`.
+1. Sketch: `struct ArgInfo(help: Option[Doc], metavar_override: Option[Doc], group_id: Option[String], hidden: Bool, default_doc: Option[Doc], examples: List[Doc])`.
 2. `ArgInfo.examples` is for argument-local examples such as `--color=always` or `-Iinclude`. Command-level full invocation examples stay on `Command[a]`.
 3. `ArgInfo` otherwise holds help-facing metadata only. It does not affect low-level matching except where `metavar_override` changes rendered usage.
-4. Metadata combinators such as `with_help`, `with_group`, `with_example`, `hidden`, and `with_default_doc` are record updates over `ArgInfo`.
+4. `group_id` names the logical help section an argument belongs to, but the rendered group heading text lives separately in a merged `GroupDocs` map.
+5. Metadata combinators such as `with_help`, `with_group`, `with_example`, `hidden`, and `with_default_doc` are record updates over `ArgInfo`, while `with_group_docs` adds subtree-level group heading docs.
+
+### `GroupDocs`
+
+1. Sketch: `type GroupDocs = HashMap[String, Doc]`.
+2. `GroupDocs` maps stable `group_id` values to rendered section headings or descriptions.
+3. Nested `with_group_docs` wrappers merge these maps so outer definitions win on duplicate keys while missing keys are inherited from inner scopes.
 
 ### `Args[a]`
 
 1. Publicly opaque.
 2. Internally it should be a non-public existential enum, sketched as:
-3. `enum Args[a]: Pure(value: a) | Primitive(spec: PrimitiveSpec[a], info: ArgInfo) | Map[b](source: Args[b], fn: b -> a) | Ap[b](ff: Args[b -> a], fa: Args[b]) | Validate[b](source: Args[b], fn: b -> Result[Doc, a], label: Doc) | Subcommands(commands: NonEmptyList[Subcommand[a]], info: ArgInfo)`.
-4. `Map`, `Ap`, and `Validate` are exactly where existential variant binders are useful: each variant may introduce a hidden intermediate type that is not part of the outer `a`.
-5. Parsing and help generation first walk `Args[a]`, then compile it into a normalized `Schema` plus decode plan over a shared `MatchState`.
-5. `Args` must expose an `Applicative[Args]` instance through `Zafu/Abstract/Applicative`.
-6. Error accumulation should use `Zafu/Control/Result.applicative_combine_Err` with `Zafu/Collection/NonEmptyChain[CliError]`.
+3. `enum Args[a]: Pure(value: a) | Primitive(spec: PrimitiveSpec[a], info: ArgInfo) | Map[b](source: Args[b], fn: b -> a) | Map2[b, c](left: Args[b], right: Args[c], fn: (b, c) -> a) | OrElse(left: Args[a], right: Args[a]) | Validate[b](source: Args[b], fn: b -> Result[Doc, a], label: Doc) | WithGroupDocs(source: Args[a], group_docs: GroupDocs) | Subcommands(commands: NonEmptyList[Subcommand[Args, a]], info: ArgInfo)`.
+4. `Map`, `Map2`, and `Validate` are where existential variant binders are useful: each variant may introduce hidden intermediate types that are not part of the outer `a`.
+5. `OrElse` is a structural choice node, not an opaque backtracking parser escape hatch. It must survive normalization so both parsing and help can understand exclusivity.
+6. Parsing and help generation first walk `Args[a]`, then compile it into normalized `Schema`, `ChoiceSchema`, and decode plans over a shared `MatchState`.
+7. `Args` must expose an `Applicative[Args]` instance through `Zafu/Abstract/Applicative`.
+8. Error accumulation should use `Zafu/Control/Result.applicative_combine_Err` with `Zafu/Collection/NonEmptyChain[CliError]`.
 
-### `PrimitiveSpec[a]`, `Subcommand[a]`, and compiled `Schema`
+### `PrimitiveSpec[a]`, `Subcommand[f, a]`, `ChoiceSchema[a]`, and compiled `Schema`
 
 1. `PrimitiveSpec[a]` is the typed payload of the `Primitive` enum case: `struct PrimitiveSpec[a](kind: PrimitiveKind[a], cardinality: Cardinality, scope: Scope)`.
 2. `PrimitiveKind[a]` should have variants like `FlagValue(spellings: NonEmptyList[Spelling], when_present: a)`, `NamedValue(spellings: NonEmptyList[Spelling], value_parser: ValueParser[a])`, `Positional(value_parser: ValueParser[a])`, and `Rest(value_parser: ValueParser[a])`.
-3. `Subcommand[a]` is the recursive child type used by the `Subcommands` variant: `struct Subcommand[a](name: String, aliases: List[String], summary: Option[Doc], description: Option[Doc], footer: Option[Doc], args: Args[a])`.
-4. `Schema` is the compiled normalized form derived from `Args[a]`; it is what the lexer and argv matcher consume after the ADT has been walked.
-5. The key point is that the recursive internal representation is `Args[a]` plus `Subcommand[a]`, while `Schema` is a later compiled artifact rather than the stored source of truth.
+3. `Subcommand[f: +(+* -> *), a: +*]` is the recursive child type used by the `Subcommands` variant: `struct Subcommand[f: +(+* -> *), a: +*](name: String, aliases: List[String], summary: Option[Doc], description: Option[Doc], footer: Option[Doc], args: f[a])`.
+4. `ChoiceSchema[a]` is the normalized form of an `OrElse` tree: it records branch match domains, rendered choice docs, and the branch decoder selection rules.
+5. `Schema` is the compiled normalized form derived from non-choice parts of `Args[a]`; it is what the lexer and argv matcher consume after the ADT has been walked.
+6. The key point is that the recursive internal representation is `Args[a]` plus `Subcommand[Args, a]`, while `Schema` and `ChoiceSchema[a]` are later compiled artifacts rather than the stored source of truth.
 
 ### `Command[a]`
 
 1. Sketch: `struct Command[a](name: String, summary: Option[Doc], description: Option[Doc], footer: Option[Doc], aliases: List[String], args: Args[a])`.
-2. A command is the public root wrapper. The recursive internal child type is `Subcommand[a]`, not `Command[a]`.
-3. `subcommands` should accept child `Command[a]` values at the public API boundary, but internally lower them through `subcommand_from_command[a](command: Command[a]) -> Subcommand[a]`.
+2. A command is the public root wrapper. The recursive internal child type is `Subcommand[Args, a]`, not `Command[a]`.
+3. `subcommands` should accept child `Command[a]` values at the public API boundary, but internally lower them through `subcommand_from_command[a](command: Command[a]) -> Subcommand[Args, a]`.
 4. That decomposition keeps the public root wrapper separate from the recursive ADT while still allowing subcommands to be expressed by reusing full child command definitions.
 5. Each command has its own help section and may inject built-in flags such as `--help` or `--version`.
 
@@ -186,8 +196,18 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 3. Positional argument is modeled as `PrimitiveSpec[a]` with `Positional`.
 4. Optional positional argument is the same positional shape plus `ZeroOrOne` cardinality.
 5. Rest argument is modeled as `PrimitiveSpec[List[a]]` with `Rest`.
-6. Subcommand choice is not a `PrimitiveSpec[a]`; it is a `Subcommands` enum branch plus a decoder that dispatches into the chosen child `Subcommand[a]`.
-7. All high-level constructors should lower either to `PrimitiveSpec[a]` plus `primitive`, or to `Subcommand[a]` plus `subcommands`.
+6. Repetition such as `zero_or_more` and `one_or_more` belongs inside `PrimitiveSpec[a]` via `Cardinality`; it should not be encoded as a wrapper around arbitrary `Args[a]`.
+7. Subcommand choice is not a `PrimitiveSpec[a]`; it is a `Subcommands` enum branch plus a decoder that dispatches into the chosen child `Subcommand[Args, a]`.
+8. All high-level constructors should lower either to `PrimitiveSpec[a]` plus `primitive`, or to `Subcommand[Args, a]` plus `subcommands`.
+
+### Choice domains and exclusivity
+
+1. `or_else` must be planned in v1 as an explicit `OrElse` node in the internal ADT, not deferred to a later redesign.
+2. `OrElse` is a structural choice combinator, not parser backtracking. Normalization computes the match domain of each branch from visible spellings, positional slots, and subcommand loci.
+3. Branches in an `OrElse` tree must be either provably disjoint or provably identical in match domain. Overlapping branches that would make ownership ambiguous are rejected during schema normalization.
+4. When two branches have the same atomic match domain, normalization can collapse idempotent cases such as `arg.or_else(arg)`.
+5. The compiled `ChoiceSchema[a]` is consumed by both the decoder and the help renderer, so usage lines and option tables can show exclusivity directly.
+6. This is how `--compact`, `--spaces2`, and `--spaces4` can be rendered as a disjoint choice in help without relying on `validate`.
 
 ### Schema normalization rules
 
@@ -202,15 +222,16 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 
 ## Parse Pipeline
 
-1. Normalize the `Command[a]` tree into command-local `Schema` values and visible spelling indexes.
+1. Normalize the `Command[a]` tree into command-local `Schema` values, `ChoiceSchema[a]` values, visible spelling indexes, and merged `GroupDocs` environments.
 2. The first normalization pass walks the internal `Args[a]` ADT and lowers each child `Command[a]` through `subcommand_from_command`.
-3. Use the visible schema to lex raw `argv: List[String]` into occurrences. The lexer must be schema-aware so `-1` can remain positional when no visible `-1` spelling exists.
-4. Resolve the command path by walking positional tokens against the current node's subcommand table until no child matches.
-5. Build a `MatchState` for the selected path. It should retain named occurrences, remaining positionals, tokens after `--`, and a consumed/unconsumed marker per occurrence.
-6. Check for built-in help or version flags for the selected command path before running required-argument validation.
-7. Run each command scope's `decode_fn` with validation accumulation. Parent scopes only see their own local primitives plus inherited ones.
-8. After decode, fail if any occurrence or positional token remains unclaimed.
-9. Render failures through `Internal/Help` so the user sees both the specific error and the relevant usage/help block.
+3. During normalization, compile each `OrElse` tree into a `ChoiceSchema[a]` and reject overlapping ambiguous branches.
+4. Use the visible schema to lex raw `argv: List[String]` into occurrences. The lexer must be schema-aware so `-1` can remain positional when no visible `-1` spelling exists.
+5. Resolve the command path by walking positional tokens against the current node's subcommand table until no child matches.
+6. Build a `MatchState` for the selected path. It should retain named occurrences, remaining positionals, tokens after `--`, a consumed/unconsumed marker per occurrence, and the choice-local ownership facts needed to resolve `OrElse`.
+7. Check for built-in help or version flags for the selected command path before running required-argument validation.
+8. Run each command scope's decoder with validation accumulation. `OrElse` nodes select a branch from `ChoiceSchema[a]`, while parent scopes still see only their own local primitives plus inherited ones.
+9. After decode, fail if any occurrence or positional token remains unclaimed.
+10. Render failures through `Internal/Help` so the user sees both the specific error and the relevant usage/help block.
 
 ### Why `Zafu/Text/Parse` is not the whole engine
 
@@ -264,71 +285,79 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 3. `def count(spellings: NonEmptyList[Spelling], info: ArgInfo) -> Args[Int]`
 4. `def option[a](value_parser: ValueParser[a], spellings: NonEmptyList[Spelling], info: ArgInfo) -> Args[a]`
 5. `def option_optional_value[a](value_parser: ValueParser[a], spellings: NonEmptyList[Spelling], info: ArgInfo) -> Args[Option[a]]`
-6. `def positional[a](value_parser: ValueParser[a], info: ArgInfo) -> Args[a]`
-7. `def positional_optional[a](value_parser: ValueParser[a], info: ArgInfo) -> Args[Option[a]]`
-8. `def rest[a](value_parser: ValueParser[a], info: ArgInfo) -> Args[List[a]]`
-9. `def subcommands[a](commands: NonEmptyList[Command[a]], info: ArgInfo) -> Args[a]`
+6. `def zero_or_more[a](value_parser: ValueParser[a], spellings: NonEmptyList[Spelling], info: ArgInfo) -> Args[List[a]]`
+7. `def one_or_more[a](value_parser: ValueParser[a], spellings: NonEmptyList[Spelling], info: ArgInfo) -> Args[NonEmptyList[a]]`
+8. `def positional[a](value_parser: ValueParser[a], info: ArgInfo) -> Args[a]`
+9. `def positional_optional[a](value_parser: ValueParser[a], info: ArgInfo) -> Args[Option[a]]`
+10. `def rest[a](value_parser: ValueParser[a], info: ArgInfo) -> Args[List[a]]`
+11. `def subcommands[a](commands: NonEmptyList[Command[a]], info: ArgInfo) -> Args[a]`
 
-### Applicative and validation combinators
+### Applicative, choice, and validation combinators
 
 1. `def pure[a](value: a) -> Args[a]`
 2. `def map[a, b](args: Args[a], fn: a -> b) -> Args[b]`
-3. `def ap[a, b](ff: Args[a -> b], fa: Args[a]) -> Args[b]`
+3. `def map2[a, b, c](left: Args[a], right: Args[b], fn: (a, b) -> c) -> Args[c]`
 4. `def product[a, b](left: Args[a], right: Args[b]) -> Args[(a, b)]`
 5. `def product_left[a, b](left: Args[a], right: Args[b]) -> Args[a]`
 6. `def product_right[a, b](left: Args[a], right: Args[b]) -> Args[b]`
-7. `def validate[a, b](args: Args[a], fn: a -> Result[Doc, b]) -> Args[b]`
+7. `def or_else[a](left: Args[a], right: Args[a]) -> Args[a]`
+8. `def validate[a, b](args: Args[a], fn: a -> Result[Doc, b]) -> Args[b]`
+9. The ergonomic public combinator should be `map2`; `ap` remains derivable from the `Applicative[Args]` instance but does not need to be the primary surface combinator in the design.
 
-### Cardinality and defaulting combinators
+### Defaulting combinators
 
 1. `def optional[a](arg: Args[a]) -> Args[Option[a]]`
-2. `def zero_or_more[a](arg: Args[a]) -> Args[List[a]]`
-3. `def one_or_more[a](arg: Args[a]) -> Args[NonEmptyList[a]]`
-4. `def with_default[a](arg: Args[a], value: a, rendered_default: Doc) -> Args[a]`
-5. `zero_or_more`, `one_or_more`, `optional`, and `with_default` should be limited to primitive or subcommand nodes. Applying them to an arbitrary composite `Args[a]` should be rejected during schema normalization.
+2. `def with_default[a](arg: Args[a], value: a, rendered_default: Doc) -> Args[a]`
+3. `optional` and `with_default` do not change the visible ownership shape of an argument, so they can remain wrappers on `Args[a]`.
+4. Repetition stays on primitive constructors so `OrElse` normalization can still compare branch domains directly.
 
 ### Help and metadata combinators
 
 1. `def with_help[a](arg: Args[a], doc: Doc) -> Args[a]`
 2. `def with_metavar[a](arg: Args[a], doc: Doc) -> Args[a]`
 3. `def with_default_doc[a](arg: Args[a], doc: Doc) -> Args[a]`
-4. `def with_group[a](arg: Args[a], doc: Doc) -> Args[a]`
-5. `def with_example[a](arg: Args[a], doc: Doc) -> Args[a]`
-6. `def hidden[a](arg: Args[a]) -> Args[a]`
-7. `def with_aliases[a](command: Command[a], aliases: List[String]) -> Command[a]`
-8. `def with_scope[a](arg: Args[a], scope: Scope) -> Args[a]`
-9. `def example[a](command: Command[a], doc: Doc) -> Command[a]`
+4. `def with_group[a](arg: Args[a], group_id: String) -> Args[a]`
+5. `def with_group_docs[a](args: Args[a], group_docs: HashMap[String, Doc]) -> Args[a]`
+6. `def with_example[a](arg: Args[a], doc: Doc) -> Args[a]`
+7. `def hidden[a](arg: Args[a]) -> Args[a]`
+8. `def with_aliases[a](command: Command[a], aliases: List[String]) -> Command[a]`
+9. `def with_scope[a](arg: Args[a], scope: Scope) -> Args[a]`
+10. `def example[a](command: Command[a], doc: Doc) -> Command[a]`
+11. `with_group` assigns membership in a logical help group. `with_group_docs` provides the rendered headings for those ids, and nested `with_group_docs` maps merge so outer definitions win on duplicate keys while missing keys are inherited from inner scopes.
 
-### Explicit non-feature in v1
+### Choice and exclusivity in v1
 
-1. Do not expose a general `Alternative` or `or_else` instance for `Args[a]` in v1.
-2. General choice makes help text and ownership semantics ambiguous for order-insensitive named options.
-3. Targeted choice is still supported through `subcommands`, `enum_value`, aliases, and low-level primitive spellings.
-4. If general choice is needed later, it should be designed as a separate layer with explicit ambiguity rules.
+1. `or_else` should be part of the v1 design. It is too common to defer.
+2. `Args[a]` does not need a full `Alternative` instance unless a lawful `empty` emerges, but it should expose a first-class `or_else[a](left: Args[a], right: Args[a]) -> Args[a]`.
+3. Because `or_else` is structural, help rendering can show branch exclusivity automatically, for example by rendering `(--compact | --spaces2 | --spaces4)` in usage and an exclusive-choice section in option help.
+4. `validate` remains for semantic checks that do not affect ownership shape, but it is not the mechanism for telling help about exclusive argument families.
 
-### Mutually exclusive flags without `Alternative`
+### Mutually exclusive flags as explicit choice nodes
 
-1. Mutually exclusive flags should be modeled by composing optional flag values applicatively and then resolving the exclusivity rule with `validate`.
-2. For example, the planned migration of `Zafu/Tool/JsonFormat.bosatsu` can model `--compact`, `--spaces2`, and `--spaces4` as three optional `flag_value` branches, combine them with `product`, and then use `validate` to reject the states where more than one branch is present.
-3. This is more verbose than an `Alternative`-based encoding, but it keeps help generation deterministic and makes the exclusivity rule explicit in one place.
+1. `JsonFormat`-style mode selection should be modeled with `or_else` over atomic flag or option constructors, not by combining independent flags and rejecting illegal combinations with `validate`.
+2. For example, `flag_value([long("compact")], compact_mode, info).or_else(flag_value([long("spaces2")], spaces2_mode, info)).or_else(flag_value([long("spaces4")], spaces4_mode, info))` is an introspectable exclusive choice.
+3. If the mode also has a default when no flag is passed, that default should be added with `with_default` around the choice node so the exclusivity information remains visible to help generation.
+4. This keeps automatic help honest: the renderer can show that those flags are disjoint because the disjointness lives in the `OrElse` tree itself.
 
 ## Help Rendering
 
-1. Help rendering should consume only normalized `Schema` plus `Command` metadata.
-2. The same schema used for parsing must drive usage lines, option tables, positional sections, subcommand listings, default text, and examples.
+1. Help rendering should consume normalized `Schema`, `ChoiceSchema[a]`, merged `GroupDocs`, and `Command` metadata.
+2. The same normalized structures used for parsing must drive usage lines, option tables, positional sections, subcommand listings, default text, and examples.
 3. Rendering should be built from `Zafu/Text/Pretty.Doc` so wrapping is width-sensitive and section layout stays deterministic.
-4. Required rendered sections are `Usage`, command description, positional arguments, named options grouped by section, subcommands, examples, and footer text.
+4. Required rendered sections are `Usage`, command description, positional arguments, named options grouped by `group_id`, subcommands, examples, and footer text.
 5. Hidden items are omitted by default but may be shown through `HelpConfig`.
 6. Failure docs should include the error block before usage, not instead of usage.
 7. `RequestedHelp` for a subcommand should render that subcommand's section, not the root command's section.
+8. Group rendering should use the merged `GroupDocs` environment: if an arg has no `group_id`, or if its `group_id` is missing from the merged map, it renders in the default ungrouped section.
+9. `OrElse` groups should render both in usage lines and in option help so mutually exclusive branches are visible without reading prose.
 
 ## Implementation Plan
 
-1. Phase 1: create `src/Zafu/Cli/Args/Internal/Core.bosatsu` and `src/Zafu/Cli/Args.bosatsu` with `ValueParser`, `ArgInfo`, `PrimitiveSpec`, `Subcommand`, the existential internal `Args` enum, `Command`, `CliError`, `ParseResult`, schema normalization, and an `Applicative[Args]` instance.
+1. Phase 1: create `src/Zafu/Cli/Args/Internal/Core.bosatsu` and `src/Zafu/Cli/Args.bosatsu` with `ValueParser`, `ArgInfo`, `GroupDocs`, `PrimitiveSpec`, `Subcommand[f, a]`, the existential internal `Args` enum with `Map2` and `OrElse`, `Command`, `CliError`, `ParseResult`, schema normalization, and an `Applicative[Args]` instance.
 2. Phase 2: implement `src/Zafu/Cli/Args/Internal/Lex.bosatsu` for schema-aware argv tokenization, short-cluster expansion, `--` handling, attached values, and unknown-option detection.
-3. Phase 3: implement `src/Zafu/Cli/Args/Internal/Decode.bosatsu` for command-path selection, occurrence consumption, inherited-scope handling, validation accumulation, and leftover detection.
-4. Phase 4: implement `src/Zafu/Cli/Args/Internal/Help.bosatsu` for usage/help/failure rendering using `Zafu/Text/Pretty`.
-5. Phase 5: add built-in value parsers backed by `Zafu/Text/Parse`, plus convenience constructors such as `flag`, `option`, `positional`, `rest`, and `subcommands`.
+3. Phase 3: implement `src/Zafu/Cli/Args/Internal/Decode.bosatsu` for command-path selection, occurrence consumption, `OrElse` branch selection, inherited-scope handling, validation accumulation, and leftover detection.
+4. Phase 4: implement `src/Zafu/Cli/Args/Internal/Help.bosatsu` for usage/help/failure rendering using `Zafu/Text/Pretty`, including exclusive-choice rendering and group-doc merging.
+5. Phase 5: add built-in value parsers backed by `Zafu/Text/Parse`, plus convenience constructors such as `flag`, `option`, `zero_or_more`, `one_or_more`, `positional`, `rest`, and `subcommands`.
 6. Phase 6: add `src/Zafu/Cli/ArgsTests.bosatsu` with golden help tests, parser edge cases, and end-to-end command-tree cases.
 7. Phase 7: migrate `src/Zafu/Tool/JsonFormat.bosatsu` from hand-written `parse_args` to `Zafu/Cli/Args` as a small real-world integration and smoke test.
 8. Phase 8: run `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh` before merge.
@@ -342,26 +371,30 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 5. Negative-number tests to ensure `-1` remains positional unless a visible spelling requires otherwise.
 6. Subcommand tests for nested help, aliases, inherited global flags, and unknown-command failures.
 7. Validation tests to ensure applicative error accumulation reports multiple independent missing or invalid arguments together.
-8. Validation tests for mutually exclusive flags, using the `JsonFormat`-style `--compact` versus `--spaces*` shape as the motivating example.
-9. Schema-construction tests for rejected ambiguous specs such as duplicate spellings or positional-after-rest.
-10. A real integration test or migration of `Zafu/Tool/JsonFormat.bosatsu` to confirm the API works for an existing command.
+8. `or_else` tests for disjoint branches, identical-domain idempotence, and rejected overlapping ambiguous branches.
+9. Help tests for exclusive-choice rendering and grouped option sections with merged `GroupDocs`.
+10. Schema-construction tests for rejected ambiguous specs such as duplicate spellings or positional-after-rest.
+11. A real integration test or migration of `Zafu/Tool/JsonFormat.bosatsu` to confirm the API works for an existing command.
 
 ## Acceptance Criteria
 
 1. `docs/design/144-design-a-zafu-cli-args-package.md` exists and documents the architecture, combinator inventory, implementation phases, acceptance criteria, risks, and rollout notes.
 2. `src/Zafu/Cli/Args.bosatsu` exists and exports `ValueParser`, `ArgInfo`, `Args`, `Command`, `ParseConfig`, `HelpConfig`, `ParseResult`, and the combinator families described in this design.
-3. `Args` exposes an applicative API and is stored internally as a non-public existential enum that is compiled into the normalized schema and decode plan used by parsing and help.
+3. `Args` exposes an applicative API plus `or_else`, and is stored internally as a non-public existential enum that is compiled into normalized schema, choice-schema, and decode artifacts used by parsing and help.
 4. `ValueParser` integrates with `Zafu/Text/Parse` rather than inventing a second string-parser abstraction.
 5. Help and failure rendering are built on `Zafu/Text/Pretty.Doc`.
 6. The implementation supports `--long`, `--long=value`, `--long value`, `-s`, grouped short flags, attached short values, `--`, positionals, optional positionals, rest args, and custom prefixes when configured.
 7. Optional-valued options can distinguish between `--foo`, `--foo=bar`, and `--foo bar` based on the configured `ValueForm` set, and help text renders that distinction explicitly.
 8. Subcommands are supported, including command-local help and aliases.
-9. The internal representation uses the existential `Args` enum plus `Subcommand[a]`, and child commands are lowered through `subcommand_from_command`.
+9. The internal representation uses the existential `Args` enum plus `Subcommand[Args, a]`, `Map2`, and `OrElse`, and child commands are lowered through `subcommand_from_command`.
 10. Inherited named arguments can be declared explicitly and parsed on descendant command paths.
 11. Ambiguous schema shapes are rejected during schema construction rather than resolved implicitly at runtime.
-12. Tests cover help rendering, GNU-form compatibility, subcommands, inherited scope, negative-number positionals, duplicate detection, mutually exclusive flag validation, and validation accumulation.
-13. `src/Zafu/Tool/JsonFormat.bosatsu` is migrated to the new package or an equivalent end-to-end fixture proves the same flag style.
-14. `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh` pass.
+12. `or_else` is supported in v1, and help rendering can show mutually exclusive branches automatically from the stored choice structure.
+13. Grouped help output is keyed by `group_id`, with `with_group_docs` merge semantics documented and tested.
+14. Repetition constructors such as `zero_or_more` and `one_or_more` are exposed as primitive builders rather than wrappers over arbitrary `Args[a]`.
+15. Tests cover help rendering, GNU-form compatibility, subcommands, inherited scope, negative-number positionals, duplicate detection, exclusive-choice rendering, `or_else` ambiguity checks, group-doc merging, and validation accumulation.
+16. `src/Zafu/Tool/JsonFormat.bosatsu` is migrated to the new package or an equivalent end-to-end fixture proves the same flag style.
+17. `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh` pass.
 
 ## Risks and Mitigations
 
@@ -374,10 +407,13 @@ Mitigation: default optional values to attached-only forms such as `--color=alwa
 3. Risk: parent and child command scopes can fight over the same occurrence.
 Mitigation: make scope explicit with `Local` and `Inherited`, normalize scope ownership up front, and add path-scoped tests.
 
-4. Risk: help rendering and parse behavior can drift if they are built from separate representations.
-Mitigation: both features must consume the same normalized `Schema`.
+4. Risk: `or_else` can admit subtly overlapping branches that are hard to reason about.
+Mitigation: compile `OrElse` into `ChoiceSchema[a]`, reject overlapping ambiguous domains during normalization, and keep repetition attached to primitive constructors so domains stay comparable.
 
-5. Risk: schema-aware lexing may become expensive on large command trees.
+5. Risk: help rendering and parse behavior can drift if they are built from separate representations.
+Mitigation: both features must consume the same normalized `Schema` and `ChoiceSchema[a]`.
+
+6. Risk: schema-aware lexing may become expensive on large command trees.
 Mitigation: precompute visible spelling indexes per command path and keep lexing to a single pass over argv.
 
 ## Rollout Notes
@@ -385,11 +421,12 @@ Mitigation: precompute visible spelling indexes per command path and keep lexing
 1. Land this as an additive module family under `Zafu/Cli`; no existing public API should break.
 2. Keep the default configuration GNU-like so common CLIs are easy to express, but ship the low-level `Spelling` escape hatch in the first version so unusual APIs do not require parser forks.
 3. Use `Zafu/Tool/JsonFormat.bosatsu` as the first in-repo adopter after the core package lands.
-4. Defer shell completion, env/config fallbacks, and any general `Alternative` layer until real command migrations show which gaps matter.
-5. Once the core schema is stable, follow-up work can add completion or manpage generation on top of the same `Schema` without changing parse semantics.
+4. Ship `or_else` in the first version as part of the core representation rather than treating it as follow-up work.
+5. Defer shell completion, env/config fallbacks, and any full `Alternative` instance until real command migrations show whether they are needed beyond `or_else`.
+6. Once the core schema is stable, follow-up work can add completion or manpage generation on top of the same `Schema` and `ChoiceSchema[a]` without changing parse semantics.
 
 ## Open Questions
 
 1. Should inherited global options be opt-in through `with_scope(Inherited)` only, or should root-command named options be inherited by default?
-2. Do we want any general choice combinator beyond `subcommands`, or is an applicative-only public surface enough for v1?
+2. What exact normalization rule should `or_else` use for identical-domain branches that differ only in help text or default docs?
 3. Should optional-value options ever be allowed to consume the next argv element, or should v1 keep them attached-only to avoid ambiguity?
