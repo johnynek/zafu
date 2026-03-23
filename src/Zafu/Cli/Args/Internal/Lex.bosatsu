@@ -58,7 +58,6 @@ from Zafu/Cli/Args/Internal/Core import (
   WithScope,
   WithGroupDocs,
   WithDefault,
-  OptionalArg,
   Subcommands,
   Scope,
   Inherited,
@@ -198,8 +197,6 @@ def collect_named_views[a](args: Args[a], scope_override: Option[Scope]) -> List
       collect_named_views(source, scope_override)
     case WithDefault(source, _, _):
       collect_named_views(source, scope_override)
-    case OptionalArg(source, _):
-      collect_named_views(source, scope_override)
     case WithScope(source, scope):
       collect_named_views(source, Some(scope))
     case Map2(left, right, _):
@@ -223,8 +220,6 @@ def collect_subcommands[a](args: Args[a]) -> List[SomeCommand]:
       collect_subcommands(source)
     case WithDefault(source, _, _):
       collect_subcommands(source)
-    case OptionalArg(source, _):
-      collect_subcommands(source)
     case WithScope(source, _):
       collect_subcommands(source)
     case Map2(left, right, _):
@@ -236,7 +231,7 @@ def collect_subcommands[a](args: Args[a]) -> List[SomeCommand]:
 
 def match_child(token: String, children: List[SomeCommand], case_sensitive: Bool) -> Option[SomeCommand]:
   def child_matches(packed: SomeCommand) -> Bool:
-    PackedCommand(Command(name, _, _, _, aliases, _, _, _, _)) = packed
+    PackedCommand(Command { name, aliases, ... }) = packed
     if eq_String_case(token, name, case_sensitive):
       True
     else:
@@ -258,7 +253,7 @@ def inherited_views(named_views: List[NamedView]) -> List[NamedView]:
   filter_List(
     named_views,
     view -> (
-      NamedView(_, scope) = view
+      NamedView { scope, ... } = view
       scope matches Inherited
     ),
   )
@@ -272,7 +267,7 @@ def match_visible_spelling(
   case_sensitive: Bool,
 ) -> Result[CliError, (List[NamedOccurrence], Bool)]:
   def match_one(spelling: Spelling) -> Option[(List[NamedOccurrence], Bool)]:
-    Spelling(prefix, name, value_kind, value_forms, _) = spelling
+    Spelling { prefix, name, value_kind, value_forms, ... } = spelling
     full_name = "${prefix}${name}"
     maybe_suffix = strip_prefix(token, full_name, case_sensitive)
     match maybe_suffix:
@@ -314,7 +309,7 @@ def match_visible_spelling(
         None
 
   all_spellings = foldl_List(named_views, [], (acc, next_view) -> (
-    NamedView(spellings, _) = next_view
+    NamedView { spellings, ... } = next_view
     [*acc, *spellings]
   ))
 
@@ -323,7 +318,7 @@ def match_visible_spelling(
       case []:
         None
       case [head, *tail_spellings]:
-        Spelling(prefix, name, _, _, _) = head
+        Spelling { prefix, name, ... } = head
         if and(eq_String_case(prefix, "-", True), eq_String_case(name, char_to_String(ch), case_sensitive)):
           Some(head)
         else:
@@ -340,7 +335,7 @@ def match_visible_spelling(
             case [head, *tail_chars]:
               match find_short_spelling(head, all_spellings):
                 case Some(spelling):
-                  Spelling(_, _, value_kind, value_forms, is_clusterable) = spelling
+                  Spelling { value_kind, value_forms, clusterable: is_clusterable, ... } = spelling
                   occurrence_none = NamedOccurrence(depth, spelling, 0, None, None, token)
                   match value_kind:
                     case Flag:
@@ -402,7 +397,7 @@ def match_visible_spelling(
       match loop_spellings(all_spellings):
         case Some((occurrences, consume_next)):
           Ok((occurrences.map_List(occ -> (
-            NamedOccurrence(segment_depth, spelling, _, value_index, value_text, raw_token) = occ
+            NamedOccurrence { segment_depth, spelling, value_index, value_text, raw_token, ... } = occ
             NamedOccurrence(segment_depth, spelling, 0, value_index, value_text, raw_token)
           )), consume_next))
         case None:
@@ -421,7 +416,7 @@ def scan_command[a](config: ParseConfig, command: Command[a], argv: List[String]
         index_tokens(tail, idx.add(1), [IndexedToken(idx, head), *rev_tokens])
 
   tokens = index_tokens(argv, 0, [])
-  Command(root_name, _, _, _, _, _, help_enabled, version_doc, _) = command
+  Command { name: root_name, help_enabled, version_doc, ... } = command
 
   def loop(
     current_command: SomeCommand,
@@ -436,7 +431,7 @@ def scan_command[a](config: ParseConfig, command: Command[a], argv: List[String]
     built_in: Option[BuiltInRequest],
     errors_rev: List[CliError],
   ) -> ScanResult:
-    PackedCommand(Command(_, _, _, _, _, _, _, _, current_args)) = current_command
+    PackedCommand(Command { args: current_args, ... }) = current_command
     local_named = collect_named_views(current_args, None)
     visible_named = [*inherited_named, *local_named]
     children = collect_subcommands(current_args)
@@ -539,7 +534,7 @@ def scan_command[a](config: ParseConfig, command: Command[a], argv: List[String]
               case Err(UnknownOption(_, _)):
                 match match_child(token, children, case_sensitive):
                   case Some(child):
-                    PackedCommand(Command(child_name, _, _, _, _, _, _, _, _)) = child
+                    PackedCommand(Command { name: child_name, ... }) = child
                     next_step = CommandSelection(token_index, depth.add(1), token, child_name)
                     next_auto = updated_HashSet(auto_claimed, token_index)
                     loop(child, next_inherited, depth.add(1), tail, rev_named, rev_positional, [next_step, *rev_steps], [child_name, *command_path_rev], next_auto, built_in, errors_rev)
@@ -551,7 +546,7 @@ def scan_command[a](config: ParseConfig, command: Command[a], argv: List[String]
               case Err(UnexpectedArgument(_, _)):
                 match match_child(token, children, case_sensitive):
                   case Some(child_command):
-                    PackedCommand(Command(child_name, _, _, _, _, _, _, _, _)) = child_command
+                    PackedCommand(Command { name: child_name, ... }) = child_command
                     next_step = CommandSelection(token_index, depth.add(1), token, child_name)
                     next_auto = updated_HashSet(auto_claimed, token_index)
                     loop(child_command, next_inherited, depth.add(1), tail, rev_named, rev_positional, [next_step, *rev_steps], [child_name, *command_path_rev], next_auto, built_in, errors_rev)

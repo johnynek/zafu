@@ -69,7 +69,6 @@ from Zafu/Cli/Args/Internal/Core import (
   WithScope,
   WithGroupDocs,
   WithDefault,
-  OptionalArg,
   Subcommands,
   Scope,
   MissingArgument,
@@ -94,8 +93,8 @@ export (
 def identity_info(info: ArgInfo) -> ArgInfo:
   info
 
-def compose_info(current: ArgInfo -> ArgInfo, next: ArgInfo -> ArgInfo) -> ArgInfo -> ArgInfo:
-  info -> current(next(info))
+def compose_fn(f: b -> c, g: a -> b) -> a -> c:
+  a -> f(g(a))
 
 def filter_named_occurrences(
   occurrences: List[NamedOccurrence],
@@ -104,7 +103,7 @@ def filter_named_occurrences(
   filter_List(
     occurrences,
     occ -> (
-      NamedOccurrence(_, _, token_index, value_index, _, _) = occ
+      NamedOccurrence { token_index, value_index, ... } = occ
       token_free = not(contains_HashSet(claimed, token_index))
       value_free =
         match value_index:
@@ -123,13 +122,13 @@ def filter_positional_occurrences(
   filter_List(
     occurrences,
     occ -> (
-      PositionalOccurrence(_, token_index, _) = occ
+      PositionalOccurrence { token_index, ... } = occ
       not(contains_HashSet(claimed, token_index))
     ),
   )
 
 def filter_state(state: MatchState, claimed: HashSet[Int]) -> MatchState:
-  MatchState(tokens, named_occurrences, positional_occurrences, command_steps, command_path, auto_claimed) = state
+  MatchState { tokens, named_occurrences, positional_occurrences, command_steps, command_path, auto_claimed } = state
   MatchState(
     tokens,
     filter_named_occurrences(named_occurrences, claimed),
@@ -149,7 +148,7 @@ def errors_are_missing_only(errors: NonEmptyChain[CliError]) -> Bool:
   for_all_NonEmptyChain(errors, missing_only)
 
 def choice_target(info: ArgInfo) -> Doc:
-  ArgInfo(_, metavar_override, _, _, _, _) = info
+  ArgInfo { metavar_override, ... } = info
   match metavar_override:
     case Some(doc):
       doc
@@ -163,7 +162,7 @@ def token_error(command_path: List[String], token: String) -> CliError:
     UnexpectedArgument(command_path, token)
 
 def leftover_errors(state: MatchState, claimed: HashSet[Int]) -> List[CliError]:
-  MatchState(tokens, _, _, _, command_path, auto_claimed) = state
+  MatchState { tokens, command_path, auto_claimed, ... } = state
   all_claimed = union_HashSet(claimed, auto_claimed)
   foldl_List(
     tokens,
@@ -212,7 +211,7 @@ def decode_command[a](command: Command[a], scan: ScanResult) -> Result[NonEmptyC
   ) -> Result[NonEmptyChain[CliError], DecodeResult[b]]:
     match remaining_names:
       case current_remaining:
-        Command(_, _, _, _, _, _, _, _, current_args) = current_command
+        Command { args: current_args, ... } = current_command
 
         def decode_args_with_env[c](
           args: Args[c],
@@ -248,7 +247,7 @@ def decode_command[a](command: Command[a], scan: ScanResult) -> Result[NonEmptyC
                 case Err(errs):
                   Err(errs)
             case WithInfo(source, fn):
-              decode_args_with_env(source, current_state, compose_info(info_fn, fn), scope_override)
+              decode_args_with_env(source, current_state, compose_fn(info_fn, fn), scope_override)
             case WithScope(source, scope):
               next_scope =
                 match scope_override:
@@ -266,15 +265,6 @@ def decode_command[a](command: Command[a], scan: ScanResult) -> Result[NonEmptyC
                 case Err(errs):
                   if errors_are_missing_only(errs):
                     Ok(DecodeResult(empty_HashSet(hash_Int), default_value))
-                  else:
-                    Err(errs)
-            case OptionalArg(source, build):
-              match decode_args_with_env(source, current_state, info_fn, scope_override):
-                case Ok(DecodeResult(claimed, value)):
-                  Ok(DecodeResult(claimed, build(Some(value))))
-                case Err(errs):
-                  if errors_are_missing_only(errs):
-                    Ok(DecodeResult(empty_HashSet(hash_Int), build(None)))
                   else:
                     Err(errs)
             case Map2(left, right, fn):
@@ -340,7 +330,7 @@ def decode_command[a](command: Command[a], scan: ScanResult) -> Result[NonEmptyC
                 case [canonical_name, *tail_names]:
                   _ = tail_names
                   match find_child(to_List_NonEmptyList(commands), canonical_name):
-                    case Some(Command(_, _, _, _, _, _, _, _, Pure(value))):
+                    case Some(Command { args: Pure(value), ... }):
                       Ok(DecodeResult(empty_HashSet(hash_Int), value))
                     case Some(_):
                       Err(singleton_NonEmptyChain(ValidationError(command_path, paragraph("selected subcommands must currently decode from a pure child value"))))
