@@ -127,6 +127,19 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 7. `Args` must expose an `Applicative[Args]` instance through `Zafu/Abstract/Applicative`.
 8. Error accumulation should use `Zafu/Control/Result.applicative_combine_Err` with `Zafu/Collection/NonEmptyChain[CliError]`.
 
+### `DecodeResult[a]` and `MatchState`
+
+1. After lexing, raw `argv` should be represented as indexed tokens so every consumed piece of input has a stable `Int` identity.
+2. Sketch: `struct MatchState(tokens: Vector[IndexedToken], occurrences: Vector[Occurrence], command_path: List[String], claimed: HashSet[Int])`.
+3. Operationally, normalized `Args[a]` should compile to a decoder with semantics close to `MatchState -> Result[NonEmptyChain[CliError], DecodeResult[a]]`.
+4. Sketch: `struct DecodeResult[a](claimed: HashSet[Int], value: a)`.
+5. `claimed` is the set of raw argv token indices consumed by that `Args[a]` node. A primitive flag or option claims the indices for the spelling token and, if present, the attached or separate value token it consumed.
+6. `Map` and `Validate` preserve the claimed-index set.
+7. `Map2` and the product-style combinators require disjoint claimed-index sets; on success they union those sets.
+8. `OrElse` returns the winning branch's claimed-index set and decoded value.
+9. The top-level command parse succeeds only if the final claimed-index set covers every argv token that should be recognized for the selected command path. Leftover unclaimed indices become unknown-option or unexpected-argument failures.
+10. This token-claim model is the intended meaning of "consumption" in the design. It is more precise than a purely sequential `List[String] -> (List[String], a)` view and it matches the order-insensitive nature of named CLI options.
+
 ### `PrimitiveSpec[a]`, `Subcommand[f, a]`, `ChoiceSchema[a]`, and compiled `Schema`
 
 1. `PrimitiveSpec[a]` is the typed payload of the `Primitive` enum case: `struct PrimitiveSpec[a](kind: PrimitiveKind[a], cardinality: Cardinality, scope: Scope)`.
@@ -134,7 +147,8 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 3. `Subcommand[f: +(+* -> *), a: +*]` is the recursive child type used by the `Subcommands` variant: `struct Subcommand[f: +(+* -> *), a: +*](name: String, aliases: List[String], summary: Option[Doc], description: Option[Doc], footer: Option[Doc], args: f[a])`.
 4. `ChoiceSchema[a]` is the normalized form of an `OrElse` tree: it records branch match domains, rendered choice docs, and the branch decoder selection rules.
 5. `Schema` is the compiled normalized form derived from non-choice parts of `Args[a]`; it is what the lexer and argv matcher consume after the ADT has been walked.
-6. The key point is that the recursive internal representation is `Args[a]` plus `Subcommand[Args, a]`, while `Schema` and `ChoiceSchema[a]` are later compiled artifacts rather than the stored source of truth.
+6. The decoder side of compilation is a family of functions that consume `MatchState` and return `DecodeResult[a]`.
+7. The key point is that the recursive internal representation is `Args[a]` plus `Subcommand[Args, a]`, while `Schema`, `ChoiceSchema[a]`, and the compiled decoders are later artifacts rather than the stored source of truth.
 
 ### `Command[a]`
 
@@ -205,9 +219,10 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 1. `or_else` must be planned in v1 as an explicit `OrElse` node in the internal ADT, not deferred to a later redesign.
 2. `OrElse` is a structural choice combinator, not parser backtracking. Normalization computes the match domain of each branch from visible spellings, positional slots, and subcommand loci.
 3. Branches in an `OrElse` tree must be either provably disjoint or provably identical in match domain. Overlapping branches that would make ownership ambiguous are rejected during schema normalization.
-4. When two branches have the same atomic match domain, normalization can collapse idempotent cases such as `arg.or_else(arg)`.
-5. The compiled `ChoiceSchema[a]` is consumed by both the decoder and the help renderer, so usage lines and option tables can show exclusivity directly.
-6. This is how `--compact`, `--spaces2`, and `--spaces4` can be rendered as a disjoint choice in help without relying on `validate`.
+4. Disjointness is checked against claimed token indices. For example, `Map2`-composed branches may coexist only when their claim sets do not intersect, while `OrElse` chooses exactly one branch's claim set.
+5. When two branches have the same atomic match domain, normalization can collapse idempotent cases such as `arg.or_else(arg)`.
+6. The compiled `ChoiceSchema[a]` is consumed by both the decoder and the help renderer, so usage lines and option tables can show exclusivity directly.
+7. This is how `--compact`, `--spaces2`, and `--spaces4` can be rendered as a disjoint choice in help without relying on `validate`.
 
 ### Schema normalization rules
 
@@ -225,12 +240,12 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 1. Normalize the `Command[a]` tree into command-local `Schema` values, `ChoiceSchema[a]` values, visible spelling indexes, and merged `GroupDocs` environments.
 2. The first normalization pass walks the internal `Args[a]` ADT and lowers each child `Command[a]` through `subcommand_from_command`.
 3. During normalization, compile each `OrElse` tree into a `ChoiceSchema[a]` and reject overlapping ambiguous branches.
-4. Use the visible schema to lex raw `argv: List[String]` into occurrences. The lexer must be schema-aware so `-1` can remain positional when no visible `-1` spelling exists.
+4. Use the visible schema to lex raw `argv: List[String]` into indexed occurrences. The lexer must be schema-aware so `-1` can remain positional when no visible `-1` spelling exists.
 5. Resolve the command path by walking positional tokens against the current node's subcommand table until no child matches.
-6. Build a `MatchState` for the selected path. It should retain named occurrences, remaining positionals, tokens after `--`, a consumed/unconsumed marker per occurrence, and the choice-local ownership facts needed to resolve `OrElse`.
+6. Build a `MatchState` for the selected path. It should retain indexed raw tokens, normalized occurrences, the selected command path, and an initially empty claimed-index set.
 7. Check for built-in help or version flags for the selected command path before running required-argument validation.
-8. Run each command scope's decoder with validation accumulation. `OrElse` nodes select a branch from `ChoiceSchema[a]`, while parent scopes still see only their own local primitives plus inherited ones.
-9. After decode, fail if any occurrence or positional token remains unclaimed.
+8. Run each command scope's decoder with validation accumulation. `OrElse` nodes select a branch from `ChoiceSchema[a]`, and `Map2`-style composition unions claim sets only when they are disjoint.
+9. After decode, compare the final claimed-index set against the visible token indices for the selected command path and fail if anything expected to be recognized is left unclaimed.
 10. Render failures through `Internal/Help` so the user sees both the specific error and the relevant usage/help block.
 
 ### Why `Zafu/Text/Parse` is not the whole engine
@@ -372,9 +387,10 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 6. Subcommand tests for nested help, aliases, inherited global flags, and unknown-command failures.
 7. Validation tests to ensure applicative error accumulation reports multiple independent missing or invalid arguments together.
 8. `or_else` tests for disjoint branches, identical-domain idempotence, and rejected overlapping ambiguous branches.
-9. Help tests for exclusive-choice rendering and grouped option sections with merged `GroupDocs`.
-10. Schema-construction tests for rejected ambiguous specs such as duplicate spellings or positional-after-rest.
-11. A real integration test or migration of `Zafu/Tool/JsonFormat.bosatsu` to confirm the API works for an existing command.
+9. `Map2` and product tests for intersecting claimed-index sets, successful claim-set unions, and leftover-token failures at the top level.
+10. Help tests for exclusive-choice rendering and grouped option sections with merged `GroupDocs`.
+11. Schema-construction tests for rejected ambiguous specs such as duplicate spellings or positional-after-rest.
+12. A real integration test or migration of `Zafu/Tool/JsonFormat.bosatsu` to confirm the API works for an existing command.
 
 ## Acceptance Criteria
 
@@ -388,13 +404,14 @@ Introduce an applicative CLI argument package with schema-driven argv decoding, 
 8. Subcommands are supported, including command-local help and aliases.
 9. The internal representation uses the existential `Args` enum plus `Subcommand[Args, a]`, `Map2`, and `OrElse`, and child commands are lowered through `subcommand_from_command`.
 10. Inherited named arguments can be declared explicitly and parsed on descendant command paths.
-11. Ambiguous schema shapes are rejected during schema construction rather than resolved implicitly at runtime.
-12. `or_else` is supported in v1, and help rendering can show mutually exclusive branches automatically from the stored choice structure.
-13. Grouped help output is keyed by `group_id`, with `with_group_docs` merge semantics documented and tested.
-14. Repetition constructors such as `zero_or_more` and `one_or_more` are exposed as primitive builders rather than wrappers over arbitrary `Args[a]`.
-15. Tests cover help rendering, GNU-form compatibility, subcommands, inherited scope, negative-number positionals, duplicate detection, exclusive-choice rendering, `or_else` ambiguity checks, group-doc merging, and validation accumulation.
-16. `src/Zafu/Tool/JsonFormat.bosatsu` is migrated to the new package or an equivalent end-to-end fixture proves the same flag style.
-17. `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh` pass.
+11. The design explicitly defines decoder semantics in terms of claimed argv token indices, with `Map2` requiring disjoint claims and final parse success requiring full coverage of recognized tokens.
+12. Ambiguous schema shapes are rejected during schema construction rather than resolved implicitly at runtime.
+13. `or_else` is supported in v1, and help rendering can show mutually exclusive branches automatically from the stored choice structure.
+14. Grouped help output is keyed by `group_id`, with `with_group_docs` merge semantics documented and tested.
+15. Repetition constructors such as `zero_or_more` and `one_or_more` are exposed as primitive builders rather than wrappers over arbitrary `Args[a]`.
+16. Tests cover help rendering, GNU-form compatibility, subcommands, inherited scope, negative-number positionals, duplicate detection, exclusive-choice rendering, `or_else` ambiguity checks, group-doc merging, and validation accumulation.
+17. `src/Zafu/Tool/JsonFormat.bosatsu` is migrated to the new package or an equivalent end-to-end fixture proves the same flag style.
+18. `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh` pass.
 
 ## Risks and Mitigations
 
