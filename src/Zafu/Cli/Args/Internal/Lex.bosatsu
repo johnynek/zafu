@@ -1,0 +1,566 @@
+package Zafu/Cli/Args/Internal/Lex
+
+from Bosatsu/Char import (
+  eq_ignore_ascii_case,
+  is_ascii_digit,
+  string_to_Char_List,
+)
+
+from Zafu/Abstract/Eq import (
+  eq as eq_Eq,
+)
+
+from Zafu/Abstract/Instances/Predef import (
+  eq_String,
+  hash_Int,
+)
+
+from Zafu/Collection/HashSet import (
+  HashSet,
+  empty as empty_HashSet,
+  updated as updated_HashSet,
+)
+
+from Zafu/Collection/List import (
+  exists as exists_List,
+  filter as filter_List,
+  foldl as foldl_List,
+  size as size_List,
+)
+
+from Zafu/Control/Result import (
+  Result,
+  Ok,
+  Err,
+)
+
+from Zafu/Collection/NonEmptyList import (
+  to_List as to_List_NonEmptyList,
+)
+
+from Zafu/Cli/Args/Internal/Core import (
+  Args,
+  CliError,
+  Command,
+  CommandSelection,
+  IndexedToken,
+  NamedOccurrence,
+  ParseConfig,
+  PrimitiveKind,
+  PrimitiveSpec,
+  Primitive,
+  Pure,
+  Map,
+  Map2,
+  OrElse,
+  Validate,
+  WithInfo,
+  WithScope,
+  WithGroupDocs,
+  WithDefault,
+  OptionalArg,
+  Subcommands,
+  Scope,
+  Inherited,
+  Spelling,
+  Subcommand,
+  PositionalOccurrence,
+  FlagValue,
+  NamedValue,
+  NamedOptionalValue,
+  Flag,
+  RequiredValue,
+  OptionalValue,
+  SeparateToken,
+  AttachedToken,
+  EqualsToken,
+  UnknownOption,
+  UnknownCommand,
+  UnexpectedArgument,
+  spelling_key,
+)
+
+export (
+  BuiltInRequest(),
+  SomeCommand(),
+  ScanResult(),
+  scan_command,
+  command_from_subcommand,
+)
+
+enum BuiltInRequest:
+  RequestHelp(command_path: List[String])
+  RequestVersion
+
+enum SomeCommand:
+  PackedCommand[a](command: Command[a])
+
+struct ScanResult(
+  tokens: List[IndexedToken],
+  named_occurrences: List[NamedOccurrence],
+  positional_occurrences: List[PositionalOccurrence],
+  command_steps: List[CommandSelection],
+  command_path: List[String],
+  leaf_command: SomeCommand,
+  auto_claimed: HashSet[Int],
+  built_in: Option[BuiltInRequest],
+  errors: List[CliError],
+)
+
+struct NamedView(
+  spellings: List[Spelling],
+  scope: Scope,
+)
+
+def command_from_subcommand[a](sub: Subcommand[Args, a]) -> SomeCommand:
+  Subcommand(name, aliases, summary, description, footer, examples, help_enabled, version_doc, args) = sub
+  PackedCommand(Command(name, summary, description, footer, aliases, examples, help_enabled, version_doc, args))
+
+def eq_String_case(left: String, right: String, case_sensitive: Bool) -> Bool:
+  if case_sensitive:
+    eq_Eq(eq_String, left, right)
+  else:
+    def loop(left_chars: List[Char], right_chars: List[Char]) -> Bool:
+      loop (left_chars, right_chars):
+        case ([], []):
+          True
+        case ([left_head, *left_tail], [right_head, *right_tail]):
+          if eq_ignore_ascii_case(left_head, right_head):
+            loop(left_tail, right_tail)
+          else:
+            False
+        case _:
+          False
+
+    loop(string_to_Char_List(left), string_to_Char_List(right))
+
+def strip_prefix(value: String, prefix: String, case_sensitive: Bool) -> Option[String]:
+  def loop(value_chars: List[Char], prefix_chars: List[Char]) -> Option[List[Char]]:
+    loop (value_chars, prefix_chars):
+      case (rest, []):
+        Some(rest)
+      case ([value_head, *value_tail], [prefix_head, *prefix_tail]):
+        same_char =
+          if case_sensitive:
+            char_to_Int(value_head).eq_Int(char_to_Int(prefix_head))
+          else:
+            eq_ignore_ascii_case(value_head, prefix_head)
+        if same_char:
+          loop(value_tail, prefix_tail)
+        else:
+          None
+      case _:
+        None
+
+  match loop(string_to_Char_List(value), string_to_Char_List(prefix)):
+    case Some(rest):
+      Some(char_List_to_String(rest))
+    case None:
+      None
+
+def starts_with_option_prefix(token: String) -> Bool:
+  match string_to_Char_List(token):
+    case [.'-', *_] | [.'/', *_]:
+      True
+    case _:
+      False
+
+def looks_like_negative_number(token: String) -> Bool:
+  match string_to_Char_List(token):
+    case [.'-', next, *_]:
+      is_ascii_digit(next)
+    case _:
+      False
+
+def collect_named_views[a](args: Args[a], scope_override: Option[Scope]) -> List[NamedView]:
+  recur args:
+    case Pure(_):
+      []
+    case Primitive(PrimitiveSpec(kind, _, base_scope, _), _):
+      actual_scope =
+        match scope_override:
+          case Some(scope):
+            scope
+          case None:
+            base_scope
+      match kind:
+        case FlagValue(spellings, _) | NamedValue(spellings, _) | NamedOptionalValue(spellings, _):
+          [NamedView(to_List_NonEmptyList(spellings), actual_scope)]
+        case _:
+          []
+    case Map(source, _):
+      collect_named_views(source, scope_override)
+    case Validate(source, _, _):
+      collect_named_views(source, scope_override)
+    case WithInfo(source, _):
+      collect_named_views(source, scope_override)
+    case WithGroupDocs(source, _):
+      collect_named_views(source, scope_override)
+    case WithDefault(source, _, _):
+      collect_named_views(source, scope_override)
+    case OptionalArg(source, _):
+      collect_named_views(source, scope_override)
+    case WithScope(source, scope):
+      collect_named_views(source, Some(scope))
+    case Map2(left, right, _):
+      [*collect_named_views(left, scope_override), *collect_named_views(right, scope_override)]
+    case OrElse(left, right):
+      [*collect_named_views(left, scope_override), *collect_named_views(right, scope_override)]
+    case Subcommands(_, _):
+      []
+
+def collect_subcommands[a](args: Args[a]) -> List[SomeCommand]:
+  recur args:
+    case Pure(_) | Primitive(_, _):
+      []
+    case Map(source, _):
+      collect_subcommands(source)
+    case Validate(source, _, _):
+      collect_subcommands(source)
+    case WithInfo(source, _):
+      collect_subcommands(source)
+    case WithGroupDocs(source, _):
+      collect_subcommands(source)
+    case WithDefault(source, _, _):
+      collect_subcommands(source)
+    case OptionalArg(source, _):
+      collect_subcommands(source)
+    case WithScope(source, _):
+      collect_subcommands(source)
+    case Map2(left, right, _):
+      [*collect_subcommands(left), *collect_subcommands(right)]
+    case OrElse(left, right):
+      [*collect_subcommands(left), *collect_subcommands(right)]
+    case Subcommands(commands, _):
+      to_List_NonEmptyList(commands).map_List(command_from_subcommand)
+
+def match_child(token: String, children: List[SomeCommand], case_sensitive: Bool) -> Option[SomeCommand]:
+  def child_matches(packed: SomeCommand) -> Bool:
+    PackedCommand(Command(name, _, _, _, aliases, _, _, _, _)) = packed
+    if eq_String_case(token, name, case_sensitive):
+      True
+    else:
+      exists_List(aliases, alias -> eq_String_case(token, alias, case_sensitive))
+
+  def loop(rem: List[SomeCommand]) -> Option[SomeCommand]:
+    loop rem:
+      case []:
+        None
+      case [head, *tail]:
+        if child_matches(head):
+          Some(head)
+        else:
+          loop(tail)
+
+  loop(children)
+
+def inherited_views(named_views: List[NamedView]) -> List[NamedView]:
+  filter_List(
+    named_views,
+    view -> (
+      NamedView(_, scope) = view
+      scope matches Inherited
+    ),
+  )
+
+def match_visible_spelling(
+  token: String,
+  next_token: Option[(Int, String)],
+  depth: Int,
+  named_views: List[NamedView],
+  short_clusters: Bool,
+  case_sensitive: Bool,
+) -> Result[CliError, (List[NamedOccurrence], Bool)]:
+  def match_one(spelling: Spelling) -> Option[(List[NamedOccurrence], Bool)]:
+    Spelling(prefix, name, value_kind, value_forms, _) = spelling
+    full_name = "${prefix}${name}"
+    maybe_suffix = strip_prefix(token, full_name, case_sensitive)
+    match maybe_suffix:
+      case Some(""):
+        match value_kind:
+          case Flag:
+            Some(([NamedOccurrence(depth, spelling, 0, None, None, token)], False))
+          case RequiredValue:
+            if exists_List(value_forms, form -> form matches SeparateToken):
+              match next_token:
+                case Some((next_index, next_value)):
+                  Some(([NamedOccurrence(depth, spelling, 0, Some(next_index), Some(next_value), token)], True))
+                case None:
+                  None
+            else:
+              None
+          case OptionalValue:
+            if exists_List(value_forms, form -> form matches SeparateToken):
+              match next_token:
+                case Some((next_index, next_value)):
+                  Some(([NamedOccurrence(depth, spelling, 0, Some(next_index), Some(next_value), token)], True))
+                case None:
+                  Some(([NamedOccurrence(depth, spelling, 0, None, None, token)], False))
+            else:
+              Some(([NamedOccurrence(depth, spelling, 0, None, None, token)], False))
+      case Some(suffix):
+        match string_to_Char_List(suffix):
+          case [.'=', *rest]:
+            if exists_List(value_forms, form -> form matches EqualsToken):
+              Some(([NamedOccurrence(depth, spelling, 0, None, Some(char_List_to_String(rest)), token)], False))
+            else:
+              None
+          case _:
+            if exists_List(value_forms, form -> form matches AttachedToken):
+              Some(([NamedOccurrence(depth, spelling, 0, None, Some(suffix), token)], False))
+            else:
+              None
+      case None:
+        None
+
+  all_spellings = foldl_List(named_views, [], (acc, next_view) -> (
+    NamedView(spellings, _) = next_view
+    [*acc, *spellings]
+  ))
+
+  def find_short_spelling(ch: Char, rem_spellings: List[Spelling]) -> Option[Spelling]:
+    loop rem_spellings:
+      case []:
+        None
+      case [head, *tail_spellings]:
+        Spelling(prefix, name, _, _, _) = head
+        if and(eq_String_case(prefix, "-", True), eq_String_case(name, char_to_String(ch), case_sensitive)):
+          Some(head)
+        else:
+          find_short_spelling(ch, tail_spellings)
+
+  def match_short_cluster() -> Option[(List[NamedOccurrence], Bool)]:
+    match string_to_Char_List(token):
+      case [.'-', first, *rest] if short_clusters:
+        # Clusters are expanded against the visible short spellings for the current scope.
+        def loop_cluster(rem_chars: List[Char], rev_occurrences: List[NamedOccurrence]) -> Option[(List[NamedOccurrence], Bool)]:
+          loop rem_chars:
+            case []:
+              Some((rev_occurrences.reverse(), False))
+            case [head, *tail_chars]:
+              match find_short_spelling(head, all_spellings):
+                case Some(spelling):
+                  Spelling(_, _, value_kind, value_forms, is_clusterable) = spelling
+                  occurrence_none = NamedOccurrence(depth, spelling, 0, None, None, token)
+                  match value_kind:
+                    case Flag:
+                      if is_clusterable:
+                        loop_cluster(tail_chars, [occurrence_none, *rev_occurrences])
+                      else:
+                        None
+                    case RequiredValue:
+                      attached_value = char_List_to_String(tail_chars)
+                      if attached_value matches "":
+                        if exists_List(value_forms, form -> form matches SeparateToken):
+                          match next_token:
+                            case Some((_)):
+                              Some(([occurrence_none, *rev_occurrences].reverse(), True))
+                            case None:
+                              None
+                        else:
+                          None
+                      elif exists_List(value_forms, form -> form matches AttachedToken):
+                        Some(([NamedOccurrence(depth, spelling, 0, None, Some(attached_value), token), *rev_occurrences].reverse(), False))
+                      else:
+                        None
+                    case OptionalValue:
+                      attached_value = char_List_to_String(tail_chars)
+                      if attached_value matches "":
+                        if exists_List(value_forms, form -> form matches SeparateToken):
+                          match next_token:
+                            case Some((next_index, next_value)):
+                              Some(([NamedOccurrence(depth, spelling, 0, Some(next_index), Some(next_value), token), *rev_occurrences].reverse(), True))
+                            case None:
+                              Some(([occurrence_none, *rev_occurrences].reverse(), False))
+                        else:
+                          Some(([occurrence_none, *rev_occurrences].reverse(), False))
+                      elif exists_List(value_forms, form -> form matches AttachedToken):
+                        Some(([NamedOccurrence(depth, spelling, 0, None, Some(attached_value), token), *rev_occurrences].reverse(), False))
+                      else:
+                        None
+                case None:
+                  None
+        loop_cluster([first, *rest], [])
+      case _:
+        None
+
+  def loop_spellings(rem_spellings: List[Spelling]) -> Option[(List[NamedOccurrence], Bool)]:
+    loop rem_spellings:
+      case []:
+        None
+      case [head, *tail_spellings]:
+        match match_one(head):
+          case Some(found):
+            Some(found)
+          case None:
+            loop_spellings(tail_spellings)
+
+  match match_short_cluster():
+    case Some((occurrences, consume_next)):
+      Ok((occurrences, consume_next))
+    case None:
+      match loop_spellings(all_spellings):
+        case Some((occurrences, consume_next)):
+          Ok((occurrences.map_List(occ -> (
+            NamedOccurrence(segment_depth, spelling, _, value_index, value_text, raw_token) = occ
+            NamedOccurrence(segment_depth, spelling, 0, value_index, value_text, raw_token)
+          )), consume_next))
+        case None:
+          if and(starts_with_option_prefix(token), not(looks_like_negative_number(token))):
+            Err(UnknownOption([], token))
+          else:
+            Err(UnexpectedArgument([], token))
+
+def scan_command[a](config: ParseConfig, command: Command[a], argv: List[String]) -> ScanResult:
+  ParseConfig(help_spellings, version_spellings, short_clusters, stop_at_double_dash, case_sensitive) = config
+  def index_tokens(rem: List[String], idx: Int, rev_tokens: List[IndexedToken]) -> List[IndexedToken]:
+    loop rem:
+      case []:
+        rev_tokens.reverse()
+      case [head, *tail]:
+        index_tokens(tail, idx.add(1), [IndexedToken(idx, head), *rev_tokens])
+
+  tokens = index_tokens(argv, 0, [])
+  Command(root_name, _, _, _, _, _, help_enabled, version_doc, _) = command
+
+  def loop(
+    current_command: SomeCommand,
+    inherited_named: List[NamedView],
+    depth: Int,
+    rem_tokens: List[IndexedToken],
+    rev_named: List[NamedOccurrence],
+    rev_positional: List[PositionalOccurrence],
+    rev_steps: List[CommandSelection],
+    command_path_rev: List[String],
+    auto_claimed: HashSet[Int],
+    built_in: Option[BuiltInRequest],
+    errors_rev: List[CliError],
+  ) -> ScanResult:
+    PackedCommand(Command(_, _, _, _, _, _, _, _, current_args)) = current_command
+    local_named = collect_named_views(current_args, None)
+    visible_named = [*inherited_named, *local_named]
+    children = collect_subcommands(current_args)
+    next_inherited = [*inherited_named, *inherited_views(local_named)]
+    loop rem_tokens:
+      case []:
+        ScanResult(
+          tokens,
+          rev_named.reverse(),
+          rev_positional.reverse(),
+          rev_steps.reverse(),
+          [root_name, *command_path_rev.reverse()],
+          current_command,
+          auto_claimed,
+          built_in,
+          errors_rev.reverse(),
+        )
+      case [IndexedToken(token_index, token), *tail]:
+        if built_in matches Some(_):
+          loop(current_command, inherited_named, depth, tail, rev_named, [PositionalOccurrence(depth, token_index, token), *rev_positional], rev_steps, command_path_rev, auto_claimed, built_in, errors_rev)
+        elif and(stop_at_double_dash, eq_String_case(token, "--", case_sensitive)):
+          next_auto = updated_HashSet(auto_claimed, token_index)
+          rest_positional =
+            tail.map_List(((IndexedToken(next_idx, next_raw))) -> PositionalOccurrence(depth, next_idx, next_raw))
+          ScanResult(
+            tokens,
+            rev_named.reverse(),
+            [*rev_positional.reverse(), *rest_positional],
+            rev_steps.reverse(),
+            [root_name, *command_path_rev.reverse()],
+            current_command,
+            next_auto,
+            built_in,
+            errors_rev.reverse(),
+          )
+        else:
+          help_hit =
+            if help_enabled:
+              exists_List(to_List_NonEmptyList(help_spellings), spelling -> (
+                strip_prefix(token, spelling_key(spelling), case_sensitive) matches Some("")
+              ))
+            else:
+              False
+          version_hit =
+            match version_doc:
+              case Some(_):
+                exists_List(to_List_NonEmptyList(version_spellings), spelling -> (
+                  strip_prefix(token, spelling_key(spelling), case_sensitive) matches Some("")
+                ))
+              case None:
+                False
+          if help_hit:
+            next_auto = updated_HashSet(auto_claimed, token_index)
+            ScanResult(
+              tokens,
+              rev_named.reverse(),
+              rev_positional.reverse(),
+              rev_steps.reverse(),
+              [root_name, *command_path_rev.reverse()],
+              current_command,
+              next_auto,
+              Some(RequestHelp([root_name, *command_path_rev.reverse()])),
+              errors_rev.reverse(),
+            )
+          elif version_hit:
+            next_auto = updated_HashSet(auto_claimed, token_index)
+            ScanResult(
+              tokens,
+              rev_named.reverse(),
+              rev_positional.reverse(),
+              rev_steps.reverse(),
+              [root_name, *command_path_rev.reverse()],
+              current_command,
+              next_auto,
+              Some(RequestVersion),
+              errors_rev.reverse(),
+            )
+          else:
+            next_token =
+              match tail:
+                case [IndexedToken(next_idx, next_raw), *_]:
+                  Some((next_idx, next_raw))
+                case []:
+                  None
+            match match_visible_spelling(token, next_token, depth, visible_named, short_clusters, case_sensitive):
+              case Ok((occurrences0, consume_next)):
+                occurrences =
+                  occurrences0.map_List(occ -> (
+                    NamedOccurrence(segment_depth, spelling, _, value_index, value_text, raw_token) = occ
+                    NamedOccurrence(segment_depth, spelling, token_index, value_index, value_text, raw_token)
+                  ))
+                if consume_next:
+                  match tail:
+                    case [IndexedToken(_, _), *tail_tail]:
+                      loop(current_command, inherited_named, depth, tail_tail, occurrences.reverse_concat(rev_named), rev_positional, rev_steps, command_path_rev, auto_claimed, built_in, errors_rev)
+                    case []:
+                      loop(current_command, inherited_named, depth, tail, occurrences.reverse_concat(rev_named), rev_positional, rev_steps, command_path_rev, auto_claimed, built_in, errors_rev)
+                else:
+                  loop(current_command, inherited_named, depth, tail, occurrences.reverse_concat(rev_named), rev_positional, rev_steps, command_path_rev, auto_claimed, built_in, errors_rev)
+              case Err(UnknownOption(_, _)):
+                match match_child(token, children, case_sensitive):
+                  case Some(child):
+                    PackedCommand(Command(child_name, _, _, _, _, _, _, _, _)) = child
+                    next_step = CommandSelection(token_index, depth.add(1), token, child_name)
+                    next_auto = updated_HashSet(auto_claimed, token_index)
+                    loop(child, next_inherited, depth.add(1), tail, rev_named, rev_positional, [next_step, *rev_steps], [child_name, *command_path_rev], next_auto, built_in, errors_rev)
+                  case None:
+                    if size_List(children).eq_Int(0):
+                      loop(current_command, inherited_named, depth, tail, rev_named, [PositionalOccurrence(depth, token_index, token), *rev_positional], rev_steps, command_path_rev, auto_claimed, built_in, errors_rev)
+                    else:
+                      loop(current_command, inherited_named, depth, tail, rev_named, rev_positional, rev_steps, command_path_rev, auto_claimed, built_in, [UnknownCommand([root_name, *command_path_rev.reverse()], token), *errors_rev])
+              case Err(UnexpectedArgument(_, _)):
+                match match_child(token, children, case_sensitive):
+                  case Some(child_command):
+                    PackedCommand(Command(child_name, _, _, _, _, _, _, _, _)) = child_command
+                    next_step = CommandSelection(token_index, depth.add(1), token, child_name)
+                    next_auto = updated_HashSet(auto_claimed, token_index)
+                    loop(child_command, next_inherited, depth.add(1), tail, rev_named, rev_positional, [next_step, *rev_steps], [child_name, *command_path_rev], next_auto, built_in, errors_rev)
+                  case None:
+                    if size_List(children).eq_Int(0):
+                      loop(current_command, inherited_named, depth, tail, rev_named, [PositionalOccurrence(depth, token_index, token), *rev_positional], rev_steps, command_path_rev, auto_claimed, built_in, errors_rev)
+                    else:
+                      loop(current_command, inherited_named, depth, tail, rev_named, rev_positional, rev_steps, command_path_rev, auto_claimed, built_in, [UnknownCommand([root_name, *command_path_rev.reverse()], token), *errors_rev])
+              case Err(other):
+                loop(current_command, inherited_named, depth, tail, rev_named, rev_positional, rev_steps, command_path_rev, auto_claimed, built_in, [other, *errors_rev])
+
+  loop(PackedCommand(command), [], 0, tokens, [], [], [], [], empty_HashSet(hash_Int), None, [])

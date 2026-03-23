@@ -1,0 +1,1225 @@
+package Zafu/Cli/Args/Internal/Core
+
+from Bosatsu/Char import (
+  is_ascii_digit,
+)
+
+from Bosatsu/Num/Float64 import (
+  string_to_Float64,
+)
+
+from Zafu/Abstract/Applicative import (
+  Applicative,
+  applicative_from_pure_map_map2,
+  map2,
+  pure as pure_Applicative,
+)
+
+from Zafu/Abstract/Instances/Predef import (
+  hash_Int,
+  eq_String,
+)
+
+from Zafu/Abstract/Eq import (
+  eq as eq_Eq,
+)
+
+from Zafu/Abstract/Semigroup import (
+  Semigroup,
+  semigroup_from_combine,
+)
+
+from Zafu/Collection/HashMap import (
+  HashMap,
+)
+
+from Zafu/Collection/HashSet import (
+  HashSet,
+  empty as empty_HashSet,
+  updated as updated_HashSet,
+  union as union_HashSet,
+)
+
+from Zafu/Collection/List import (
+  exists as exists_List,
+  filter as filter_List,
+  foldl as foldl_List,
+  is_empty as is_empty_List,
+  size as size_List,
+  take as take_List,
+)
+
+from Zafu/Collection/NonEmptyChain import (
+  NonEmptyChain,
+  singleton as singleton_NonEmptyChain,
+  concat as concat_NonEmptyChain,
+)
+
+from Zafu/Collection/NonEmptyList import (
+  NonEmptyList as NonEmpty,
+  singleton as singleton_NonEmptyList,
+  from_prepend as from_prepend_NonEmptyList,
+  from_List as from_List_NonEmptyList,
+  to_List as to_List_NonEmptyList,
+  map as map_NonEmptyList,
+)
+
+from Zafu/Control/Result import (
+  Result,
+  Ok,
+  Err,
+  applicative_combine_Err,
+)
+
+from Zafu/Text/Parse import (
+  char_in,
+  char_where,
+  label,
+  map,
+  optional,
+  parse,
+  product01,
+  rep,
+)
+
+from Zafu/Text/Parse/Error import Error
+
+from Zafu/Text/Parse/Internal/Core import (
+  Parser,
+)
+
+from Zafu/Text/Pretty import (
+  Doc,
+  append,
+  intercalate,
+  paragraph,
+  spread,
+  stack,
+  text,
+)
+
+export (
+  ValueParser(),
+  ArgInfo(),
+  ValueKind(),
+  ValueForm(),
+  Spelling(),
+  Scope(),
+  Cardinality(),
+  PrimitiveKind(),
+  PrimitiveSpec(),
+  Subcommand(),
+  Args(),
+  Command(),
+  ParseConfig(),
+  HelpConfig(),
+  ParseResult(),
+  CliError(),
+  DecodeResult(),
+  IndexedToken(),
+  NamedOccurrence(),
+  PositionalOccurrence(),
+  CommandSelection(),
+  MatchState(),
+  arg_info,
+  default_parse_config,
+  default_help_config,
+  error_semigroup,
+  value_from_parse,
+  value_from_fn,
+  string_value,
+  int_value,
+  float_value,
+  bool_value,
+  enum_value,
+  map_value,
+  and_then_value,
+  long,
+  short,
+  custom_name,
+  allow_separate,
+  allow_attached,
+  allow_equals,
+  clusterable,
+  command,
+  pure,
+  map_args,
+  map2_args,
+  product,
+  product_left,
+  product_right,
+  or_else,
+  validate,
+  primitive,
+  flag,
+  flag_value,
+  count,
+  option,
+  option_optional_value,
+  zero_or_more,
+  one_or_more,
+  positional,
+  positional_optional,
+  rest,
+  subcommand_from_command,
+  subcommands,
+  optional_arg,
+  with_default,
+  with_help,
+  with_metavar,
+  with_default_doc,
+  with_group,
+  with_group_docs,
+  with_example,
+  hidden_arg,
+  with_scope,
+  with_aliases,
+  example,
+  with_help_flag,
+  with_version_flag,
+  applicative_Args,
+  claim_union,
+  spelling_key,
+  spelling_usage,
+  primitive_target_doc,
+  cli_error_doc,
+)
+
+struct ValueParser[a](
+  parse_fn: String -> Result[Doc, a],
+  metavar: Doc,
+  choices: Option[NonEmpty[(String, Doc)]],
+)
+
+struct ArgInfo(
+  help: Option[Doc],
+  metavar_override: Option[Doc],
+  group_id: Option[String],
+  hidden: Bool,
+  default_doc: Option[Doc],
+  examples: List[Doc],
+)
+
+enum ValueKind:
+  Flag
+  RequiredValue
+  OptionalValue
+
+enum ValueForm:
+  SeparateToken
+  AttachedToken
+  EqualsToken
+
+struct Spelling(
+  prefix: String,
+  name: String,
+  value_kind: ValueKind,
+  value_forms: List[ValueForm],
+  clusterable: Bool,
+)
+
+enum Scope:
+  Local
+  Inherited
+
+enum Cardinality:
+  ExactlyOne
+  ZeroOrOne
+  ZeroOrMore
+  OneOrMore
+  CountOccurrences
+
+enum PrimitiveKind:
+  FlagValue(spellings: NonEmpty[Spelling], rendered: Doc)
+  NamedValue(spellings: NonEmpty[Spelling], metavar: Doc)
+  NamedOptionalValue(spellings: NonEmpty[Spelling], metavar: Doc)
+  Positional(metavar: Doc)
+  Rest(metavar: Doc)
+
+struct Subcommand[f: +(+* -> *), a: +*](
+  name: String,
+  aliases: List[String],
+  summary: Option[Doc],
+  description: Option[Doc],
+  footer: Option[Doc],
+  examples: List[Doc],
+  help_enabled: Bool,
+  version_doc: Option[Doc],
+  args: f[a],
+)
+
+enum CliError:
+  UnknownOption(command_path: List[String], token: String)
+  UnknownCommand(command_path: List[String], token: String)
+  MissingValue(command_path: List[String], target: Doc)
+  MissingArgument(command_path: List[String], target: Doc)
+  DuplicateOccurrence(command_path: List[String], target: Doc)
+  UnexpectedArgument(command_path: List[String], token: String)
+  ValueParseError(command_path: List[String], target: Doc, raw_value: String, detail: Doc)
+  ValidationError(command_path: List[String], detail: Doc)
+  AmbiguousSpecification(command_path: List[String], detail: Doc)
+
+enum ParseResult[a]:
+  Parsed(value: a)
+  RequestedHelp(command_path: List[String], doc: Doc)
+  RequestedVersion(doc: Doc)
+  Failed(errors: NonEmptyChain[CliError], doc: Doc)
+
+struct DecodeResult[a](claimed: HashSet[Int], value: a)
+
+struct IndexedToken(index: Int, raw: String)
+
+struct NamedOccurrence(
+  segment_depth: Int,
+  spelling: Spelling,
+  token_index: Int,
+  value_index: Option[Int],
+  value_text: Option[String],
+  raw_token: String,
+)
+
+struct PositionalOccurrence(
+  segment_depth: Int,
+  token_index: Int,
+  raw_value: String,
+)
+
+struct CommandSelection(
+  token_index: Int,
+  depth: Int,
+  raw_name: String,
+  canonical_name: String,
+)
+
+struct MatchState(
+  tokens: List[IndexedToken],
+  named_occurrences: List[NamedOccurrence],
+  positional_occurrences: List[PositionalOccurrence],
+  command_steps: List[CommandSelection],
+  command_path: List[String],
+  auto_claimed: HashSet[Int],
+)
+
+struct PrimitiveSpec[a](
+  kind: PrimitiveKind,
+  cardinality: Cardinality,
+  scope: Scope,
+  decode_fn: (MatchState, Int, Scope, ArgInfo) -> Result[NonEmptyChain[CliError], DecodeResult[a]],
+)
+
+enum Args[a]:
+  Pure(value: a)
+  Primitive(spec: PrimitiveSpec[a], info: ArgInfo)
+  Map[b](source: Args[b], fn: b -> a)
+  Map2[b, c](left: Args[b], right: Args[c], fn: (b, c) -> a)
+  OrElse(left: Args[a], right: Args[a])
+  Validate[b](source: Args[b], fn: b -> Result[Doc, a], label: Doc)
+  WithInfo(source: Args[a], fn: ArgInfo -> ArgInfo)
+  WithScope(source: Args[a], scope: Scope)
+  WithGroupDocs(source: Args[a], group_docs: HashMap[String, Doc])
+  WithDefault(source: Args[a], value: a, rendered_default: Doc)
+  OptionalArg[b](source: Args[b], build: Option[b] -> a)
+  Subcommands(commands: NonEmpty[Subcommand[Args, a]], info: ArgInfo)
+
+struct Command[a](
+  name: String,
+  summary: Option[Doc],
+  description: Option[Doc],
+  footer: Option[Doc],
+  aliases: List[String],
+  examples: List[Doc],
+  help_enabled: Bool,
+  version_doc: Option[Doc],
+  args: Args[a],
+)
+
+struct ParseConfig(
+  help_spellings: NonEmpty[Spelling],
+  version_spellings: NonEmpty[Spelling],
+  short_clusters: Bool,
+  stop_at_double_dash: Bool,
+  case_sensitive: Bool,
+)
+
+struct HelpConfig(
+  width: Int,
+  show_hidden: Bool,
+  show_defaults: Bool,
+  show_examples: Bool,
+)
+
+arg_info: ArgInfo = ArgInfo(None, None, None, False, None, [])
+
+default_parse_config: ParseConfig = ParseConfig(
+  from_prepend_NonEmptyList(
+    Spelling("--", "help", Flag, [], False),
+    [Spelling("-", "h", Flag, [], True)],
+  ),
+  singleton_NonEmptyList(Spelling("--", "version", Flag, [], False)),
+  True,
+  True,
+  True,
+)
+
+default_help_config: HelpConfig = HelpConfig(80, False, True, True)
+
+error_semigroup: Semigroup[NonEmptyChain[CliError]] = semigroup_from_combine(concat_NonEmptyChain)
+
+def claim_union(left: HashSet[Int], right: HashSet[Int]) -> HashSet[Int]:
+  union_HashSet(left, right)
+
+def value_from_parse[a](parser: Parser[a], metavar: Doc) -> ValueParser[a]:
+  ValueParser(
+    input -> (
+      match parse(parser, input):
+        case Ok(value):
+          Ok(value)
+        case Err(err):
+          Error(_, failed_at, _, _) = err
+          Err(paragraph("parse failed at character ${int_to_String(failed_at)}"))
+    ),
+    metavar,
+    None,
+  )
+
+def value_from_fn[a](parse_fn: String -> Result[Doc, a], metavar: Doc) -> ValueParser[a]:
+  ValueParser(parse_fn, metavar, None)
+
+def map_value[a, b](value_parser: ValueParser[a], fn: a -> b) -> ValueParser[b]:
+  ValueParser(parse_fn, metavar, choices) = value_parser
+  ValueParser(
+    input -> (
+      match parse_fn(input):
+        case Ok(value):
+          Ok(fn(value))
+        case Err(err_doc):
+          Err(err_doc)
+    ),
+    metavar,
+    choices,
+  )
+
+def and_then_value[a, b](value_parser: ValueParser[a], fn: a -> Result[Doc, b]) -> ValueParser[b]:
+  ValueParser(parse_fn, metavar, _) = value_parser
+  ValueParser(
+    input -> (
+      match parse_fn(input):
+        case Ok(value):
+          fn(value)
+        case Err(err_doc):
+          Err(err_doc)
+    ),
+    metavar,
+    None,
+  )
+
+def string_value(metavar: Doc) -> ValueParser[String]:
+  value_from_fn(input -> Ok(input), metavar)
+
+def parse_int_chars(chars: List[Char], acc: Int) -> Int:
+  loop chars:
+    case []:
+      acc
+    case [head, *tail]:
+      digit = char_to_Int(head).sub(48)
+      parse_int_chars(tail, acc.mul(10).add(digit))
+
+def int_value(metavar: Doc) -> ValueParser[Int]:
+  digit = char_where(is_ascii_digit, "digit")
+  parser = label(
+    map(
+      product01(optional(char_in([.'+', .'-'])), rep(digit)),
+      ((maybe_sign, digits)) -> (
+        magnitude = parse_int_chars(to_List_NonEmptyList(digits), 0)
+        match maybe_sign:
+          case Some(.'-'):
+            0.sub(magnitude)
+          case _:
+            magnitude
+      ),
+    ),
+    "integer",
+  )
+  value_from_parse(parser, metavar)
+
+def float_value(metavar: Doc) -> ValueParser[Float64]:
+  value_from_fn(
+    input -> (
+      match string_to_Float64(input):
+        case Some(value):
+          Ok(value)
+        case None:
+          Err(paragraph("expected a floating-point number"))
+    ),
+    metavar,
+  )
+
+def bool_value(metavar: Doc) -> ValueParser[Bool]:
+  ValueParser(
+    input -> (
+      if eq_Eq(eq_String, input, "true"):
+        Ok(True)
+      elif eq_Eq(eq_String, input, "false"):
+        Ok(False)
+      else:
+        Err(paragraph("expected true or false"))
+    ),
+    metavar,
+    Some(from_prepend_NonEmptyList(("true", text("true")), [("false", text("false"))])),
+  )
+
+def enum_value[a](cases: NonEmpty[(String, a)], metavar: Doc) -> ValueParser[a]:
+  ValueParser(
+    input -> (
+      def find_case(rem: List[(String, a)]) -> Option[a]:
+        loop rem:
+          case []:
+            None
+          case [(name, value), *tail]:
+            if eq_Eq(eq_String, name, input):
+              Some(value)
+            else:
+              find_case(tail)
+
+      match find_case(to_List_NonEmptyList(cases)):
+        case Some(value):
+          Ok(value)
+        case None:
+          Err(paragraph("unexpected value ${input}"))
+    ),
+    metavar,
+    Some(map_NonEmptyList(cases, ((name, _)) -> (name, text(name)))),
+  )
+
+def long(name: String) -> Spelling:
+  Spelling("--", name, Flag, [], False)
+
+def short(ch: Char) -> Spelling:
+  Spelling("-", char_to_String(ch), Flag, [], False)
+
+def custom_name(prefix: String, name: String) -> Spelling:
+  Spelling(prefix, name, Flag, [], False)
+
+def contains_form(forms: List[ValueForm], form: ValueForm) -> Bool:
+  exists_List(
+    forms,
+    next -> (
+      match (next, form):
+        case (SeparateToken, SeparateToken):
+          True
+        case (AttachedToken, AttachedToken):
+          True
+        case (EqualsToken, EqualsToken):
+          True
+        case _:
+          False
+    ),
+  )
+
+def add_form(spelling: Spelling, form: ValueForm) -> Spelling:
+  Spelling(prefix, name, value_kind, value_forms, is_clusterable) = spelling
+  next_forms =
+    if contains_form(value_forms, form):
+      value_forms
+    else:
+      [*value_forms, form]
+  Spelling(prefix, name, value_kind, next_forms, is_clusterable)
+
+def allow_separate(spelling: Spelling) -> Spelling:
+  add_form(spelling, SeparateToken)
+
+def allow_attached(spelling: Spelling) -> Spelling:
+  add_form(spelling, AttachedToken)
+
+def allow_equals(spelling: Spelling) -> Spelling:
+  add_form(spelling, EqualsToken)
+
+def clusterable(spelling: Spelling) -> Spelling:
+  Spelling(prefix, name, value_kind, value_forms, _) = spelling
+  Spelling(prefix, name, value_kind, value_forms, True)
+
+def command[a](name: String, args: Args[a]) -> Command[a]:
+  Command(name, None, None, None, [], [], False, None, args)
+
+def pure[a](value: a) -> Args[a]:
+  Pure(value)
+
+def map_args[a, b](args: Args[a], fn: a -> b) -> Args[b]:
+  Map(args, fn)
+
+def map2_args[a, b, c](left: Args[a], right: Args[b], fn: (a, b) -> c) -> Args[c]:
+  Map2(left, right, fn)
+
+def product[a, b](left: Args[a], right: Args[b]) -> Args[(a, b)]:
+  Map2(left, right, (left_value, right_value) -> (left_value, right_value))
+
+def product_left[a, b](left: Args[a], right: Args[b]) -> Args[a]:
+  Map2(left, right, (left_value, _) -> left_value)
+
+def product_right[a, b](left: Args[a], right: Args[b]) -> Args[b]:
+  Map2(left, right, (_, right_value) -> right_value)
+
+def or_else[a](left: Args[a], right: Args[a]) -> Args[a]:
+  OrElse(left, right)
+
+def validate[a, b](args: Args[a], fn: a -> Result[Doc, b]) -> Args[b]:
+  Validate(args, fn, text("validation"))
+
+def primitive[a](spec: PrimitiveSpec[a], info: ArgInfo) -> Args[a]:
+  Primitive(spec, info)
+
+def optional_arg[a](arg: Args[a]) -> Args[Option[a]]:
+  OptionalArg(arg, value -> value)
+
+def with_default[a](arg: Args[a], value: a, rendered_default: Doc) -> Args[a]:
+  WithDefault(arg, value, rendered_default)
+
+def with_help[a](arg: Args[a], doc: Doc) -> Args[a]:
+  WithInfo(
+    arg,
+    info -> (
+      ArgInfo(_, metavar_override, group_id, hidden0, default_doc, examples) = info
+      ArgInfo(Some(doc), metavar_override, group_id, hidden0, default_doc, examples)
+    ),
+  )
+
+def with_metavar[a](arg: Args[a], doc: Doc) -> Args[a]:
+  WithInfo(
+    arg,
+    info -> (
+      ArgInfo(help0, _, group_id, hidden0, default_doc, examples) = info
+      ArgInfo(help0, Some(doc), group_id, hidden0, default_doc, examples)
+    ),
+  )
+
+def with_default_doc[a](arg: Args[a], doc: Doc) -> Args[a]:
+  WithInfo(
+    arg,
+    info -> (
+      ArgInfo(help0, metavar_override, group_id, hidden0, _, examples) = info
+      ArgInfo(help0, metavar_override, group_id, hidden0, Some(doc), examples)
+    ),
+  )
+
+def with_group[a](arg: Args[a], group_id: String) -> Args[a]:
+  WithInfo(
+    arg,
+    info -> (
+      ArgInfo(help0, metavar_override, _, hidden0, default_doc, examples) = info
+      ArgInfo(help0, metavar_override, Some(group_id), hidden0, default_doc, examples)
+    ),
+  )
+
+def with_group_docs[a](arg: Args[a], group_docs: HashMap[String, Doc]) -> Args[a]:
+  WithGroupDocs(arg, group_docs)
+
+def with_example[a](arg: Args[a], doc: Doc) -> Args[a]:
+  WithInfo(
+    arg,
+    info -> (
+      ArgInfo(help0, metavar_override, group_id, hidden0, default_doc, examples) = info
+      ArgInfo(help0, metavar_override, group_id, hidden0, default_doc, [*examples, doc])
+    ),
+  )
+
+def hidden_arg[a](arg: Args[a]) -> Args[a]:
+  WithInfo(
+    arg,
+    info -> (
+      ArgInfo(help0, metavar_override, group_id, _, default_doc, examples) = info
+      ArgInfo(help0, metavar_override, group_id, True, default_doc, examples)
+    ),
+  )
+
+def with_scope[a](arg: Args[a], scope: Scope) -> Args[a]:
+  WithScope(arg, scope)
+
+def with_aliases[a](cmd: Command[a], aliases: List[String]) -> Command[a]:
+  Command(name, summary, description, footer, _, examples, help_enabled, version_doc, args) = cmd
+  Command(name, summary, description, footer, aliases, examples, help_enabled, version_doc, args)
+
+def example[a](cmd: Command[a], doc: Doc) -> Command[a]:
+  Command(name, summary, description, footer, aliases, examples, help_enabled, version_doc, args) = cmd
+  Command(name, summary, description, footer, aliases, [*examples, doc], help_enabled, version_doc, args)
+
+def with_help_flag[a](cmd: Command[a]) -> Command[a]:
+  Command(name, summary, description, footer, aliases, examples, _, version_doc, args) = cmd
+  Command(name, summary, description, footer, aliases, examples, True, version_doc, args)
+
+def with_version_flag[a](cmd: Command[a], version_doc: Doc) -> Command[a]:
+  Command(name, summary, description, footer, aliases, examples, help_enabled, _, args) = cmd
+  Command(name, summary, description, footer, aliases, examples, help_enabled, Some(version_doc), args)
+
+applicative_Args: Applicative[Args] = applicative_from_pure_map_map2(
+  pure,
+  map_args,
+  map2_args,
+)
+
+def set_value_kind(spelling: Spelling, value_kind: ValueKind, default_forms: List[ValueForm]) -> Spelling:
+  Spelling(prefix, name, _, value_forms, is_clusterable) = spelling
+  next_forms =
+    if is_empty_List(value_forms):
+      default_forms
+    else:
+      value_forms
+  Spelling(prefix, name, value_kind, next_forms, is_clusterable)
+
+def required_value_spelling(spelling: Spelling) -> Spelling:
+  Spelling(prefix, _, _, _, _) = spelling
+  forms =
+    if eq_Eq(eq_String, prefix, "--"):
+      [SeparateToken, EqualsToken]
+    else:
+      [SeparateToken]
+  set_value_kind(spelling, RequiredValue, forms)
+
+def optional_value_spelling(spelling: Spelling) -> Spelling:
+  Spelling(prefix, _, _, _, _) = spelling
+  forms =
+    if eq_Eq(eq_String, prefix, "--"):
+      [EqualsToken]
+    else:
+      [AttachedToken]
+  set_value_kind(spelling, OptionalValue, forms)
+
+def spelling_key(spelling: Spelling) -> String:
+  Spelling(prefix, name, _, _, _) = spelling
+  "${prefix}${name}"
+
+def kind_metavar(kind: PrimitiveKind, info: ArgInfo) -> Doc:
+  ArgInfo(_, metavar_override, _, _, _, _) = info
+  match metavar_override:
+    case Some(doc):
+      doc
+    case None:
+      match kind:
+        case FlagValue(_, rendered):
+          rendered
+        case NamedValue(_, metavar) | NamedOptionalValue(_, metavar) | Positional(metavar) | Rest(metavar):
+          metavar
+
+def render_spelling(spelling: Spelling, metavar: Doc) -> Doc:
+  Spelling(prefix, name, value_kind, value_forms, _) = spelling
+  base = text("${prefix}${name}")
+  match value_kind:
+    case Flag:
+      base
+    case RequiredValue:
+      if contains_form(value_forms, EqualsToken):
+        spread([base, text("="), metavar])
+      elif contains_form(value_forms, AttachedToken):
+        append(base, metavar)
+      else:
+        spread([base, metavar])
+    case OptionalValue:
+      if contains_form(value_forms, EqualsToken):
+        append(base, append(text("[="), append(metavar, text("]"))))
+      else:
+        base
+
+def choice_usage(parts: List[Doc]) -> Doc:
+  match parts:
+    case []:
+      text("")
+    case [single]:
+      single
+    case _:
+      spread([text("("), intercalate(text(" | "), parts), text(")")])
+
+def spelling_usage(kind: PrimitiveKind, info: ArgInfo) -> Doc:
+  metavar = kind_metavar(kind, info)
+  match kind:
+    case FlagValue(spellings, _) | NamedValue(spellings, _) | NamedOptionalValue(spellings, _):
+      choice_usage(to_List_NonEmptyList(map_NonEmptyList(spellings, sp -> render_spelling(sp, metavar))))
+    case Positional(_) | Rest(_):
+      metavar
+
+def primitive_target_doc(kind: PrimitiveKind, info: ArgInfo) -> Doc:
+  match kind:
+    case FlagValue(_, _) | NamedValue(_, _) | NamedOptionalValue(_, _):
+      spelling_usage(kind, info)
+    case Positional(_) | Rest(_):
+      kind_metavar(kind, info)
+
+def match_named_occurrences(
+  spellings: NonEmpty[Spelling],
+  occurrences: List[NamedOccurrence],
+  depth: Int,
+  scope: Scope,
+) -> List[NamedOccurrence]:
+  allowed_keys = to_List_NonEmptyList(map_NonEmptyList(spellings, spelling_key))
+  filter_List(
+    occurrences,
+    occ -> (
+      NamedOccurrence(segment_depth, spelling, _, _, _, _) = occ
+      visible_here = segment_depth.eq_Int(depth)
+      visible_child = and(scope matches Inherited, cmp_Int(segment_depth, depth) matches GT)
+      allowed = exists_List(allowed_keys, key -> eq_Eq(eq_String, key, spelling_key(spelling)))
+      and(allowed, or(visible_here, visible_child))
+    ),
+  )
+
+def claim_named_occurrence(occ: NamedOccurrence) -> HashSet[Int]:
+  NamedOccurrence(_, _, token_index, value_index, _, _) = occ
+  base = updated_HashSet(empty_HashSet(hash_Int), token_index)
+  match value_index:
+    case Some(idx):
+      updated_HashSet(base, idx)
+    case None:
+      base
+
+def claim_named_occurrences(occurrences: List[NamedOccurrence]) -> HashSet[Int]:
+  foldl_List(
+    occurrences,
+    empty_HashSet(hash_Int),
+    (acc, occ) -> union_HashSet(acc, claim_named_occurrence(occ)),
+  )
+
+def claim_positional_occurrences(occurrences: List[PositionalOccurrence]) -> HashSet[Int]:
+  foldl_List(
+    occurrences,
+    empty_HashSet(hash_Int),
+    (acc, occ) -> (
+      PositionalOccurrence(_, token_index, _) = occ
+      updated_HashSet(acc, token_index)
+    ),
+  )
+
+def collect_named_values[a](
+  occurrences: List[NamedOccurrence],
+  value_parser: ValueParser[a],
+  command_path: List[String],
+  target: Doc,
+) -> Result[NonEmptyChain[CliError], List[a]]:
+  ValueParser(parse_fn, _, _) = value_parser
+  app = applicative_combine_Err(error_semigroup)
+  decoded_rev = foldl_List(
+    occurrences,
+    pure_Applicative(app, []),
+    (acc, occ) -> (
+      map2(
+        app,
+        acc,
+        match occ:
+          case NamedOccurrence(_, _, _, _, Some(raw_value), _):
+            match parse_fn(raw_value):
+              case Ok(value):
+                Ok(value)
+              case Err(detail):
+                Err(singleton_NonEmptyChain(ValueParseError(command_path, target, raw_value, detail)))
+          case NamedOccurrence(_, spelling, _, _, None, _):
+            Spelling(_, _, value_kind, _, _) = spelling
+            match value_kind:
+              case OptionalValue:
+                Err(singleton_NonEmptyChain(AmbiguousSpecification(command_path, paragraph("optional value parsing is handled separately"))))
+              case _:
+                Err(singleton_NonEmptyChain(MissingValue(command_path, target))),
+        (rev_values, value) -> [value, *rev_values],
+      )
+    ),
+  )
+  match decoded_rev:
+    case Ok(rev_values):
+      Ok(rev_values.reverse())
+    case Err(errs):
+      Err(errs)
+
+def build_named_result[a, out](
+  occurrences: List[NamedOccurrence],
+  decoded_values: List[a],
+  build: List[a] -> Result[Doc, out],
+  command_path: List[String],
+) -> Result[NonEmptyChain[CliError], DecodeResult[out]]:
+  match build(decoded_values):
+    case Ok(value):
+      Ok(DecodeResult(claim_named_occurrences(occurrences), value))
+    case Err(detail):
+      Err(singleton_NonEmptyChain(ValidationError(command_path, detail)))
+
+def build_positional_result[a, out](
+  occurrences: List[PositionalOccurrence],
+  decoded_values: List[a],
+  build: List[a] -> Result[Doc, out],
+  command_path: List[String],
+) -> Result[NonEmptyChain[CliError], DecodeResult[out]]:
+  match build(decoded_values):
+    case Ok(value):
+      Ok(DecodeResult(claim_positional_occurrences(occurrences), value))
+    case Err(detail):
+      Err(singleton_NonEmptyChain(ValidationError(command_path, detail)))
+
+def decode_named_required[a, out](
+  spellings: NonEmpty[Spelling],
+  scope: Scope,
+  value_parser: ValueParser[a],
+  cardinality: Cardinality,
+  build: List[a] -> Result[Doc, out],
+  state: MatchState,
+  depth: Int,
+  info: ArgInfo,
+) -> Result[NonEmptyChain[CliError], DecodeResult[out]]:
+  target = primitive_target_doc(NamedValue(spellings, kind_metavar(NamedValue(spellings, text("VALUE")), info)), info)
+  MatchState(_, named_occurrences, _, _, command_path, _) = state
+  matches = match_named_occurrences(spellings, named_occurrences, depth, scope)
+  match collect_named_values(matches, value_parser, command_path, target):
+    case Err(errs):
+      Err(errs)
+    case Ok(values):
+      match cardinality:
+        case ExactlyOne:
+          if size_List(values).eq_Int(1):
+            build_named_result(matches, values, build, command_path)
+          elif size_List(values).eq_Int(0):
+            Err(singleton_NonEmptyChain(MissingArgument(command_path, target)))
+          else:
+            Err(singleton_NonEmptyChain(DuplicateOccurrence(command_path, target)))
+        case ZeroOrOne:
+          if size_List(values).eq_Int(0):
+            build_named_result([], [], build, command_path)
+          elif size_List(values).eq_Int(1):
+            build_named_result(matches, values, build, command_path)
+          else:
+            Err(singleton_NonEmptyChain(DuplicateOccurrence(command_path, target)))
+        case ZeroOrMore:
+          build_named_result(matches, values, build, command_path)
+        case OneOrMore:
+          if size_List(values).eq_Int(0):
+            Err(singleton_NonEmptyChain(MissingArgument(command_path, target)))
+          else:
+            build_named_result(matches, values, build, command_path)
+        case CountOccurrences:
+          Err(singleton_NonEmptyChain(AmbiguousSpecification(command_path, paragraph("count only applies to flags"))))
+
+def decode_positionals[a, out](
+  value_parser: ValueParser[a],
+  cardinality: Cardinality,
+  build: List[a] -> Result[Doc, out],
+  state: MatchState,
+  depth: Int,
+  info: ArgInfo,
+  kind: PrimitiveKind,
+) -> Result[NonEmptyChain[CliError], DecodeResult[out]]:
+  ValueParser(parse_fn, _, _) = value_parser
+  target = primitive_target_doc(kind, info)
+  MatchState(_, _, positional_occurrences, _, command_path, _) = state
+  matches = filter_List(
+    positional_occurrences,
+    occ -> (
+      PositionalOccurrence(segment_depth, _, _) = occ
+      segment_depth.eq_Int(depth)
+    ),
+  )
+  chosen =
+    match cardinality:
+      case ExactlyOne | ZeroOrOne:
+        take_List(matches, 1)
+      case _:
+        matches
+  app = applicative_combine_Err(error_semigroup)
+  decoded_rev = foldl_List(
+    chosen,
+    pure_Applicative(app, []),
+    (acc, occ) -> (
+      map2(
+        app,
+        acc,
+        match occ:
+          case PositionalOccurrence(_, _, raw_value):
+            match parse_fn(raw_value):
+              case Ok(value):
+                Ok(value)
+              case Err(detail):
+                Err(singleton_NonEmptyChain(ValueParseError(command_path, target, raw_value, detail))),
+        (rev_values, value) -> [value, *rev_values],
+      )
+    ),
+  )
+  decoded =
+    match decoded_rev:
+      case Ok(rev_values):
+        Ok(rev_values.reverse())
+      case Err(errs):
+        Err(errs)
+  match decoded:
+    case Err(errs):
+      Err(errs)
+    case Ok(values):
+      match cardinality:
+        case ExactlyOne:
+          if size_List(values).eq_Int(1):
+            build_positional_result(chosen, values, build, command_path)
+          else:
+            Err(singleton_NonEmptyChain(MissingArgument(command_path, target)))
+        case ZeroOrOne:
+          build_positional_result(chosen, values, build, command_path)
+        case ZeroOrMore:
+          build_positional_result(chosen, values, build, command_path)
+        case OneOrMore:
+          if size_List(values).eq_Int(0):
+            Err(singleton_NonEmptyChain(MissingArgument(command_path, target)))
+          else:
+            build_positional_result(chosen, values, build, command_path)
+        case CountOccurrences:
+          Err(singleton_NonEmptyChain(AmbiguousSpecification(command_path, paragraph("count only applies to flags"))))
+
+def flag(spellings: NonEmpty[Spelling], info: ArgInfo) -> Args[Bool]:
+  actual_spellings = map_NonEmptyList(spellings, sp -> set_value_kind(sp, Flag, []))
+  kind = FlagValue(actual_spellings, text("true"))
+  spec =
+    PrimitiveSpec(
+      kind,
+      ZeroOrOne,
+      Local,
+      (state, depth, actual_scope, _) -> (
+        MatchState(_, named_occurrences, _, _, command_path, _) = state
+        matches = match_named_occurrences(actual_spellings, named_occurrences, depth, actual_scope)
+        match matches:
+          case []:
+            Ok(DecodeResult(empty_HashSet(hash_Int), False))
+          case [single]:
+            Ok(DecodeResult(claim_named_occurrence(single), True))
+          case _:
+            Err(singleton_NonEmptyChain(DuplicateOccurrence(command_path, primitive_target_doc(kind, info))))
+      ),
+    )
+  primitive(spec, info)
+
+def flag_value[a](spellings: NonEmpty[Spelling], value: a, info: ArgInfo) -> Args[a]:
+  actual_spellings = map_NonEmptyList(spellings, sp -> set_value_kind(sp, Flag, []))
+  kind = FlagValue(actual_spellings, text("flag"))
+  spec =
+    PrimitiveSpec(
+      kind,
+      ExactlyOne,
+      Local,
+      (state, depth, actual_scope, current_info) -> (
+        MatchState(_, named_occurrences, _, _, command_path, _) = state
+        matches = match_named_occurrences(actual_spellings, named_occurrences, depth, actual_scope)
+        match matches:
+          case []:
+            Err(singleton_NonEmptyChain(MissingArgument(command_path, primitive_target_doc(kind, current_info))))
+          case [single]:
+            Ok(DecodeResult(claim_named_occurrence(single), value))
+          case _:
+            Err(singleton_NonEmptyChain(DuplicateOccurrence(command_path, primitive_target_doc(kind, current_info))))
+      ),
+    )
+  primitive(spec, info)
+
+def count(spellings: NonEmpty[Spelling], info: ArgInfo) -> Args[Int]:
+  actual_spellings = map_NonEmptyList(spellings, sp -> set_value_kind(sp, Flag, []))
+  kind = FlagValue(actual_spellings, text("count"))
+  spec =
+    PrimitiveSpec(
+      kind,
+      CountOccurrences,
+      Local,
+      (state, depth, actual_scope, _) -> (
+        MatchState(_, named_occurrences, _, _, _, _) = state
+        matches = match_named_occurrences(actual_spellings, named_occurrences, depth, actual_scope)
+        Ok(DecodeResult(claim_named_occurrences(matches), size_List(matches)))
+      ),
+    )
+  primitive(spec, info)
+
+def option[a](value_parser: ValueParser[a], spellings: NonEmpty[Spelling], info: ArgInfo) -> Args[a]:
+  actual_spellings = map_NonEmptyList(spellings, required_value_spelling)
+  ValueParser(_, metavar, _) = value_parser
+  kind = NamedValue(actual_spellings, metavar)
+  spec =
+    PrimitiveSpec(
+      kind,
+      ExactlyOne,
+      Local,
+      (state, depth, actual_scope, current_info) -> decode_named_required(
+        actual_spellings,
+        actual_scope,
+        value_parser,
+        ExactlyOne,
+        values -> (
+          match values:
+            case [value]:
+              Ok(value)
+            case _:
+              Err(paragraph("expected exactly one value"))
+        ),
+        state,
+        depth,
+        current_info,
+      ),
+    )
+  primitive(spec, info)
+
+def option_optional_value[a](value_parser: ValueParser[a], spellings: NonEmpty[Spelling], info: ArgInfo) -> Args[Option[a]]:
+  actual_spellings = map_NonEmptyList(spellings, optional_value_spelling)
+  ValueParser(_, metavar, _) = value_parser
+  kind = NamedOptionalValue(actual_spellings, metavar)
+  spec =
+    PrimitiveSpec(
+      kind,
+      ExactlyOne,
+      Local,
+      (state, depth, actual_scope, current_info) -> (
+        MatchState(_, named_occurrences, _, _, command_path, _) = state
+        matches = match_named_occurrences(actual_spellings, named_occurrences, depth, actual_scope)
+        match matches:
+          case []:
+            Err(singleton_NonEmptyChain(MissingArgument(command_path, primitive_target_doc(kind, current_info))))
+          case [NamedOccurrence(_, _, _, _, Some(raw_value), _)]:
+            ValueParser(parse_fn, _, _) = value_parser
+            match parse_fn(raw_value):
+              case Ok(value):
+                Ok(DecodeResult(claim_named_occurrences(matches), Some(value)))
+              case Err(detail):
+                Err(singleton_NonEmptyChain(ValueParseError(command_path, primitive_target_doc(kind, current_info), raw_value, detail)))
+          case [single]:
+            Ok(DecodeResult(claim_named_occurrence(single), None))
+          case _:
+            Err(singleton_NonEmptyChain(DuplicateOccurrence(command_path, primitive_target_doc(kind, current_info))))
+      ),
+    )
+  primitive(spec, info)
+
+def zero_or_more[a](value_parser: ValueParser[a], spellings: NonEmpty[Spelling], info: ArgInfo) -> Args[List[a]]:
+  actual_spellings = map_NonEmptyList(spellings, required_value_spelling)
+  ValueParser(_, metavar, _) = value_parser
+  kind = NamedValue(actual_spellings, metavar)
+  spec =
+    PrimitiveSpec(
+      kind,
+      ZeroOrMore,
+      Local,
+      (state, depth, actual_scope, current_info) -> decode_named_required(actual_spellings, actual_scope, value_parser, ZeroOrMore, values -> Ok(values), state, depth, current_info),
+    )
+  primitive(spec, info)
+
+def one_or_more[a](value_parser: ValueParser[a], spellings: NonEmpty[Spelling], info: ArgInfo) -> Args[NonEmpty[a]]:
+  actual_spellings = map_NonEmptyList(spellings, required_value_spelling)
+  ValueParser(_, metavar, _) = value_parser
+  kind = NamedValue(actual_spellings, metavar)
+  spec =
+    PrimitiveSpec(
+      kind,
+      OneOrMore,
+      Local,
+      (state, depth, actual_scope, current_info) -> decode_named_required(
+        actual_spellings,
+        actual_scope,
+        value_parser,
+        OneOrMore,
+        values -> (
+          match from_List_NonEmptyList(values):
+            case Some(items):
+              Ok(items)
+            case None:
+              Err(paragraph("expected at least one value"))
+        ),
+        state,
+        depth,
+        current_info,
+      ),
+    )
+  primitive(spec, info)
+
+def positional[a](value_parser: ValueParser[a], info: ArgInfo) -> Args[a]:
+  ValueParser(_, metavar, _) = value_parser
+  kind = Positional(metavar)
+  spec =
+    PrimitiveSpec(
+      kind,
+      ExactlyOne,
+      Local,
+      (state, depth, _, current_info) -> decode_positionals(
+        value_parser,
+        ExactlyOne,
+        values -> (
+          match values:
+            case [value]:
+              Ok(value)
+            case _:
+              Err(paragraph("expected one positional value"))
+        ),
+        state,
+        depth,
+        current_info,
+        kind,
+      ),
+    )
+  primitive(spec, info)
+
+def positional_optional[a](value_parser: ValueParser[a], info: ArgInfo) -> Args[Option[a]]:
+  ValueParser(_, metavar, _) = value_parser
+  kind = Positional(metavar)
+  spec =
+    PrimitiveSpec(
+      kind,
+      ZeroOrOne,
+      Local,
+      (state, depth, _, current_info) -> decode_positionals(
+        value_parser,
+        ZeroOrOne,
+        values -> (
+          match values:
+            case [value]:
+              Ok(Some(value))
+            case []:
+              Ok(None)
+            case _:
+              Err(paragraph("expected at most one positional value"))
+        ),
+        state,
+        depth,
+        current_info,
+        kind,
+      ),
+    )
+  primitive(spec, info)
+
+def rest[a](value_parser: ValueParser[a], info: ArgInfo) -> Args[List[a]]:
+  ValueParser(_, metavar, _) = value_parser
+  kind = Rest(metavar)
+  spec =
+    PrimitiveSpec(
+      kind,
+      ZeroOrMore,
+      Local,
+      (state, depth, _, current_info) -> decode_positionals(
+        value_parser,
+        ZeroOrMore,
+        values -> Ok(values),
+        state,
+        depth,
+        current_info,
+        kind,
+      ),
+    )
+  primitive(spec, info)
+
+def subcommand_from_command[a](cmd: Command[a]) -> Subcommand[Args, a]:
+  Command(name, summary, description, footer, aliases, examples, help_enabled, version_doc, args) = cmd
+  Subcommand(name, aliases, summary, description, footer, examples, help_enabled, version_doc, args)
+
+def subcommands[a](commands: NonEmpty[Command[a]], info: ArgInfo) -> Args[a]:
+  Subcommands(map_NonEmptyList(commands, subcommand_from_command), info)
+
+def cli_error_doc(err: CliError) -> Doc:
+  match err:
+    case UnknownOption(_, token):
+      spread([text("Unknown option"), text(token)])
+    case UnknownCommand(_, token):
+      spread([text("Unknown command"), text(token)])
+    case MissingValue(_, target):
+      spread([text("Missing value for"), target])
+    case MissingArgument(_, target):
+      spread([text("Missing argument"), target])
+    case DuplicateOccurrence(_, target):
+      spread([text("Duplicate occurrence of"), target])
+    case UnexpectedArgument(_, token):
+      spread([text("Unexpected argument"), text(token)])
+    case ValueParseError(_, target, raw_value, detail):
+      stack([spread([text("Could not parse"), text(raw_value), text("for"), target]), detail])
+    case ValidationError(_, detail):
+      detail
+    case AmbiguousSpecification(_, detail):
+      detail

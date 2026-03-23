@@ -1,0 +1,362 @@
+package Zafu/Cli/Args/Internal/Decode
+
+from Zafu/Abstract/Instances/Predef import (
+  eq_String,
+  hash_Int,
+)
+
+from Zafu/Abstract/Eq import (
+  eq as eq_Eq,
+)
+
+from Zafu/Collection/HashSet import (
+  HashSet,
+  contains as contains_HashSet,
+  empty as empty_HashSet,
+  intersection as intersection_HashSet,
+  is_empty as is_empty_HashSet,
+  union as union_HashSet,
+)
+
+from Zafu/Collection/List import (
+  filter as filter_List,
+  foldl as foldl_List,
+)
+
+from Zafu/Collection/NonEmptyList import (
+  to_List as to_List_NonEmptyList,
+)
+
+from Zafu/Collection/NonEmptyChain import (
+  NonEmptyChain,
+  concat as concat_NonEmptyChain,
+  for_all as for_all_NonEmptyChain,
+  singleton as singleton_NonEmptyChain,
+)
+
+from Zafu/Control/Result import (
+  Result,
+  Ok,
+  Err,
+)
+
+from Zafu/Text/Pretty import (
+  Doc,
+  paragraph,
+  text,
+)
+
+from Zafu/Cli/Args/Internal/Core import (
+  ArgInfo,
+  Args,
+  CliError,
+  Command,
+  CommandSelection,
+  DecodeResult,
+  IndexedToken,
+  MatchState,
+  NamedOccurrence,
+  PositionalOccurrence,
+  PrimitiveSpec,
+  Subcommand,
+  Pure,
+  Primitive,
+  Map,
+  Map2,
+  OrElse,
+  Validate,
+  WithInfo,
+  WithScope,
+  WithGroupDocs,
+  WithDefault,
+  OptionalArg,
+  Subcommands,
+  Scope,
+  MissingArgument,
+  MissingValue,
+  DuplicateOccurrence,
+  UnknownCommand,
+  UnknownOption,
+  UnexpectedArgument,
+  ValidationError,
+  claim_union,
+)
+
+from Zafu/Cli/Args/Internal/Lex import (
+  ScanResult,
+)
+
+export (
+  decode_command,
+  check_command,
+)
+
+def identity_info(info: ArgInfo) -> ArgInfo:
+  info
+
+def compose_info(current: ArgInfo -> ArgInfo, next: ArgInfo -> ArgInfo) -> ArgInfo -> ArgInfo:
+  info -> current(next(info))
+
+def filter_named_occurrences(
+  occurrences: List[NamedOccurrence],
+  claimed: HashSet[Int],
+) -> List[NamedOccurrence]:
+  filter_List(
+    occurrences,
+    occ -> (
+      NamedOccurrence(_, _, token_index, value_index, _, _) = occ
+      token_free = not(contains_HashSet(claimed, token_index))
+      value_free =
+        match value_index:
+          case Some(idx):
+            not(contains_HashSet(claimed, idx))
+          case None:
+            True
+      and(token_free, value_free)
+    ),
+  )
+
+def filter_positional_occurrences(
+  occurrences: List[PositionalOccurrence],
+  claimed: HashSet[Int],
+) -> List[PositionalOccurrence]:
+  filter_List(
+    occurrences,
+    occ -> (
+      PositionalOccurrence(_, token_index, _) = occ
+      not(contains_HashSet(claimed, token_index))
+    ),
+  )
+
+def filter_state(state: MatchState, claimed: HashSet[Int]) -> MatchState:
+  MatchState(tokens, named_occurrences, positional_occurrences, command_steps, command_path, auto_claimed) = state
+  MatchState(
+    tokens,
+    filter_named_occurrences(named_occurrences, claimed),
+    filter_positional_occurrences(positional_occurrences, claimed),
+    command_steps,
+    command_path,
+    auto_claimed,
+  )
+
+def claimed_overlap(left: HashSet[Int], right: HashSet[Int]) -> Bool:
+  not(is_empty_HashSet(intersection_HashSet(left, right)))
+
+def missing_only(err: CliError) -> Bool:
+  err matches MissingArgument(_, _) | MissingValue(_, _)
+
+def errors_are_missing_only(errors: NonEmptyChain[CliError]) -> Bool:
+  for_all_NonEmptyChain(errors, missing_only)
+
+def choice_target(info: ArgInfo) -> Doc:
+  ArgInfo(_, metavar_override, _, _, _, _) = info
+  match metavar_override:
+    case Some(doc):
+      doc
+    case None:
+      text("COMMAND")
+
+def token_error(command_path: List[String], token: String) -> CliError:
+  if token matches "-*" | "/*":
+    UnknownOption(command_path, token)
+  else:
+    UnexpectedArgument(command_path, token)
+
+def leftover_errors(state: MatchState, claimed: HashSet[Int]) -> List[CliError]:
+  MatchState(tokens, _, _, _, command_path, auto_claimed) = state
+  all_claimed = union_HashSet(claimed, auto_claimed)
+  foldl_List(
+    tokens,
+    [],
+    (acc, item) -> (
+      IndexedToken(token_index, raw) = item
+      if contains_HashSet(all_claimed, token_index):
+        acc
+      else:
+        [token_error(command_path, raw), *acc]
+    ),
+  ).reverse()
+
+def list_to_errors(items: List[CliError]) -> Option[NonEmptyChain[CliError]]:
+  match items:
+    case []:
+      None
+    case [head, *tail]:
+      def loop(rem: List[CliError], acc: NonEmptyChain[CliError]) -> NonEmptyChain[CliError]:
+        loop rem:
+          case []:
+            acc
+          case [next, *tail_items]:
+            loop(tail_items, concat_NonEmptyChain(acc, singleton_NonEmptyChain(next)))
+
+      Some(loop(tail, singleton_NonEmptyChain(head)))
+
+def check_command[a](command: Command[a]) -> List[CliError]:
+  _ = command
+  []
+
+def decode_command[a](command: Command[a], scan: ScanResult) -> Result[NonEmptyChain[CliError], a]:
+  ScanResult(tokens, named_occurrences, positional_occurrences, command_steps, command_path, _, auto_claimed, _, _) = scan
+  state = MatchState(tokens, named_occurrences, positional_occurrences, command_steps, command_path, auto_claimed)
+
+  selected_names =
+    command_steps.map_List(step -> (
+      CommandSelection(_, _, _, canonical_name) = step
+      canonical_name
+    ))
+
+  def decode_path[b](
+    current_command: Command[b],
+    remaining_names: List[String],
+    current_depth: Int,
+  ) -> Result[NonEmptyChain[CliError], DecodeResult[b]]:
+    match remaining_names:
+      case current_remaining:
+        Command(_, _, _, _, _, _, _, _, current_args) = current_command
+
+        def decode_args_with_env[c](
+          args: Args[c],
+          current_state: MatchState,
+          info_fn: ArgInfo -> ArgInfo,
+          scope_override: Option[Scope],
+        ) -> Result[NonEmptyChain[CliError], DecodeResult[c]]:
+          recur args:
+            case Pure(value):
+              Ok(DecodeResult(empty_HashSet(hash_Int), value))
+            case Primitive(PrimitiveSpec(_, _, base_scope, decode_fn), info):
+              actual_scope =
+                match scope_override:
+                  case Some(scope):
+                    scope
+                  case None:
+                    base_scope
+              decode_fn(current_state, current_depth, actual_scope, info_fn(info))
+            case Map(source, fn):
+              match decode_args_with_env(source, current_state, info_fn, scope_override):
+                case Ok(DecodeResult(claimed, value)):
+                  Ok(DecodeResult(claimed, fn(value)))
+                case Err(errs):
+                  Err(errs)
+            case Validate(source, fn, _):
+              match decode_args_with_env(source, current_state, info_fn, scope_override):
+                case Ok(DecodeResult(claimed, value)):
+                  match fn(value):
+                    case Ok(next_value):
+                      Ok(DecodeResult(claimed, next_value))
+                    case Err(detail):
+                      Err(singleton_NonEmptyChain(ValidationError(command_path, detail)))
+                case Err(errs):
+                  Err(errs)
+            case WithInfo(source, fn):
+              decode_args_with_env(source, current_state, compose_info(info_fn, fn), scope_override)
+            case WithScope(source, scope):
+              next_scope =
+                match scope_override:
+                  case Some(existing):
+                    Some(existing)
+                  case None:
+                    Some(scope)
+              decode_args_with_env(source, current_state, info_fn, next_scope)
+            case WithGroupDocs(source, _):
+              decode_args_with_env(source, current_state, info_fn, scope_override)
+            case WithDefault(source, default_value, _):
+              match decode_args_with_env(source, current_state, info_fn, scope_override):
+                case Ok(decoded):
+                  Ok(decoded)
+                case Err(errs):
+                  if errors_are_missing_only(errs):
+                    Ok(DecodeResult(empty_HashSet(hash_Int), default_value))
+                  else:
+                    Err(errs)
+            case OptionalArg(source, build):
+              match decode_args_with_env(source, current_state, info_fn, scope_override):
+                case Ok(DecodeResult(claimed, value)):
+                  Ok(DecodeResult(claimed, build(Some(value))))
+                case Err(errs):
+                  if errors_are_missing_only(errs):
+                    Ok(DecodeResult(empty_HashSet(hash_Int), build(None)))
+                  else:
+                    Err(errs)
+            case Map2(left, right, fn):
+              left_result = decode_args_with_env(left, current_state, info_fn, scope_override)
+              right_state =
+                match left_result:
+                  case Ok(DecodeResult(claimed, _)):
+                    # Product decoders hand the remaining unclaimed occurrences to the right branch.
+                    filter_state(current_state, claimed)
+                  case Err(_):
+                    current_state
+              right_result = decode_args_with_env(right, right_state, info_fn, scope_override)
+              match (left_result, right_result):
+                case (Ok(DecodeResult(left_claimed, left_value)), Ok(DecodeResult(right_claimed, right_value))):
+                  if claimed_overlap(left_claimed, right_claimed):
+                    Err(singleton_NonEmptyChain(DuplicateOccurrence(command_path, paragraph("arguments claim the same token"))))
+                  else:
+                    Ok(DecodeResult(claim_union(left_claimed, right_claimed), fn(left_value, right_value)))
+                case (Err(left_errs), Err(right_errs)):
+                  Err(concat_NonEmptyChain(left_errs, right_errs))
+                case (Err(errs), _):
+                  Err(errs)
+                case (_, Err(errs)):
+                  Err(errs)
+            case OrElse(left, right):
+              left_result = decode_args_with_env(left, current_state, info_fn, scope_override)
+              right_result = decode_args_with_env(right, current_state, info_fn, scope_override)
+              match (left_result, right_result):
+                case (Ok(DecodeResult(left_claimed, left_value)), Ok(DecodeResult(right_claimed, right_value))):
+                  if claimed_overlap(left_claimed, right_claimed):
+                    if is_empty_HashSet(left_claimed):
+                      Ok(DecodeResult(right_claimed, right_value))
+                    elif is_empty_HashSet(right_claimed):
+                      Ok(DecodeResult(left_claimed, left_value))
+                    else:
+                      Err(singleton_NonEmptyChain(ValidationError(command_path, paragraph("exclusive arguments matched more than one branch"))))
+                  elif is_empty_HashSet(left_claimed):
+                    Ok(DecodeResult(right_claimed, right_value))
+                  elif is_empty_HashSet(right_claimed):
+                    Ok(DecodeResult(left_claimed, left_value))
+                  else:
+                    Err(singleton_NonEmptyChain(ValidationError(command_path, paragraph("exclusive arguments matched more than one branch"))))
+                case (Ok(decoded), Err(_)):
+                  Ok(decoded)
+                case (Err(_), Ok(decoded)):
+                  Ok(decoded)
+                case (Err(left_errs), Err(right_errs)):
+                  Err(concat_NonEmptyChain(left_errs, right_errs))
+            case Subcommands(commands, info):
+              next_depth = current_depth.add(1)
+              _ = next_depth
+              def find_child(rem_commands: List[Subcommand[Args, c]], canonical_name: String) -> Option[Command[c]]:
+                loop rem_commands:
+                  case []:
+                    None
+                  case [Subcommand(name, aliases, summary, description, footer, examples, help_enabled, version_doc, child_args), *tail_commands]:
+                    if eq_Eq(eq_String, name, canonical_name):
+                      Some(Command(name, summary, description, footer, aliases, examples, help_enabled, version_doc, child_args))
+                    else:
+                      find_child(tail_commands, canonical_name)
+
+              match current_remaining:
+                case [canonical_name, *tail_names]:
+                  _ = tail_names
+                  match find_child(to_List_NonEmptyList(commands), canonical_name):
+                    case Some(Command(_, _, _, _, _, _, _, _, Pure(value))):
+                      Ok(DecodeResult(empty_HashSet(hash_Int), value))
+                    case Some(_):
+                      Err(singleton_NonEmptyChain(ValidationError(command_path, paragraph("selected subcommands must currently decode from a pure child value"))))
+                    case None:
+                      Err(singleton_NonEmptyChain(UnknownCommand(command_path, canonical_name)))
+                case []:
+                  Err(singleton_NonEmptyChain(MissingArgument(command_path, choice_target(info_fn(info)))))
+
+        decode_args_with_env(current_args, state, identity_info, None)
+
+  match decode_path(command, selected_names, 0):
+    case Ok(DecodeResult(claimed, value)):
+      match list_to_errors(leftover_errors(state, claimed)):
+        case Some(errs):
+          Err(errs)
+        case None:
+          Ok(value)
+    case Err(errs):
+      Err(errs)

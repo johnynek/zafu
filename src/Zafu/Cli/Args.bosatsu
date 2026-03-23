@@ -1,0 +1,386 @@
+package Zafu/Cli/Args
+
+from Zafu/Collection/HashMap import (
+  HashMap,
+)
+
+from Zafu/Collection/NonEmptyChain import (
+  NonEmptyChain,
+  concat as concat_NonEmptyChain,
+  singleton as singleton_NonEmptyChain,
+)
+
+from Zafu/Collection/NonEmptyList import (
+  NonEmptyList as NonEmpty,
+)
+
+from Zafu/Control/Result import (
+  Result,
+  Ok,
+  Err,
+)
+
+from Zafu/Text/Parse/Internal/Core import (
+  Parser,
+)
+
+from Zafu/Text/Pretty import (
+  Doc,
+  text,
+)
+
+from Zafu/Cli/Args/Internal/Core import (
+  ValueParser,
+  ArgInfo,
+  Spelling,
+  Scope,
+  PrimitiveSpec,
+  Args,
+  Command,
+  ParseConfig,
+  HelpConfig,
+  ParseResult,
+  CliError,
+  arg_info as arg_info_core,
+  default_parse_config as default_parse_config_core,
+  default_help_config as default_help_config_core,
+  value_from_parse as value_from_parse_core,
+  value_from_fn as value_from_fn_core,
+  string_value as string_value_core,
+  int_value as int_value_core,
+  float_value as float_value_core,
+  bool_value as bool_value_core,
+  enum_value as enum_value_core,
+  map_value as map_value_core,
+  and_then_value as and_then_value_core,
+  long as long_core,
+  short as short_core,
+  custom_name as custom_name_core,
+  allow_separate as allow_separate_core,
+  allow_attached as allow_attached_core,
+  allow_equals as allow_equals_core,
+  clusterable as clusterable_core,
+  command as command_core,
+  pure as pure_core,
+  map_args as map_args_core,
+  map2_args as map2_args_core,
+  product as product_core,
+  product_left as product_left_core,
+  product_right as product_right_core,
+  or_else as or_else_core,
+  validate as validate_core,
+  primitive as primitive_core,
+  flag as flag_core,
+  flag_value as flag_value_core,
+  count as count_core,
+  option as option_core,
+  option_optional_value as option_optional_value_core,
+  zero_or_more as zero_or_more_core,
+  one_or_more as one_or_more_core,
+  positional as positional_core,
+  positional_optional as positional_optional_core,
+  rest as rest_core,
+  subcommands as subcommands_core,
+  optional_arg as optional_arg_core,
+  with_default as with_default_core,
+  with_help as with_help_core,
+  with_metavar as with_metavar_core,
+  with_default_doc as with_default_doc_core,
+  with_group as with_group_core,
+  with_group_docs as with_group_docs_core,
+  with_example as with_example_core,
+  hidden_arg as hidden_arg_core,
+  with_scope as with_scope_core,
+  with_aliases as with_aliases_core,
+  example as example_core,
+  with_help_flag as with_help_flag_core,
+  with_version_flag as with_version_flag_core,
+  applicative_Args as applicative_Args_core,
+  RequestedHelp,
+  RequestedVersion,
+  Parsed,
+  Failed,
+)
+
+from Zafu/Cli/Args/Internal/Lex import (
+  RequestHelp,
+  RequestVersion,
+  ScanResult,
+  scan_command,
+  PackedCommand,
+)
+
+from Zafu/Cli/Args/Internal/Decode import (
+  decode_command,
+  check_command,
+)
+
+from Zafu/Cli/Args/Internal/Help import (
+  help_doc as help_doc_internal,
+  failure_doc as failure_doc_internal,
+)
+
+export (
+  arg_info,
+  default_parse_config,
+  default_help_config,
+  value_from_parse,
+  value_from_fn,
+  string_value,
+  int_value,
+  float_value,
+  bool_value,
+  enum_value,
+  map_value,
+  and_then_value,
+  long,
+  short,
+  custom_name,
+  allow_separate,
+  allow_attached,
+  allow_equals,
+  clusterable,
+  command,
+  parse,
+  help_doc,
+  failure_doc,
+  pure,
+  map,
+  map2,
+  product,
+  product_left,
+  product_right,
+  or_else,
+  validate,
+  primitive,
+  flag,
+  flag_value,
+  count,
+  option,
+  option_optional_value,
+  zero_or_more,
+  one_or_more,
+  positional,
+  positional_optional,
+  rest,
+  subcommands,
+  optional,
+  with_default,
+  with_help,
+  with_metavar,
+  with_default_doc,
+  with_group,
+  with_group_docs,
+  with_example,
+  hidden,
+  with_scope,
+  with_aliases,
+  example,
+  with_help_flag,
+  with_version_flag,
+  applicative_Args,
+)
+
+arg_info: ArgInfo = arg_info_core
+default_parse_config: ParseConfig = default_parse_config_core
+default_help_config: HelpConfig = default_help_config_core
+applicative_Args = applicative_Args_core
+
+def value_from_parse[a](parser: Parser[a], metavar: Doc) -> ValueParser[a]:
+  value_from_parse_core(parser, metavar)
+
+def value_from_fn[a](parse_fn: String -> Result[Doc, a], metavar: Doc) -> ValueParser[a]:
+  value_from_fn_core(parse_fn, metavar)
+
+def string_value(metavar: Doc) -> ValueParser[String]:
+  string_value_core(metavar)
+
+def int_value(metavar: Doc) -> ValueParser[Int]:
+  int_value_core(metavar)
+
+def float_value(metavar: Doc) -> ValueParser[Float64]:
+  float_value_core(metavar)
+
+def bool_value(metavar: Doc) -> ValueParser[Bool]:
+  bool_value_core(metavar)
+
+def enum_value[a](cases: NonEmpty[(String, a)], metavar: Doc) -> ValueParser[a]:
+  enum_value_core(cases, metavar)
+
+def map_value[a, b](value_parser: ValueParser[a], fn: a -> b) -> ValueParser[b]:
+  map_value_core(value_parser, fn)
+
+def and_then_value[a, b](value_parser: ValueParser[a], fn: a -> Result[Doc, b]) -> ValueParser[b]:
+  and_then_value_core(value_parser, fn)
+
+def long(name: String) -> Spelling:
+  long_core(name)
+
+def short(ch: Char) -> Spelling:
+  short_core(ch)
+
+def custom_name(prefix: String, name: String) -> Spelling:
+  custom_name_core(prefix, name)
+
+def allow_separate(spelling: Spelling) -> Spelling:
+  allow_separate_core(spelling)
+
+def allow_attached(spelling: Spelling) -> Spelling:
+  allow_attached_core(spelling)
+
+def allow_equals(spelling: Spelling) -> Spelling:
+  allow_equals_core(spelling)
+
+def clusterable(spelling: Spelling) -> Spelling:
+  clusterable_core(spelling)
+
+def command[a](name: String, args: Args[a]) -> Command[a]:
+  command_core(name, args)
+
+def pure[a](value: a) -> Args[a]:
+  pure_core(value)
+
+def map[a, b](args: Args[a], fn: a -> b) -> Args[b]:
+  map_args_core(args, fn)
+
+def map2[a, b, c](left: Args[a], right: Args[b], fn: (a, b) -> c) -> Args[c]:
+  map2_args_core(left, right, fn)
+
+def product[a, b](left: Args[a], right: Args[b]) -> Args[(a, b)]:
+  product_core(left, right)
+
+def product_left[a, b](left: Args[a], right: Args[b]) -> Args[a]:
+  product_left_core(left, right)
+
+def product_right[a, b](left: Args[a], right: Args[b]) -> Args[b]:
+  product_right_core(left, right)
+
+def or_else[a](left: Args[a], right: Args[a]) -> Args[a]:
+  or_else_core(left, right)
+
+def validate[a, b](args: Args[a], fn: a -> Result[Doc, b]) -> Args[b]:
+  validate_core(args, fn)
+
+def primitive[a](spec: PrimitiveSpec[a], info: ArgInfo) -> Args[a]:
+  primitive_core(spec, info)
+
+def flag(spellings: NonEmpty[Spelling], info: ArgInfo) -> Args[Bool]:
+  flag_core(spellings, info)
+
+def flag_value[a](spellings: NonEmpty[Spelling], value: a, info: ArgInfo) -> Args[a]:
+  flag_value_core(spellings, value, info)
+
+def count(spellings: NonEmpty[Spelling], info: ArgInfo) -> Args[Int]:
+  count_core(spellings, info)
+
+def option[a](value_parser: ValueParser[a], spellings: NonEmpty[Spelling], info: ArgInfo) -> Args[a]:
+  option_core(value_parser, spellings, info)
+
+def option_optional_value[a](value_parser: ValueParser[a], spellings: NonEmpty[Spelling], info: ArgInfo) -> Args[Option[a]]:
+  option_optional_value_core(value_parser, spellings, info)
+
+def zero_or_more[a](value_parser: ValueParser[a], spellings: NonEmpty[Spelling], info: ArgInfo) -> Args[List[a]]:
+  zero_or_more_core(value_parser, spellings, info)
+
+def one_or_more[a](value_parser: ValueParser[a], spellings: NonEmpty[Spelling], info: ArgInfo) -> Args[NonEmpty[a]]:
+  one_or_more_core(value_parser, spellings, info)
+
+def positional[a](value_parser: ValueParser[a], info: ArgInfo) -> Args[a]:
+  positional_core(value_parser, info)
+
+def positional_optional[a](value_parser: ValueParser[a], info: ArgInfo) -> Args[Option[a]]:
+  positional_optional_core(value_parser, info)
+
+def rest[a](value_parser: ValueParser[a], info: ArgInfo) -> Args[List[a]]:
+  rest_core(value_parser, info)
+
+def subcommands[a](commands: NonEmpty[Command[a]], info: ArgInfo) -> Args[a]:
+  subcommands_core(commands, info)
+
+def optional[a](args: Args[a]) -> Args[Option[a]]:
+  optional_arg_core(args)
+
+def with_default[a](args: Args[a], value: a, rendered_default: Doc) -> Args[a]:
+  with_default_core(args, value, rendered_default)
+
+def with_help[a](args: Args[a], doc: Doc) -> Args[a]:
+  with_help_core(args, doc)
+
+def with_metavar[a](args: Args[a], doc: Doc) -> Args[a]:
+  with_metavar_core(args, doc)
+
+def with_default_doc[a](args: Args[a], doc: Doc) -> Args[a]:
+  with_default_doc_core(args, doc)
+
+def with_group[a](args: Args[a], group_id: String) -> Args[a]:
+  with_group_core(args, group_id)
+
+def with_group_docs[a](args: Args[a], group_docs: HashMap[String, Doc]) -> Args[a]:
+  with_group_docs_core(args, group_docs)
+
+def with_example[a](args: Args[a], doc: Doc) -> Args[a]:
+  with_example_core(args, doc)
+
+def hidden[a](args: Args[a]) -> Args[a]:
+  hidden_arg_core(args)
+
+def with_scope[a](args: Args[a], scope: Scope) -> Args[a]:
+  with_scope_core(args, scope)
+
+def with_aliases[a](cmd: Command[a], aliases: List[String]) -> Command[a]:
+  with_aliases_core(cmd, aliases)
+
+def example[a](cmd: Command[a], doc: Doc) -> Command[a]:
+  example_core(cmd, doc)
+
+def with_help_flag[a](cmd: Command[a]) -> Command[a]:
+  with_help_flag_core(cmd)
+
+def with_version_flag[a](cmd: Command[a], version_doc: Doc) -> Command[a]:
+  with_version_flag_core(cmd, version_doc)
+
+def list_to_errors(items: List[CliError]) -> Option[NonEmptyChain[CliError]]:
+  match items:
+    case []:
+      None
+    case [head, *tail]:
+      def loop(rem: List[CliError], acc: NonEmptyChain[CliError]) -> NonEmptyChain[CliError]:
+        loop rem:
+          case []:
+            acc
+          case [next, *tail_items]:
+            loop(tail_items, concat_NonEmptyChain(acc, singleton_NonEmptyChain(next)))
+
+      Some(loop(tail, singleton_NonEmptyChain(head)))
+
+def help_doc[a](config: HelpConfig, command: Command[a], command_path: List[String]) -> Doc:
+  help_doc_internal(config, command, command_path)
+
+def failure_doc[a](config: HelpConfig, command: Command[a], errors: NonEmptyChain[CliError]) -> Doc:
+  failure_doc_internal(config, command, errors)
+
+def parse[a](config: ParseConfig, command: Command[a], argv: List[String]) -> ParseResult[a]:
+  spec_errors = check_command(command)
+  scan = scan_command(config, command, argv)
+  ScanResult(_, _, _, _, _, leaf_command, _, built_in, scan_errors) = scan
+  all_errors = [*spec_errors, *scan_errors]
+  match list_to_errors(all_errors):
+    case Some(errs):
+      Failed(errs, failure_doc_internal(default_help_config, command, errs))
+    case None:
+      match built_in:
+        case Some(RequestHelp(help_path)):
+          RequestedHelp(help_path, help_doc_internal(default_help_config, command, help_path))
+        case Some(RequestVersion):
+          PackedCommand(Command(_, _, _, _, _, _, _, version_doc, _)) = leaf_command
+          match version_doc:
+            case Some(doc):
+              RequestedVersion(doc)
+            case None:
+              RequestedVersion(text(""))
+        case None:
+          match decode_command(command, scan):
+            case Ok(value):
+              Parsed(value)
+            case Err(errs):
+              Failed(errs, failure_doc_internal(default_help_config, command, errs))
