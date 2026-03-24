@@ -709,14 +709,10 @@ json_format_command = with_help_flag(cli_command("json-format", style_args))
 # leading token already looks like an option so direct invocations still work.
 def normalize_cli_args(args: List[String]) -> List[String]:
   match args:
-    case [head, *tail]:
-      match string_to_Char_List(head):
-        case [.'-', *_] | [.'/', *_]:
-          args
-        case _:
-          tail
-    case []:
-      []
+    case ["-${_}" | "/${_}", *_] | []:
+      args
+    case [_, *tail]:
+      tail
 
 def read_stdin_all() -> Prog[IOError, Result[String, String]]:
   bytes <- read_all_bytes(stdin, read_chunk_size).await()
