@@ -705,11 +705,13 @@ style_args = (
 
 json_format_command = with_help_flag(cli_command("json-format", style_args))
 
+# `Main` may hand us argv with the command name first; keep it only when the
+# leading token already looks like an option so direct invocations still work.
 def normalize_cli_args(args: List[String]) -> List[String]:
   match args:
     case [head, *tail]:
-      match head:
-        case "-*" | "--*" | "/*":
+      match string_to_Char_List(head):
+        case [.'-', *_] | [.'/', *_]:
           args
         case _:
           tail

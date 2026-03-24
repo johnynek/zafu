@@ -166,7 +166,7 @@ export (
   rest,
   subcommand_from_command,
   subcommands,
-  optional_arg,
+  optional_Args,
   with_default,
   with_help,
   with_metavar,
@@ -320,7 +320,6 @@ enum Args[a]:
   WithInfo(source: Args[a], fn: ArgInfo -> ArgInfo)
   WithScope(source: Args[a], scope: Scope)
   WithGroupDocs(source: Args[a], group_docs: HashMap[String, Doc])
-  WithDefault(source: Args[a], value: a, rendered_default: Doc)
   Subcommands(commands: NonEmpty[Subcommand[Args, a]], info: ArgInfo)
 
 struct Command[a](
@@ -504,29 +503,22 @@ def custom_name(prefix: String, name: String) -> Spelling:
   Spelling(prefix, name, Flag, [], False)
 
 def contains_form(forms: List[ValueForm], form: ValueForm) -> Bool:
-  exists_List(
-    forms,
-    next -> (
-      match (next, form):
-        case (SeparateToken, SeparateToken):
-          True
-        case (AttachedToken, AttachedToken):
-          True
-        case (EqualsToken, EqualsToken):
-          True
-        case _:
-          False
-    ),
-  )
+  match_fn =
+    match form:
+      case SeparateToken:
+        next -> next matches SeparateToken
+      case AttachedToken:
+        next -> next matches AttachedToken
+      case EqualsToken:
+        next -> next matches EqualsToken
+  exists_List(forms, match_fn)
 
 def add_form(spelling: Spelling, form: ValueForm) -> Spelling:
   Spelling { value_forms, ... } = spelling
-  next_forms =
-    if contains_form(value_forms, form):
-      value_forms
-    else:
-      [*value_forms, form]
-  Spelling { value_forms: next_forms, ..spelling }
+  if contains_form(value_forms, form):
+    spelling
+  else:
+    Spelling { value_forms: [*value_forms, form], ..spelling }
 
 def allow_separate(spelling: Spelling) -> Spelling:
   add_form(spelling, SeparateToken)
@@ -570,11 +562,14 @@ def validate[a, b](args: Args[a], fn: a -> Result[Doc, b]) -> Args[b]:
 def primitive[a](spec: PrimitiveSpec[a], info: ArgInfo) -> Args[a]:
   Primitive(spec, info)
 
-def optional_arg[a](arg: Args[a]) -> Args[Option[a]]:
+def optional_Args[a](arg: Args[a]) -> Args[Option[a]]:
   or_else(map_args(arg, value -> Some(value)), pure(None))
 
 def with_default[a](arg: Args[a], value: a, rendered_default: Doc) -> Args[a]:
-  WithDefault(arg, value, rendered_default)
+  WithInfo(
+    or_else(arg, pure(value)),
+    info -> ArgInfo { default_doc: Some(rendered_default), ..info },
+  )
 
 def with_help[a](arg: Args[a], doc: Doc) -> Args[a]:
   WithInfo(
@@ -794,8 +789,7 @@ def collect_named_values[a](
               Ok(value)
             case Err(detail):
               Err(singleton_NonEmptyChain(ValueParseError(command_path, target, raw_value, detail)))
-        case NamedOccurrence { spelling, ... }:
-          Spelling { value_kind, ... } = spelling
+        case NamedOccurrence { spelling: Spelling { value_kind, ... }, ... }:
           match value_kind:
             case OptionalValue:
               Err(singleton_NonEmptyChain(AmbiguousSpecification(command_path, paragraph("optional value parsing is handled separately"))))
@@ -882,19 +876,16 @@ def decode_positionals[a, out](
   ValueParser { parse_fn, ... } = value_parser
   target = primitive_target_doc(kind, info)
   MatchState { positional_occurrences, command_path, ... } = state
-  matches = filter_List(
+  positional_matches = filter_List(
     positional_occurrences,
-    occ -> (
-      PositionalOccurrence { segment_depth, ... } = occ
-      segment_depth.eq_Int(depth)
-    ),
+    PositionalOccurrence { segment_depth, ... } -> segment_depth.eq_Int(depth),
   )
   chosen =
     match cardinality:
       case ExactlyOne | ZeroOrOne:
-        take_List(matches, 1)
+        take_List(positional_matches, 1)
       case _:
-        matches
+        positional_matches
   decoded =
     decode_values(
       chosen,

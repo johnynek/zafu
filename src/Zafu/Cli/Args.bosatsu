@@ -81,7 +81,7 @@ from Zafu/Cli/Args/Internal/Core import (
   positional_optional as positional_optional_core,
   rest as rest_core,
   subcommands as subcommands_core,
-  optional_arg as optional_arg_core,
+  optional_Args as optional_Args_core,
   with_default as with_default_core,
   with_help as with_help_core,
   with_metavar as with_metavar_core,
@@ -298,7 +298,7 @@ def subcommands[a](commands: NonEmpty[Command[a]], info: ArgInfo) -> Args[a]:
   subcommands_core(commands, info)
 
 def optional[a](args: Args[a]) -> Args[Option[a]]:
-  optional_arg_core(args)
+  optional_Args_core(args)
 
 def with_default[a](args: Args[a], value: a, rendered_default: Doc) -> Args[a]:
   with_default_core(args, value, rendered_default)

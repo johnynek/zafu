@@ -57,7 +57,6 @@ from Zafu/Cli/Args/Internal/Core import (
   WithInfo,
   WithScope,
   WithGroupDocs,
-  WithDefault,
   Subcommands,
   Scope,
   Inherited,
@@ -195,8 +194,6 @@ def collect_named_views[a](args: Args[a], scope_override: Option[Scope]) -> List
       collect_named_views(source, scope_override)
     case WithGroupDocs(source, _):
       collect_named_views(source, scope_override)
-    case WithDefault(source, _, _):
-      collect_named_views(source, scope_override)
     case WithScope(source, scope):
       collect_named_views(source, Some(scope))
     case Map2(left, right, _):
@@ -217,8 +214,6 @@ def collect_subcommands[a](args: Args[a]) -> List[SomeCommand]:
     case WithInfo(source, _):
       collect_subcommands(source)
     case WithGroupDocs(source, _):
-      collect_subcommands(source)
-    case WithDefault(source, _, _):
       collect_subcommands(source)
     case WithScope(source, _):
       collect_subcommands(source)

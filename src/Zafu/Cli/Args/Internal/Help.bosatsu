@@ -62,7 +62,6 @@ from Zafu/Cli/Args/Internal/Core import (
   WithInfo,
   WithScope,
   WithGroupDocs,
-  WithDefault,
   Subcommands,
   Subcommand,
   FlagValue,
@@ -200,8 +199,6 @@ def collect_subcommands[a](args: Args[a]) -> List[SomeCommand]:
       collect_subcommands(source)
     case WithGroupDocs(source, _):
       collect_subcommands(source)
-    case WithDefault(source, _, _):
-      collect_subcommands(source)
     case Map2(left, right, _):
       [*collect_subcommands(left), *collect_subcommands(right)]
     case OrElse(left, right):
@@ -285,13 +282,6 @@ def collect_help[a](
       collect_help(source, info_fn, force_optional, group_docs)
     case WithGroupDocs(source, next_docs):
       collect_help(source, info_fn, force_optional, merge_group_docs(group_docs, next_docs))
-    case WithDefault(source, _, rendered_default):
-      next_info =
-        compose_fn(
-          info_fn,
-          info -> ArgInfo { default_doc: Some(rendered_default), ..info },
-        )
-      collect_help(source, next_info, True, group_docs)
     case Map2(left, right, _):
       left_summary = collect_help(left, info_fn, force_optional, group_docs)
       right_summary = collect_help(right, info_fn, force_optional, group_docs)

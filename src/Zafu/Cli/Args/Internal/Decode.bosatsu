@@ -30,7 +30,6 @@ from Zafu/Collection/NonEmptyList import (
 from Zafu/Collection/NonEmptyChain import (
   NonEmptyChain,
   concat as concat_NonEmptyChain,
-  for_all as for_all_NonEmptyChain,
   singleton as singleton_NonEmptyChain,
 )
 
@@ -68,11 +67,9 @@ from Zafu/Cli/Args/Internal/Core import (
   WithInfo,
   WithScope,
   WithGroupDocs,
-  WithDefault,
   Subcommands,
   Scope,
   MissingArgument,
-  MissingValue,
   DuplicateOccurrence,
   UnknownCommand,
   UnknownOption,
@@ -140,12 +137,6 @@ def filter_state(state: MatchState, claimed: HashSet[Int]) -> MatchState:
 
 def claimed_overlap(left: HashSet[Int], right: HashSet[Int]) -> Bool:
   not(is_empty_HashSet(intersection_HashSet(left, right)))
-
-def missing_only(err: CliError) -> Bool:
-  err matches MissingArgument(_, _) | MissingValue(_, _)
-
-def errors_are_missing_only(errors: NonEmptyChain[CliError]) -> Bool:
-  for_all_NonEmptyChain(errors, missing_only)
 
 def choice_target(info: ArgInfo) -> Doc:
   ArgInfo { metavar_override, ... } = info
@@ -258,15 +249,6 @@ def decode_command[a](command: Command[a], scan: ScanResult) -> Result[NonEmptyC
               decode_args_with_env(source, current_state, info_fn, next_scope)
             case WithGroupDocs(source, _):
               decode_args_with_env(source, current_state, info_fn, scope_override)
-            case WithDefault(source, default_value, _):
-              match decode_args_with_env(source, current_state, info_fn, scope_override):
-                case Ok(decoded):
-                  Ok(decoded)
-                case Err(errs):
-                  if errors_are_missing_only(errs):
-                    Ok(DecodeResult(empty_HashSet(hash_Int), default_value))
-                  else:
-                    Err(errs)
             case Map2(left, right, fn):
               left_result = decode_args_with_env(left, current_state, info_fn, scope_override)
               right_state =
