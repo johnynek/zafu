@@ -44,7 +44,7 @@ from Zafu/Text/Pretty import (
   text,
 )
 
-from Zafu/Cli/Args/Internal/Core import (
+from Zafu/Cli/Args/Types import (
   ArgInfo,
   Args,
   Cardinality,
@@ -74,6 +74,9 @@ from Zafu/Cli/Args/Internal/Core import (
   ZeroOrMore,
   OneOrMore,
   CountOccurrences,
+)
+
+from Zafu/Cli/Args/Internal/Core import (
   spelling_usage,
   cli_error_doc,
 )

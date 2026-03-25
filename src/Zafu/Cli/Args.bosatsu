@@ -29,7 +29,7 @@ from Zafu/Text/Pretty import (
   text,
 )
 
-from Zafu/Cli/Args/Internal/Core import (
+from Zafu/Cli/Args/Types import (
   ValueParser,
   ArgInfo,
   Spelling,
@@ -41,6 +41,13 @@ from Zafu/Cli/Args/Internal/Core import (
   HelpConfig,
   ParseResult,
   CliError,
+  RequestedHelp,
+  RequestedVersion,
+  Parsed,
+  Failed,
+)
+
+from Zafu/Cli/Args/Internal/Core import (
   arg_info as arg_info_core,
   default_parse_config as default_parse_config_core,
   default_help_config as default_help_config_core,
@@ -96,10 +103,6 @@ from Zafu/Cli/Args/Internal/Core import (
   with_help_flag as with_help_flag_core,
   with_version_flag as with_version_flag_core,
   applicative_Args as applicative_Args_core,
-  RequestedHelp,
-  RequestedVersion,
-  Parsed,
-  Failed,
 )
 
 from Zafu/Cli/Args/Internal/Lex import (

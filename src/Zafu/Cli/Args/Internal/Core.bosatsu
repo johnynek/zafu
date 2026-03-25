@@ -101,29 +101,66 @@ from Zafu/Text/Pretty import (
   text,
 )
 
+from Zafu/Cli/Args/Types import (
+  ValueParser,
+  ArgInfo,
+  ValueKind,
+  ValueForm,
+  Spelling,
+  Scope,
+  Cardinality,
+  PrimitiveKind,
+  PrimitiveSpec,
+  Subcommand,
+  Args,
+  Command,
+  ParseConfig,
+  HelpConfig,
+  CliError,
+  DecodeResult,
+  NamedOccurrence,
+  PositionalOccurrence,
+  MatchState,
+  Flag,
+  RequiredValue,
+  OptionalValue,
+  SeparateToken,
+  AttachedToken,
+  EqualsToken,
+  Local,
+  Inherited,
+  ExactlyOne,
+  ZeroOrOne,
+  ZeroOrMore,
+  OneOrMore,
+  CountOccurrences,
+  FlagValue,
+  NamedValue,
+  NamedOptionalValue,
+  Positional,
+  Rest,
+  UnknownOption,
+  UnknownCommand,
+  MissingValue,
+  MissingArgument,
+  DuplicateOccurrence,
+  UnexpectedArgument,
+  ValueParseError,
+  ValidationError,
+  AmbiguousSpecification,
+  Pure,
+  Primitive,
+  Map,
+  Map2,
+  OrElse,
+  Validate,
+  WithInfo,
+  WithScope,
+  WithGroupDocs,
+  Subcommands,
+)
+
 export (
-  ValueParser(),
-  ArgInfo(),
-  ValueKind(),
-  ValueForm(),
-  Spelling(),
-  Scope(),
-  Cardinality(),
-  PrimitiveKind(),
-  PrimitiveSpec(),
-  Subcommand(),
-  Args(),
-  Command(),
-  ParseConfig(),
-  HelpConfig(),
-  ParseResult(),
-  CliError(),
-  DecodeResult(),
-  IndexedToken(),
-  NamedOccurrence(),
-  PositionalOccurrence(),
-  CommandSelection(),
-  MatchState(),
   arg_info,
   default_parse_config,
   default_help_config,
@@ -186,167 +223,6 @@ export (
   spelling_usage,
   primitive_target_doc,
   cli_error_doc,
-)
-
-struct ValueParser[a](
-  parse_fn: String -> Result[Doc, a],
-  metavar: Doc,
-  choices: Option[NonEmpty[(String, Doc)]],
-)
-
-struct ArgInfo(
-  help: Option[Doc],
-  metavar_override: Option[Doc],
-  group_id: Option[String],
-  hidden: Bool,
-  default_doc: Option[Doc],
-  examples: List[Doc],
-)
-
-enum ValueKind:
-  Flag
-  RequiredValue
-  OptionalValue
-
-enum ValueForm:
-  SeparateToken
-  AttachedToken
-  EqualsToken
-
-struct Spelling(
-  prefix: String,
-  name: String,
-  value_kind: ValueKind,
-  value_forms: List[ValueForm],
-  clusterable: Bool,
-)
-
-enum Scope:
-  Local
-  Inherited
-
-enum Cardinality:
-  ExactlyOne
-  ZeroOrOne
-  ZeroOrMore
-  OneOrMore
-  CountOccurrences
-
-enum PrimitiveKind:
-  FlagValue(spellings: NonEmpty[Spelling], rendered: Doc)
-  NamedValue(spellings: NonEmpty[Spelling], metavar: Doc)
-  NamedOptionalValue(spellings: NonEmpty[Spelling], metavar: Doc)
-  Positional(metavar: Doc)
-  Rest(metavar: Doc)
-
-struct Subcommand[f: +(+* -> *), a: +*](
-  name: String,
-  aliases: List[String],
-  summary: Option[Doc],
-  description: Option[Doc],
-  footer: Option[Doc],
-  examples: List[Doc],
-  help_enabled: Bool,
-  version_doc: Option[Doc],
-  args: f[a],
-)
-
-enum CliError:
-  UnknownOption(command_path: List[String], token: String)
-  UnknownCommand(command_path: List[String], token: String)
-  MissingValue(command_path: List[String], target: Doc)
-  MissingArgument(command_path: List[String], target: Doc)
-  DuplicateOccurrence(command_path: List[String], target: Doc)
-  UnexpectedArgument(command_path: List[String], token: String)
-  ValueParseError(command_path: List[String], target: Doc, raw_value: String, detail: Doc)
-  ValidationError(command_path: List[String], detail: Doc)
-  AmbiguousSpecification(command_path: List[String], detail: Doc)
-
-enum ParseResult[a]:
-  Parsed(value: a)
-  RequestedHelp(command_path: List[String], doc: Doc)
-  RequestedVersion(doc: Doc)
-  Failed(errors: NonEmptyChain[CliError], doc: Doc)
-
-struct DecodeResult[a](claimed: HashSet[Int], value: a)
-
-struct IndexedToken(index: Int, raw: String)
-
-struct NamedOccurrence(
-  segment_depth: Int,
-  spelling: Spelling,
-  token_index: Int,
-  value_index: Option[Int],
-  value_text: Option[String],
-  raw_token: String,
-)
-
-struct PositionalOccurrence(
-  segment_depth: Int,
-  token_index: Int,
-  raw_value: String,
-)
-
-struct CommandSelection(
-  token_index: Int,
-  depth: Int,
-  raw_name: String,
-  canonical_name: String,
-)
-
-struct MatchState(
-  tokens: List[IndexedToken],
-  named_occurrences: List[NamedOccurrence],
-  positional_occurrences: List[PositionalOccurrence],
-  command_steps: List[CommandSelection],
-  command_path: List[String],
-  auto_claimed: HashSet[Int],
-)
-
-struct PrimitiveSpec[a](
-  kind: PrimitiveKind,
-  cardinality: Cardinality,
-  scope: Scope,
-  decode_fn: (MatchState, Int, Scope, ArgInfo) -> Result[NonEmptyChain[CliError], DecodeResult[a]],
-)
-
-enum Args[a]:
-  Pure(value: a)
-  Primitive(spec: PrimitiveSpec[a], info: ArgInfo)
-  Map[b](source: Args[b], fn: b -> a)
-  Map2[b, c](left: Args[b], right: Args[c], fn: (b, c) -> a)
-  OrElse(left: Args[a], right: Args[a])
-  Validate[b](source: Args[b], fn: b -> Result[Doc, a], label: Doc)
-  WithInfo(source: Args[a], fn: ArgInfo -> ArgInfo)
-  WithScope(source: Args[a], scope: Scope)
-  WithGroupDocs(source: Args[a], group_docs: HashMap[String, Doc])
-  Subcommands(commands: NonEmpty[Subcommand[Args, a]], info: ArgInfo)
-
-struct Command[a](
-  name: String,
-  summary: Option[Doc],
-  description: Option[Doc],
-  footer: Option[Doc],
-  aliases: List[String],
-  examples: List[Doc],
-  help_enabled: Bool,
-  version_doc: Option[Doc],
-  args: Args[a],
-)
-
-struct ParseConfig(
-  help_spellings: NonEmpty[Spelling],
-  version_spellings: NonEmpty[Spelling],
-  short_clusters: Bool,
-  stop_at_double_dash: Bool,
-  case_sensitive: Bool,
-)
-
-struct HelpConfig(
-  width: Int,
-  show_hidden: Bool,
-  show_defaults: Bool,
-  show_examples: Bool,
 )
 
 arg_info: ArgInfo = ArgInfo(None, None, None, False, None, [])

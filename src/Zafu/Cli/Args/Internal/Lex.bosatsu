@@ -38,7 +38,7 @@ from Zafu/Collection/NonEmptyList import (
   to_List as to_List_NonEmptyList,
 )
 
-from Zafu/Cli/Args/Internal/Core import (
+from Zafu/Cli/Args/Types import (
   Args,
   CliError,
   Command,
@@ -75,6 +75,9 @@ from Zafu/Cli/Args/Internal/Core import (
   UnknownOption,
   UnknownCommand,
   UnexpectedArgument,
+)
+
+from Zafu/Cli/Args/Internal/Core import (
   spelling_key,
 )
 

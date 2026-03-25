@@ -45,7 +45,7 @@ from Zafu/Text/Pretty import (
   text,
 )
 
-from Zafu/Cli/Args/Internal/Core import (
+from Zafu/Cli/Args/Types import (
   ArgInfo,
   Args,
   CliError,
@@ -75,6 +75,9 @@ from Zafu/Cli/Args/Internal/Core import (
   UnknownOption,
   UnexpectedArgument,
   ValidationError,
+)
+
+from Zafu/Cli/Args/Internal/Core import (
   claim_union,
 )
 
