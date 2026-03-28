@@ -21,6 +21,7 @@ export (
   laws_Hash,
 )
 
+exposes Zafu/Abstract/Eq
 struct Hash[a](
   hash_fn: a -> Int,
   eq_inst: Eq[a],

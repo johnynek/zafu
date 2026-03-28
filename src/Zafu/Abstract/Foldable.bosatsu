@@ -91,6 +91,14 @@ export (
   laws_Foldable,
 )
 
+exposes (
+  Zafu/Abstract/Applicative,
+  Zafu/Abstract/Eq,
+  Zafu/Abstract/Monoid,
+  Zafu/Abstract/Ord,
+  Zafu/Abstract/Semigroup,
+  Zafu/Control/IterState,
+)
 struct Foldable[f: * -> *](
   foldl_fn: forall a, b. (f[a], b, (b, a) -> b) -> b,
   foldr_fn: forall a, b. (f[a], b, (a, b) -> b) -> b,

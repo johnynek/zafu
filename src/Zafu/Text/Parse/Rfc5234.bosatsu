@@ -27,6 +27,7 @@ export (
   dquote,
 )
 
+exposes Zafu/Text/Parse/Internal/Core
 def is_space_or_tab(ch: Char) -> Bool:
   code = char_to_Int(ch)
   or(code.eq_Int(32), code.eq_Int(9))

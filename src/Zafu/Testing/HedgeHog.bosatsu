@@ -130,6 +130,13 @@ export (
   run_Prop,
 )
 
+exposes (
+  Zafu/Abstract/Applicative,
+  Zafu/Abstract/Monad,
+  Zafu/Collection/LazyTree,
+  Zafu/Testing/HedgeHog/Seed,
+  Zafu/Testing/HedgeHog/Size,
+)
 def root_LazyTree(tree: LazyTree[a]) -> a:
   LazyTree(value, _) = tree
   value

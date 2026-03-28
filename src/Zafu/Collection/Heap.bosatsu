@@ -67,6 +67,11 @@ export (
   ord,
 )
 
+exposes (
+  Zafu/Abstract/Eq,
+  Zafu/Abstract/Foldable,
+  Zafu/Abstract/Ord,
+)
 # Internal node carrying cached subtree size.
 enum Tree:
   Tree(size: Int, root: a, children: List[Tree[a]])
