@@ -1,0 +1,242 @@
+package Zafu/Cli/ArgsTests
+
+from Bosatsu/Char import (
+  string_to_Char_List,
+)
+
+from Zafu/Abstract/Instances/Predef import (
+  hash_String,
+)
+
+from Zafu/Abstract/Hash import (
+  Hash,
+)
+
+from Zafu/Collection/HashMap import (
+  from_List as from_List_HashMap,
+)
+
+from Zafu/Collection/NonEmptyList import (
+  from_prepend as from_prepend_NonEmptyList,
+)
+
+from Zafu/Text/Pretty import (
+  render_String as render,
+  text,
+)
+
+from Zafu/Cli/Args import (
+  arg_info,
+  allow_attached,
+  clusterable,
+  command,
+  count,
+  default_help_config,
+  default_parse_config,
+  flag,
+  flag_value,
+  help_doc,
+  int_value,
+  long,
+  map2,
+  option,
+  or_else,
+  parse,
+  positional,
+  pure,
+  short,
+  string_value,
+  subcommands,
+  with_default,
+  with_group,
+  with_group_docs,
+  with_help,
+  with_help_flag,
+  with_scope,
+)
+
+from Zafu/Cli/Args/Types import (
+  Parsed,
+  RequestedHelp,
+  Inherited,
+)
+
+enum Mode:
+  Compact
+  Spaces(indent: Int)
+
+def render_doc(doc) -> String:
+  render(doc, 80)
+
+def contains_prefix(chars: List[Char], prefix: List[Char]) -> Bool:
+  def loop(next_chars: List[Char], next_prefix: List[Char]) -> Bool:
+    loop next_prefix:
+      case []:
+        True
+      case [prefix_head, *prefix_tail]:
+        match next_chars:
+          case [char_head, *char_tail]:
+            if char_to_Int(prefix_head).eq_Int(char_to_Int(char_head)):
+              loop(char_tail, prefix_tail)
+            else:
+              False
+          case []:
+            False
+
+  loop(chars, prefix)
+
+def contains_text(haystack: String, needle: String) -> Bool:
+  needle_chars = string_to_Char_List(needle)
+  def loop(rem_chars: List[Char]) -> Bool:
+    recur rem_chars:
+      case []:
+        needle_chars matches []
+      case [_, *tail_chars]:
+        or(contains_prefix(rem_chars, needle_chars), loop(tail_chars))
+
+  loop(string_to_Char_List(haystack))
+
+style_args = (
+  compact_flag = with_help(
+    flag_value(from_prepend_NonEmptyList(long("compact"), []), Compact, arg_info),
+    text("render compact JSON"),
+  )
+  spaces2_flag = with_help(
+    flag_value(from_prepend_NonEmptyList(long("spaces2"), []), Spaces(2), arg_info),
+    text("indent with two spaces"),
+  )
+  spaces4_flag = with_help(
+    flag_value(from_prepend_NonEmptyList(long("spaces4"), []), Spaces(4), arg_info),
+    text("indent with four spaces"),
+  )
+  with_default(or_else(or_else(compact_flag, spaces2_flag), spaces4_flag), Spaces(2), text("--spaces2"))
+)
+
+style_command = command("json-format", style_args)
+
+pure_subcommands = command(
+  "tool",
+  subcommands(
+    from_prepend_NonEmptyList(
+      command("fmt", pure("fmt")),
+      [command("lint", pure("lint"))],
+    ),
+    arg_info,
+  ),
+)
+
+tests = TestSuite("Cli args tests", [
+  Assertion(
+    parse(default_parse_config, style_command, []) matches Parsed(Spaces(2)),
+    "with_default selects the default branch",
+  ),
+  Assertion(
+    parse(default_parse_config, style_command, ["--spaces4"]) matches Parsed(Spaces(4)),
+    "flag_value branches decode explicit long flags",
+  ),
+  Assertion(
+    parse(
+      default_parse_config,
+      command(
+        "tool",
+        count(from_prepend_NonEmptyList(clusterable(short(.'v')), []), arg_info),
+      ),
+      ["-vvv"],
+    ) matches Parsed(3),
+    "clusterable short flags expand into repeated occurrences",
+  ),
+  Assertion(
+    parse(
+      default_parse_config,
+      command(
+        "tool",
+        option(
+          string_value(text("PATH")),
+          from_prepend_NonEmptyList(allow_attached(short(.'I')), []),
+          arg_info,
+        ),
+      ),
+      ["-Iinclude"],
+    ) matches Parsed("include"),
+    "attached short option values are decoded",
+  ),
+  Assertion(
+    parse(
+      default_parse_config,
+      command("tool", positional(int_value(text("N")), arg_info)),
+      ["-1"],
+    ) matches Parsed(-1),
+    "negative numbers remain positional when no spelling matches",
+  ),
+  Assertion(
+    parse(default_parse_config, pure_subcommands, ["fmt"]) matches Parsed("fmt"),
+    "pure subcommands dispatch to the selected child",
+  ),
+  Assertion(
+    parse(default_parse_config, with_help_flag(command("tool", pure("ok"))), ["--help"]) matches RequestedHelp(_, _),
+    "built-in help short-circuits parsing",
+  ),
+  Assertion(
+    contains_text(
+      render_doc(
+        help_doc(
+          default_help_config,
+          command(
+            "json-format",
+            with_group_docs(
+              map2(
+                with_group(
+                  with_help(
+                    flag(from_prepend_NonEmptyList(long("compact"), []), arg_info),
+                    text("render compact JSON"),
+                  ),
+                  "modes",
+                ),
+                with_group(
+                  with_help(
+                    flag(from_prepend_NonEmptyList(long("spaces4"), []), arg_info),
+                    text("indent with four spaces"),
+                  ),
+                  "modes",
+                ),
+                (_, right) -> right,
+              ),
+              from_List_HashMap(hash_String, [("modes", text("Modes"))]),
+            ),
+          ),
+          [],
+        ),
+      ),
+      "Modes",
+    ),
+    "group headings are rendered from with_group_docs",
+  ),
+  Assertion(
+    contains_text(
+      render_doc(help_doc(default_help_config, style_command, [])),
+      "Choices",
+    ),
+    "exclusive choices render in help output",
+  ),
+  Assertion(
+    parse(
+      default_parse_config,
+      command(
+        "tool",
+        map2(
+          with_scope(
+            flag(from_prepend_NonEmptyList(clusterable(short(.'v')), []), arg_info),
+            Inherited,
+          ),
+          subcommands(
+            from_prepend_NonEmptyList(command("fmt", pure("fmt")), []),
+            arg_info,
+          ),
+          (verbose, name) -> (verbose, name),
+        ),
+      ),
+      ["fmt", "-v"],
+    ) matches Parsed((True, "fmt")),
+    "inherited root flags remain visible after selecting a subcommand",
+  ),
+])

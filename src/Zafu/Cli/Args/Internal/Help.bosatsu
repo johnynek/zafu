@@ -1,0 +1,486 @@
+package Zafu/Cli/Args/Internal/Help
+
+from Zafu/Abstract/Instances/Predef import (
+  eq_String,
+  hash_String,
+)
+
+from Zafu/Abstract/Hash import (
+  Hash,
+)
+
+from Zafu/Abstract/Eq import (
+  eq as eq_Eq,
+)
+
+from Zafu/Collection/HashMap import (
+  HashMap,
+  empty as empty_HashMap,
+  get as get_HashMap,
+  union_with as union_with_HashMap,
+)
+
+from Zafu/Collection/HashSet import (
+  contains as contains_HashSet,
+  empty as empty_HashSet,
+  updated as updated_HashSet,
+)
+
+from Zafu/Collection/List import (
+  filter as filter_List,
+  foldl as foldl_List,
+  is_empty as is_empty_List,
+)
+
+from Zafu/Collection/NonEmptyChain import (
+  NonEmptyChain,
+  to_List as to_List_NonEmptyChain,
+)
+
+from Zafu/Collection/NonEmptyList import (
+  to_List as to_List_NonEmptyList,
+)
+
+from Zafu/Text/Pretty import (
+  Doc,
+  append,
+  intercalate,
+  spread,
+  stack,
+  text,
+)
+
+from Zafu/Cli/Args/Types import (
+  ArgInfo,
+  Args,
+  Cardinality,
+  CliError,
+  Command,
+  HelpConfig,
+  PrimitiveSpec,
+  PrimitiveKind,
+  Primitive,
+  Pure,
+  Map,
+  Map2,
+  OrElse,
+  Validate,
+  WithInfo,
+  WithScope,
+  WithGroupDocs,
+  Subcommands,
+  Subcommand,
+  FlagValue,
+  NamedValue,
+  NamedOptionalValue,
+  Positional,
+  Rest,
+  ExactlyOne,
+  ZeroOrOne,
+  ZeroOrMore,
+  OneOrMore,
+  CountOccurrences,
+)
+
+from Zafu/Cli/Args/Internal/Core import (
+  spelling_usage,
+  cli_error_doc,
+)
+
+from Zafu/Cli/Args/Internal/Lex import (
+  SomeCommand,
+  PackedCommand,
+  command_from_subcommand,
+)
+
+export (
+  help_doc,
+  failure_doc,
+)
+
+exposes (
+  Zafu/Cli/Args/Types,
+  Zafu/Collection/NonEmptyChain,
+  Zafu/Text/Pretty,
+)
+
+struct HelpItem(
+  usage: Doc,
+  help: Option[Doc],
+  group_id: Option[String],
+  hidden: Bool,
+  default_doc: Option[Doc],
+  examples: List[Doc],
+)
+
+struct HelpSummary(
+  usage_parts: List[Doc],
+  named_items: List[HelpItem],
+  positional_items: List[HelpItem],
+  choice_items: List[Doc],
+  subcommands: List[SomeCommand],
+  group_docs: HashMap[String, Doc],
+)
+
+def empty_summary() -> HelpSummary:
+  HelpSummary([], [], [], [], [], empty_HashMap(hash_String))
+
+def compose_fn(f: b -> c, g: a -> b) -> a -> c:
+  a -> f(g(a))
+
+def merge_group_docs(outer: HashMap[String, Doc], inner: HashMap[String, Doc]) -> HashMap[String, Doc]:
+  union_with_HashMap(outer, inner, (_, left, _) -> left)
+
+def usage_optional(doc: Doc) -> Doc:
+  append(text("["), append(doc, text("]")))
+
+def usage_many(doc: Doc, required: Bool) -> Doc:
+  base = append(doc, text("..."))
+  if required:
+    base
+  else:
+    usage_optional(base)
+
+def usage_for_cardinality(usage: Doc, cardinality: Cardinality, force_optional: Bool) -> Doc:
+  if force_optional:
+    usage_optional(usage)
+  else:
+    match cardinality:
+      case ExactlyOne:
+        usage
+      case ZeroOrOne | CountOccurrences:
+        usage_optional(usage)
+      case ZeroOrMore:
+        usage_many(usage, False)
+      case OneOrMore:
+        usage_many(usage, True)
+
+def list_doc(items: List[Doc]) -> Doc:
+  match items:
+    case []:
+      text("")
+    case [single]:
+      single
+    case _:
+      intercalate(text(" "), items)
+
+def choice_doc(left: List[Doc], right: List[Doc]) -> Doc:
+  spread([text("("), list_doc(left), text("|"), list_doc(right), text(")")])
+
+def help_item_doc(item: HelpItem, show_defaults: Bool, show_examples: Bool) -> Doc:
+  HelpItem { usage, help, default_doc, examples, ... } = item
+  base =
+    match help:
+      case Some(help_doc):
+        spread([usage, text("-"), help_doc])
+      case None:
+        usage
+  with_default =
+    if show_defaults:
+      match default_doc:
+        case Some(default_value):
+          stack([base, spread([text("default:"), default_value])])
+        case None:
+          base
+    else:
+      base
+  if show_examples:
+    match examples:
+      case []:
+        with_default
+      case _:
+        stack([with_default, spread([text("examples:"), intercalate(text(", "), examples)])])
+  else:
+    with_default
+
+def subcommand_matches(command: SomeCommand, name: String) -> Bool:
+  PackedCommand(Command { name: command_name, aliases, ... }) = command
+  if eq_Eq(eq_String, command_name, name):
+    True
+  else:
+    foldl_List(aliases, False, (seen, alias) -> or(seen, eq_Eq(eq_String, alias, name)))
+
+def collect_subcommands[a](args: Args[a]) -> List[SomeCommand]:
+  recur args:
+    case Pure(_) | Primitive(_, _):
+      []
+    case Map(source, _):
+      collect_subcommands(source)
+    case Validate(source, _, _):
+      collect_subcommands(source)
+    case WithInfo(source, _):
+      collect_subcommands(source)
+    case WithScope(source, _):
+      collect_subcommands(source)
+    case WithGroupDocs(source, _):
+      collect_subcommands(source)
+    case Map2(left, right, _):
+      [*collect_subcommands(left), *collect_subcommands(right)]
+    case OrElse(left, right):
+      [*collect_subcommands(left), *collect_subcommands(right)]
+    case Subcommands(commands, _):
+      to_List_NonEmptyList(commands).map_List(command_from_subcommand)
+
+def find_selected_command[a](command: Command[a], command_path: List[String]) -> SomeCommand:
+  Command { name: root_name, ... } = command
+  remaining =
+    match command_path:
+      case [name, *tail] if eq_Eq(eq_String, name, root_name):
+        tail
+      case _:
+        command_path
+
+  def loop(current: SomeCommand, rem: List[String]) -> SomeCommand:
+    loop rem:
+      case []:
+        current
+      case [name, *tail]:
+        PackedCommand(Command { args, ... }) = current
+        children = collect_subcommands(args)
+        def find_child(rem_children: List[SomeCommand]) -> Option[SomeCommand]:
+          loop rem_children:
+            case []:
+              None
+            case [head, *tail_children]:
+              if subcommand_matches(head, name):
+                Some(head)
+              else:
+                find_child(tail_children)
+
+        match find_child(children):
+          case Some(child):
+            loop(child, tail)
+          case None:
+            current
+
+  loop(PackedCommand(command), remaining)
+
+def summary_is_empty(summary: HelpSummary) -> Bool:
+  HelpSummary { usage_parts, named_items, positional_items, choice_items, subcommands, ... } = summary
+  and(
+    is_empty_List(usage_parts),
+    and(
+      is_empty_List(named_items),
+      and(
+        is_empty_List(positional_items),
+        and(is_empty_List(choice_items), is_empty_List(subcommands)),
+      ),
+    ),
+  )
+
+def collect_help[a](
+  args: Args[a],
+  info_fn: ArgInfo -> ArgInfo,
+  force_optional: Bool,
+  group_docs: HashMap[String, Doc],
+) -> HelpSummary:
+  recur args:
+    case Pure(_):
+      empty_summary()
+    case Primitive(PrimitiveSpec(kind, cardinality, _, _), info):
+      actual_info = info_fn(info)
+      ArgInfo { help, group_id, hidden, default_doc, examples, ... } = actual_info
+      usage = usage_for_cardinality(spelling_usage(kind, actual_info), cardinality, force_optional)
+      item = HelpItem(usage, help, group_id, hidden, default_doc, examples)
+      match kind:
+        case FlagValue(_, _) | NamedValue(_, _) | NamedOptionalValue(_, _):
+          HelpSummary([usage], [item], [], [], [], group_docs)
+        case Positional(_) | Rest(_):
+          HelpSummary([usage], [], [item], [], [], group_docs)
+    case Map(source, _):
+      collect_help(source, info_fn, force_optional, group_docs)
+    case Validate(source, _, _):
+      collect_help(source, info_fn, force_optional, group_docs)
+    case WithInfo(source, fn):
+      collect_help(source, compose_fn(info_fn, fn), force_optional, group_docs)
+    case WithScope(source, _):
+      collect_help(source, info_fn, force_optional, group_docs)
+    case WithGroupDocs(source, next_docs):
+      collect_help(source, info_fn, force_optional, merge_group_docs(group_docs, next_docs))
+    case Map2(left, right, _):
+      left_summary = collect_help(left, info_fn, force_optional, group_docs)
+      right_summary = collect_help(right, info_fn, force_optional, group_docs)
+      HelpSummary { usage_parts: left_usage_parts, named_items: left_named_items, positional_items: left_positional_items, choice_items: left_choice_items, subcommands: left_subcommands, group_docs: left_group_docs } = left_summary
+      HelpSummary { usage_parts: right_usage_parts, named_items: right_named_items, positional_items: right_positional_items, choice_items: right_choice_items, subcommands: right_subcommands, group_docs: right_group_docs } = right_summary
+      HelpSummary(
+        [*left_usage_parts, *right_usage_parts],
+        [*left_named_items, *right_named_items],
+        [*left_positional_items, *right_positional_items],
+        [*left_choice_items, *right_choice_items],
+        [*left_subcommands, *right_subcommands],
+        merge_group_docs(left_group_docs, right_group_docs),
+      )
+    case OrElse(left, right):
+      left_summary = collect_help(left, info_fn, force_optional, group_docs)
+      right_summary = collect_help(right, info_fn, force_optional, group_docs)
+      if summary_is_empty(left_summary):
+        collect_help(right, info_fn, True, group_docs)
+      elif summary_is_empty(right_summary):
+        collect_help(left, info_fn, True, group_docs)
+      else:
+        HelpSummary { usage_parts: left_usage_parts, named_items: left_named_items, positional_items: left_positional_items, choice_items: left_choice_items, subcommands: left_subcommands, group_docs: left_group_docs } = left_summary
+        HelpSummary { usage_parts: right_usage_parts, named_items: right_named_items, positional_items: right_positional_items, choice_items: right_choice_items, subcommands: right_subcommands, group_docs: right_group_docs } = right_summary
+        choice = choice_doc(left_usage_parts, right_usage_parts)
+        HelpSummary(
+          [choice],
+          [*left_named_items, *right_named_items],
+          [*left_positional_items, *right_positional_items],
+          [*left_choice_items, *right_choice_items, choice],
+          [*left_subcommands, *right_subcommands],
+          merge_group_docs(left_group_docs, right_group_docs),
+        )
+    case Subcommands(commands, _):
+      command_views = to_List_NonEmptyList(commands).map_List(command_from_subcommand)
+      HelpSummary(
+        [text("COMMAND")],
+        [],
+        [],
+        [],
+        command_views,
+        group_docs,
+      )
+
+def visible_items(items: List[HelpItem], show_hidden: Bool) -> List[HelpItem]:
+  if show_hidden:
+    items
+  else:
+    filter_List(
+      items,
+      item -> (
+        HelpItem { hidden, ... } = item
+        not(hidden)
+      ),
+    )
+
+def distinct_group_ids(items: List[HelpItem]) -> List[Option[String]]:
+  (_, _, group_ids_rev) =
+    foldl_List(
+      items,
+      (empty_HashSet(hash_String), False, []),
+      ((seen_named, seen_unnamed, acc), item) -> (
+        HelpItem { group_id, ... } = item
+        match group_id:
+          case Some(id):
+            if contains_HashSet(seen_named, id):
+              (seen_named, seen_unnamed, acc)
+            else:
+              (updated_HashSet(seen_named, id), seen_unnamed, [group_id, *acc])
+          case None:
+            if seen_unnamed:
+              (seen_named, seen_unnamed, acc)
+            else:
+              (seen_named, True, [group_id, *acc])
+      ),
+    )
+  group_ids_rev.reverse()
+
+def items_for_group(items: List[HelpItem], group_id: Option[String]) -> List[HelpItem]:
+  filter_List(
+    items,
+    item -> (
+      HelpItem { group_id: next_group_id, ... } = item
+      match (group_id, next_group_id):
+        case (Some(left), Some(right)):
+          eq_Eq(eq_String, left, right)
+        case (None, None):
+          True
+        case _:
+          False
+    ),
+  )
+
+def group_heading(group_docs: HashMap[String, Doc], group_id: Option[String]) -> Doc:
+  match group_id:
+    case Some(id):
+      match get_HashMap(group_docs, id):
+        case Some(doc):
+          doc
+        case None:
+          text(id)
+    case None:
+      text("Options")
+
+def subcommands_doc(items: List[SomeCommand]) -> Doc:
+  docs =
+    items.map_List(item -> (
+      PackedCommand(Command { name, summary, ... }) = item
+      match summary:
+        case Some(doc):
+          spread([text(name), text("-"), doc])
+        case None:
+          text(name)
+    ))
+  stack([text("Subcommands"), *docs])
+
+def item_section(title: Doc, items: List[HelpItem], config: HelpConfig) -> Option[Doc]:
+  HelpConfig(_, _, show_defaults, show_examples) = config
+  match items:
+    case []:
+      None
+    case _:
+      Some(stack([title, *items.map_List(item -> help_item_doc(item, show_defaults, show_examples))]))
+
+def optional_doc(opt_doc: Option[Doc]) -> List[Doc]:
+  match opt_doc:
+    case Some(doc):
+      [doc]
+    case None:
+      []
+
+def help_doc[a](config: HelpConfig, command: Command[a], command_path: List[String]) -> Doc:
+  selected = find_selected_command(command, command_path)
+  PackedCommand(Command { name, summary, description, footer, examples, args, ... }) = selected
+  summary0 = collect_help(args, info -> info, False, empty_HashMap(hash_String))
+  HelpSummary { usage_parts, named_items: summary_named_items, positional_items: summary_positional_items, choice_items: summary_choice_items, subcommands: summary_subcommands, group_docs: summary_group_docs } = summary0
+  HelpConfig(_, show_hidden, _, show_examples) = config
+  named_items = visible_items(summary_named_items, show_hidden)
+  positional_items = visible_items(summary_positional_items, show_hidden)
+  usage_line =
+    match usage_parts:
+      case []:
+        spread([text("Usage:"), text(name)])
+      case _:
+        spread([text("Usage:"), text(name), list_doc(usage_parts)])
+  positional_section = item_section(text("Arguments"), positional_items, config)
+  named_sections =
+    distinct_group_ids(named_items).map_List(group_id -> (
+      items = items_for_group(named_items, group_id)
+      item_section(group_heading(summary_group_docs, group_id), items, config)
+    ))
+  choice_section =
+    match summary_choice_items:
+      case []:
+        None
+      case _:
+        Some(stack([text("Choices"), *summary_choice_items]))
+  subcommand_section =
+    if is_empty_List(summary_subcommands):
+      None
+    else:
+      Some(subcommands_doc(summary_subcommands))
+  example_section =
+    if and(show_examples, not(is_empty_List(examples))):
+      Some(stack([text("Examples"), *examples]))
+    else:
+      None
+  docs =
+    [
+      usage_line,
+      *optional_doc(summary),
+      *optional_doc(description),
+      *optional_doc(positional_section),
+      *foldl_List(
+        named_sections,
+        [],
+        (acc, section) -> [*acc, *optional_doc(section)],
+      ),
+      *optional_doc(choice_section),
+      *optional_doc(subcommand_section),
+      *optional_doc(example_section),
+      *optional_doc(footer),
+    ]
+  stack(docs)
+
+def failure_doc[a](config: HelpConfig, command: Command[a], errors: NonEmptyChain[CliError]) -> Doc:
+  error_block = stack(to_List_NonEmptyChain(errors).map_List(cli_error_doc))
+  stack([error_block, help_doc(config, command, [])])

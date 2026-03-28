@@ -32,6 +32,7 @@ from Bosatsu/Prog import (
 )
 
 from Zafu/Collection/NonEmptyList import (
+  from_prepend as from_prepend_NonEmptyList,
   to_List as to_List_NonEmptyList,
 )
 
@@ -80,6 +81,26 @@ from Zafu/Text/Pretty import (
   text,
 )
 
+from Zafu/Cli/Args import (
+  arg_info,
+  command as cli_command,
+  default_parse_config,
+  flag_value,
+  long,
+  or_else,
+  parse as parse_cli,
+  with_default,
+  with_help,
+  with_help_flag,
+)
+
+from Zafu/Cli/Args/Types import (
+  Parsed,
+  RequestedHelp,
+  RequestedVersion,
+  Failed,
+)
+
 export (
   main,
 )
@@ -97,7 +118,6 @@ enum OutputStyle:
   Compact
   Pretty(indent_size: Int)
 
-usage_line = "usage: json-format [--compact|--spaces2|--spaces4]"
 read_chunk_size = 4096
 
 double_quote_char: Char = .'\"'
@@ -117,15 +137,6 @@ upper_e_char: Char = .'E'
 u_char: Char = .'u'
 
 simple_escape_chars = string_to_Char_List("\"\\/bfnrt")
-
-def style_eq(left: OutputStyle, right: OutputStyle) -> Bool:
-  match (left, right):
-    case (Compact, Compact):
-      True
-    case (Pretty(left_spaces), Pretty(right_spaces)):
-      left_spaces.eq_Int(right_spaces)
-    case _:
-      False
 
 def is_json_space(ch: Char) -> Bool:
   ch matches .' ' | .'\t' | .'\n' | .'\r'
@@ -673,51 +684,36 @@ def json_doc(value: Json, style: OutputStyle) -> Doc:
 def render_json(value: Json, style: OutputStyle) -> String:
   render(json_doc(value, style), 120)
 
-def parse_style_flag(arg: String) -> Option[OutputStyle]:
-  match arg:
-    case "--compact" | "compact":
-      Some(Compact)
-    case "--spaces2" | "spaces2":
-      Some(Pretty(2))
-    case "--spaces4" | "spaces4":
-      Some(Pretty(4))
-    case _:
-      None
+style_args = (
+  compact_flag = with_help(
+    flag_value(from_prepend_NonEmptyList(long("compact"), []), Compact, arg_info),
+    text("render compact JSON"),
+  )
+  spaces2_flag = with_help(
+    flag_value(from_prepend_NonEmptyList(long("spaces2"), []), Pretty(2), arg_info),
+    text("indent with two spaces"),
+  )
+  spaces4_flag = with_help(
+    flag_value(from_prepend_NonEmptyList(long("spaces4"), []), Pretty(4), arg_info),
+    text("indent with four spaces"),
+  )
+  with_default(
+    or_else(or_else(compact_flag, spaces2_flag), spaces4_flag),
+    Pretty(2),
+    text("--spaces2"),
+  )
+)
 
-def parse_args(args: List[String]) -> Result[String, OutputStyle]:
-  normalized_args =
-    match args:
-      case [head, *tail]:
-        match parse_style_flag(head):
-          case Some(_):
-            args
-          case None:
-            tail
-      case []:
-        []
+json_format_command = with_help_flag(cli_command("json-format", style_args))
 
-  def loop(rem: List[String], selected: Option[OutputStyle]) -> Result[String, OutputStyle]:
-    loop rem:
-      case []:
-        match selected:
-          case Some(style):
-            Ok(style)
-          case None:
-            Ok(Pretty(2))
-      case [next, *tail]:
-        match parse_style_flag(next):
-          case Some(style):
-            match selected:
-              case Some(prev) if style_eq(prev, style):
-                loop(tail, selected)
-              case Some(_):
-                Err("choose exactly one style flag: --compact, --spaces2, or --spaces4")
-              case None:
-                loop(tail, Some(style))
-          case None:
-            Err("unknown flag: ${next}")
-
-  loop(normalized_args, None)
+# `Main` may hand us argv with the command name first; keep it only when the
+# leading token already looks like an option so direct invocations still work.
+def normalize_cli_args(args: List[String]) -> List[String]:
+  match args:
+    case ["-${_}" | "/${_}", *_] | []:
+      args
+    case [_, *tail]:
+      tail
 
 def read_stdin_all() -> Prog[IOError, Result[String, String]]:
   bytes <- read_all_bytes(stdin, read_chunk_size).await()
@@ -728,11 +724,18 @@ def read_stdin_all() -> Prog[IOError, Result[String, String]]:
       pure(Err("stdin is not valid UTF-8"))
 
 def run(args: List[String]) -> Prog[IOError, Int]:
-  match parse_args(args):
-    case Err(arg_err):
-      _ <- write_utf8(stderr, "${arg_err}\n${usage_line}\n").await()
+  cli_args = normalize_cli_args(args)
+  match parse_cli(default_parse_config, json_format_command, cli_args):
+    case Failed(_, doc):
+      _ <- write_utf8(stderr, "${render(doc, 80)}\n").await()
       pure(2)
-    case Ok(style):
+    case RequestedHelp(_, doc):
+      _ <- write_utf8(stdout, "${render(doc, 80)}\n").await()
+      pure(0)
+    case RequestedVersion(doc):
+      _ <- write_utf8(stdout, "${render(doc, 80)}\n").await()
+      pure(0)
+    case Parsed(style):
       input_result <- read_stdin_all().await()
       match input_result:
         case Ok(input):
