@@ -92,6 +92,12 @@ export (
   failure_doc,
 )
 
+exposes (
+  Zafu/Cli/Args/Types,
+  Zafu/Collection/NonEmptyChain,
+  Zafu/Text/Pretty,
+)
+
 struct HelpItem(
   usage: Doc,
   help: Option[Doc],

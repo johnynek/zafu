@@ -89,6 +89,8 @@ export (
   command_from_subcommand,
 )
 
+exposes Zafu/Cli/Args/Types, Zafu/Collection/HashSet
+
 enum BuiltInRequest:
   RequestHelp(command_path: List[String])
   RequestVersion

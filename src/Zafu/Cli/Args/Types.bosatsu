@@ -49,6 +49,15 @@ export (
   MatchState(),
 )
 
+exposes (
+  Zafu/Collection/HashMap,
+  Zafu/Collection/HashSet,
+  Zafu/Collection/NonEmptyChain,
+  Zafu/Collection/NonEmptyList,
+  Zafu/Control/Result,
+  Zafu/Text/Pretty,
+)
+
 struct ValueParser[a](
   parse_fn: String -> Result[Doc, a],
   metavar: Doc,

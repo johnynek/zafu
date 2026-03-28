@@ -90,6 +90,13 @@ export (
   check_command,
 )
 
+exposes (
+  Zafu/Cli/Args/Internal/Lex,
+  Zafu/Cli/Args/Types,
+  Zafu/Collection/NonEmptyChain,
+  Zafu/Control/Result,
+)
+
 def identity_info(info: ArgInfo) -> ArgInfo:
   info
 

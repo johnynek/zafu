@@ -225,6 +225,19 @@ export (
   cli_error_doc,
 )
 
+exposes (
+  Zafu/Abstract/Applicative,
+  Zafu/Abstract/Semigroup,
+  Zafu/Cli/Args/Types,
+  Zafu/Collection/HashMap,
+  Zafu/Collection/HashSet,
+  Zafu/Collection/NonEmptyChain,
+  Zafu/Collection/NonEmptyList,
+  Zafu/Control/Result,
+  Zafu/Text/Parse/Internal/Core,
+  Zafu/Text/Pretty,
+)
+
 arg_info: ArgInfo = ArgInfo(None, None, None, False, None, [])
 
 default_parse_config: ParseConfig = ParseConfig(

@@ -184,6 +184,17 @@ export (
   applicative_Args,
 )
 
+exposes (
+  Zafu/Abstract/Applicative,
+  Zafu/Cli/Args/Types,
+  Zafu/Collection/HashMap,
+  Zafu/Collection/NonEmptyChain,
+  Zafu/Collection/NonEmptyList,
+  Zafu/Control/Result,
+  Zafu/Text/Parse/Internal/Core,
+  Zafu/Text/Pretty,
+)
+
 arg_info: ArgInfo = arg_info_core
 default_parse_config: ParseConfig = default_parse_config_core
 default_help_config: HelpConfig = default_help_config_core
