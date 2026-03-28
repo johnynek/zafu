@@ -6,6 +6,7 @@ from Zafu/Collection/HashMap import (
 
 from Zafu/Collection/NonEmptyChain import (
   NonEmptyChain,
+  from_List as from_List_NonEmptyChain,
 )
 
 from Zafu/Collection/NonEmptyList import (
@@ -101,7 +102,6 @@ from Zafu/Cli/Args/Internal/Core import (
   with_help_flag as with_help_flag_core,
   with_version_flag as with_version_flag_core,
   applicative_Args as applicative_Args_core,
-  list_to_errors as list_to_errors_core,
 )
 
 from Zafu/Cli/Args/Internal/Lex import (
@@ -363,7 +363,7 @@ def parse[a](config: ParseConfig, command: Command[a], argv: List[String]) -> Pa
   scan = scan_command(config, command, argv)
   ScanResult(_, _, _, _, _, leaf_command, _, built_in, scan_errors) = scan
   all_errors = [*spec_errors, *scan_errors]
-  match list_to_errors_core(all_errors):
+  match from_List_NonEmptyChain(all_errors):
     case Some(errs):
       Failed(errs, failure_doc_internal(default_help_config, command, errs))
     case None:

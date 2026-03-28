@@ -165,7 +165,6 @@ export (
   default_parse_config,
   default_help_config,
   error_semigroup,
-  list_to_errors,
   value_from_parse,
   value_from_fn,
   string_value,
@@ -258,19 +257,6 @@ error_semigroup: Semigroup[NonEmptyChain[CliError]] = semigroup_from_combine(con
 
 def claim_union(left: HashSet[Int], right: HashSet[Int]) -> HashSet[Int]:
   union_HashSet(left, right)
-
-def list_to_errors(items: List[CliError]) -> Option[NonEmptyChain[CliError]]:
-  match items:
-    case []:
-      None
-    case [head, *tail]:
-      Some(
-        foldl_List(
-          tail,
-          singleton_NonEmptyChain(head),
-          (acc, next) -> concat_NonEmptyChain(acc, singleton_NonEmptyChain(next)),
-        ),
-      )
 
 def value_from_parse[a](parser: Parser[a], metavar: Doc) -> ValueParser[a]:
   ValueParser(

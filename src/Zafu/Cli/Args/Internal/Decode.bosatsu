@@ -30,6 +30,7 @@ from Zafu/Collection/NonEmptyList import (
 from Zafu/Collection/NonEmptyChain import (
   NonEmptyChain,
   concat as concat_NonEmptyChain,
+  from_List as from_List_NonEmptyChain,
   singleton as singleton_NonEmptyChain,
 )
 
@@ -79,7 +80,6 @@ from Zafu/Cli/Args/Types import (
 
 from Zafu/Cli/Args/Internal/Core import (
   claim_union,
-  list_to_errors,
 )
 
 from Zafu/Cli/Args/Internal/Lex import (
@@ -322,7 +322,7 @@ def decode_command[a](command: Command[a], scan: ScanResult) -> Result[NonEmptyC
 
   match decode_path(command, selected_names, 0):
     case Ok(DecodeResult(claimed, value)):
-      match list_to_errors(leftover_errors(state, claimed)):
+      match from_List_NonEmptyChain(leftover_errors(state, claimed)):
         case Some(errs):
           Err(errs)
         case None:
