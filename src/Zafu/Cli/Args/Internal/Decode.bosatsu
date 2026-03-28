@@ -79,6 +79,7 @@ from Zafu/Cli/Args/Types import (
 
 from Zafu/Cli/Args/Internal/Core import (
   claim_union,
+  list_to_errors,
 )
 
 from Zafu/Cli/Args/Internal/Lex import (
@@ -176,20 +177,6 @@ def leftover_errors(state: MatchState, claimed: HashSet[Int]) -> List[CliError]:
         [token_error(command_path, raw), *acc]
     ),
   ).reverse()
-
-def list_to_errors(items: List[CliError]) -> Option[NonEmptyChain[CliError]]:
-  match items:
-    case []:
-      None
-    case [head, *tail]:
-      def loop(rem: List[CliError], acc: NonEmptyChain[CliError]) -> NonEmptyChain[CliError]:
-        loop rem:
-          case []:
-            acc
-          case [next, *tail_items]:
-            loop(tail_items, concat_NonEmptyChain(acc, singleton_NonEmptyChain(next)))
-
-      Some(loop(tail, singleton_NonEmptyChain(head)))
 
 def check_command[a](command: Command[a]) -> List[CliError]:
   _ = command

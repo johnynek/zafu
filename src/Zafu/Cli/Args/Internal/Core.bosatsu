@@ -165,6 +165,7 @@ export (
   default_parse_config,
   default_help_config,
   error_semigroup,
+  list_to_errors,
   value_from_parse,
   value_from_fn,
   string_value,
@@ -258,6 +259,19 @@ error_semigroup: Semigroup[NonEmptyChain[CliError]] = semigroup_from_combine(con
 def claim_union(left: HashSet[Int], right: HashSet[Int]) -> HashSet[Int]:
   union_HashSet(left, right)
 
+def list_to_errors(items: List[CliError]) -> Option[NonEmptyChain[CliError]]:
+  match items:
+    case []:
+      None
+    case [head, *tail]:
+      Some(
+        foldl_List(
+          tail,
+          singleton_NonEmptyChain(head),
+          (acc, next) -> concat_NonEmptyChain(acc, singleton_NonEmptyChain(next)),
+        ),
+      )
+
 def value_from_parse[a](parser: Parser[a], metavar: Doc) -> ValueParser[a]:
   ValueParser(
     input -> (
@@ -307,12 +321,12 @@ def string_value(metavar: Doc) -> ValueParser[String]:
   value_from_fn(input -> Ok(input), metavar)
 
 def parse_int_chars(chars: List[Char], acc: Int) -> Int:
-  loop chars:
-    case []:
-      acc
-    case [head, *tail]:
+  loop (chars, acc):
+    case ([], result):
+      result
+    case ([head, *tail], current_acc):
       digit = char_to_Int(head).sub(48)
-      parse_int_chars(tail, acc.mul(10).add(digit))
+      parse_int_chars(tail, current_acc.mul(10).add(digit))
 
 def int_value(metavar: Doc) -> ValueParser[Int]:
   digit = char_where(is_ascii_digit, "digit")

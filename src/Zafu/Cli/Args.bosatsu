@@ -6,8 +6,6 @@ from Zafu/Collection/HashMap import (
 
 from Zafu/Collection/NonEmptyChain import (
   NonEmptyChain,
-  concat as concat_NonEmptyChain,
-  singleton as singleton_NonEmptyChain,
 )
 
 from Zafu/Collection/NonEmptyList import (
@@ -103,6 +101,7 @@ from Zafu/Cli/Args/Internal/Core import (
   with_help_flag as with_help_flag_core,
   with_version_flag as with_version_flag_core,
   applicative_Args as applicative_Args_core,
+  list_to_errors as list_to_errors_core,
 )
 
 from Zafu/Cli/Args/Internal/Lex import (
@@ -353,20 +352,6 @@ def with_help_flag[a](cmd: Command[a]) -> Command[a]:
 def with_version_flag[a](cmd: Command[a], version_doc: Doc) -> Command[a]:
   with_version_flag_core(cmd, version_doc)
 
-def list_to_errors(items: List[CliError]) -> Option[NonEmptyChain[CliError]]:
-  match items:
-    case []:
-      None
-    case [head, *tail]:
-      def loop(rem: List[CliError], acc: NonEmptyChain[CliError]) -> NonEmptyChain[CliError]:
-        loop rem:
-          case []:
-            acc
-          case [next, *tail_items]:
-            loop(tail_items, concat_NonEmptyChain(acc, singleton_NonEmptyChain(next)))
-
-      Some(loop(tail, singleton_NonEmptyChain(head)))
-
 def help_doc[a](config: HelpConfig, command: Command[a], command_path: List[String]) -> Doc:
   help_doc_internal(config, command, command_path)
 
@@ -378,7 +363,7 @@ def parse[a](config: ParseConfig, command: Command[a], argv: List[String]) -> Pa
   scan = scan_command(config, command, argv)
   ScanResult(_, _, _, _, _, leaf_command, _, built_in, scan_errors) = scan
   all_errors = [*spec_errors, *scan_errors]
-  match list_to_errors(all_errors):
+  match list_to_errors_core(all_errors):
     case Some(errs):
       Failed(errs, failure_doc_internal(default_help_config, command, errs))
     case None:

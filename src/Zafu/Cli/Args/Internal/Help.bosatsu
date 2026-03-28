@@ -20,6 +20,12 @@ from Zafu/Collection/HashMap import (
   union_with as union_with_HashMap,
 )
 
+from Zafu/Collection/HashSet import (
+  contains as contains_HashSet,
+  empty as empty_HashSet,
+  updated as updated_HashSet,
+)
+
 from Zafu/Collection/List import (
   filter as filter_List,
   foldl as foldl_List,
@@ -347,34 +353,26 @@ def visible_items(items: List[HelpItem], show_hidden: Bool) -> List[HelpItem]:
     )
 
 def distinct_group_ids(items: List[HelpItem]) -> List[Option[String]]:
-  foldl_List(
-    items,
-    [],
-    (acc, item) -> (
-      HelpItem { group_id, ... } = item
-      seen =
-        foldl_List(
-          acc,
-          False,
-          (already, next_group_id) -> (
-            if already:
-              True
+  (_, _, group_ids_rev) =
+    foldl_List(
+      items,
+      (empty_HashSet(hash_String), False, []),
+      ((seen_named, seen_unnamed, acc), item) -> (
+        HelpItem { group_id, ... } = item
+        match group_id:
+          case Some(id):
+            if contains_HashSet(seen_named, id):
+              (seen_named, seen_unnamed, acc)
             else:
-              match (next_group_id, group_id):
-                case (Some(left), Some(right)):
-                  eq_Eq(eq_String, left, right)
-                case (None, None):
-                  True
-                case _:
-                  False
-          ),
-        )
-      if seen:
-        acc
-      else:
-        [*acc, group_id]
-    ),
-  )
+              (updated_HashSet(seen_named, id), seen_unnamed, [group_id, *acc])
+          case None:
+            if seen_unnamed:
+              (seen_named, seen_unnamed, acc)
+            else:
+              (seen_named, True, [group_id, *acc])
+      ),
+    )
+  group_ids_rev.reverse()
 
 def items_for_group(items: List[HelpItem], group_id: Option[String]) -> List[HelpItem]:
   filter_List(
@@ -422,6 +420,13 @@ def item_section(title: Doc, items: List[HelpItem], config: HelpConfig) -> Optio
     case _:
       Some(stack([title, *items.map_List(item -> help_item_doc(item, show_defaults, show_examples))]))
 
+def optional_doc(opt_doc: Option[Doc]) -> List[Doc]:
+  match opt_doc:
+    case Some(doc):
+      [doc]
+    case None:
+      []
+
 def help_doc[a](config: HelpConfig, command: Command[a], command_path: List[String]) -> Doc:
   selected = find_selected_command(command, command_path)
   PackedCommand(Command { name, summary, description, footer, examples, args, ... }) = selected
@@ -461,66 +466,18 @@ def help_doc[a](config: HelpConfig, command: Command[a], command_path: List[Stri
   docs =
     [
       usage_line,
-      *(
-        match summary:
-          case Some(doc):
-            [doc]
-          case None:
-            []
-      ),
-      *(
-        match description:
-          case Some(doc):
-            [doc]
-          case None:
-            []
-      ),
-      *(
-        match positional_section:
-          case Some(doc):
-            [doc]
-          case None:
-            []
-      ),
+      *optional_doc(summary),
+      *optional_doc(description),
+      *optional_doc(positional_section),
       *foldl_List(
         named_sections,
         [],
-        (acc, section) -> (
-          match section:
-            case Some(doc):
-              [*acc, doc]
-            case None:
-              acc
-        ),
+        (acc, section) -> [*acc, *optional_doc(section)],
       ),
-      *(
-        match choice_section:
-          case Some(doc):
-            [doc]
-          case None:
-            []
-      ),
-      *(
-        match subcommand_section:
-          case Some(doc):
-            [doc]
-          case None:
-            []
-      ),
-      *(
-        match example_section:
-          case Some(doc):
-            [doc]
-          case None:
-            []
-      ),
-      *(
-        match footer:
-          case Some(doc):
-            [doc]
-          case None:
-            []
-      ),
+      *optional_doc(choice_section),
+      *optional_doc(subcommand_section),
+      *optional_doc(example_section),
+      *optional_doc(footer),
     ]
   stack(docs)
 
