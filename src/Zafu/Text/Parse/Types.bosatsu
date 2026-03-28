@@ -22,7 +22,10 @@ from Zafu/Collection/HashSet import (
   contains as contains_HashSet,
 )
 
-from Zafu/Collection/List import exists as exists_List
+from Zafu/Collection/List import (
+  exists as exists_List,
+  take as take_List,
+)
 
 from Zafu/Collection/NonEmptyList import (
   NonEmptyList as NonEmpty,
@@ -170,50 +173,50 @@ def make_state(input: String, fuel: Int) -> ParseState:
   ParseState(input, input, 0, 0, 1, 1, False, [], fuel)
 
 def state_remaining(state: ParseState) -> String:
-  ParseState(_, remaining, _, _, _, _, _, _, _) = state
+  ParseState { remaining, ... } = state
   remaining
 
 def state_char_offset(state: ParseState) -> Int:
-  ParseState(_, _, _, char_offset, _, _, _, _, _) = state
+  ParseState { char_offset, ... } = state
   char_offset
 
 def state_token_offset(state: ParseState) -> Int:
-  ParseState(_, _, token_offset, _, _, _, _, _, _) = state
+  ParseState { token_offset, ... } = state
   token_offset
 
 def state_line(state: ParseState) -> Int:
-  ParseState(_, _, _, _, line, _, _, _, _) = state
+  ParseState { line, ... } = state
   line
 
 def state_column(state: ParseState) -> Int:
-  ParseState(_, _, _, _, _, column, _, _, _) = state
+  ParseState { column, ... } = state
   column
 
 def state_fuel(state: ParseState) -> Int:
-  ParseState(_, _, _, _, _, _, _, _, fuel) = state
+  ParseState { fuel, ... } = state
   fuel
 
 def state_caret(state: ParseState) -> Caret:
   Caret(state_char_offset(state), state_line(state), state_column(state))
 
 def state_is_start(state: ParseState) -> Bool:
-  state_token_offset(state).eq_Int(0)
+  state_token_offset(state) matches 0
 
 def string_is_empty(value: String) -> Bool:
-  cmp_String(value, "") matches EQ
+  value matches ""
 
 def state_is_end_available(state: ParseState) -> Bool:
-  ParseState(_, remaining, _, _, _, _, end_consumed, _, _) = state
+  ParseState { remaining, end_consumed, ... } = state
   if end_consumed:
     False
   else:
     string_is_empty(remaining)
 
 def is_newline(ch: Char) -> Bool:
-  char_to_Int(ch).eq_Int(10)
+  ch matches .'\n'
 
 def advance_char_state(state: ParseState, ch: Char, next_remaining: String) -> ParseState:
-  ParseState(input, _, token_offset, char_offset, line, column, end_consumed, consumed_rev, fuel) = state
+  ParseState { token_offset, char_offset, line, column, consumed_rev, ... } = state
   next_line =
     if is_newline(ch):
       line.add(1)
@@ -224,51 +227,33 @@ def advance_char_state(state: ParseState, ch: Char, next_remaining: String) -> P
       1
     else:
       column.add(1)
-  ParseState(
-    input,
-    next_remaining,
-    token_offset.add(1),
-    char_offset.add(1),
-    next_line,
-    next_column,
-    end_consumed,
-    [ch, *consumed_rev],
-    fuel,
-  )
+  ParseState {
+    remaining: next_remaining,
+    token_offset: token_offset.add(1),
+    char_offset: char_offset.add(1),
+    line: next_line,
+    column: next_column,
+    consumed_rev: [ch, *consumed_rev],
+    ..state
+  }
 
 def advance_end_state(state: ParseState) -> ParseState:
-  ParseState(input, remaining, token_offset, char_offset, line, column, _, consumed_rev, fuel) = state
-  ParseState(
-    input,
-    remaining,
-    token_offset.add(1),
-    char_offset,
-    line,
-    column,
-    True,
-    consumed_rev,
-    fuel,
-  )
+  ParseState { token_offset, ... } = state
+  ParseState {
+    token_offset: token_offset.add(1),
+    end_consumed: True,
+    ..state
+  }
 
 def spend_fuel(state: ParseState) -> Option[ParseState]:
-  ParseState(input, remaining, token_offset, char_offset, line, column, end_consumed, consumed_rev, fuel) = state
+  ParseState { fuel, ... } = state
   if cmp_Int(fuel, 0) matches GT:
-    Some(ParseState(
-      input,
-      remaining,
-      token_offset,
-      char_offset,
-      line,
-      column,
-      end_consumed,
-      consumed_rev,
-      fuel.sub(1),
-    ))
+    Some(ParseState { fuel: fuel.sub(1), ..state })
   else:
     None
 
 def error_at(state: ParseState, expected: List[Expectation], contexts: List[String]) -> Error:
-  ParseState(input, _, _, char_offset, _, _, _, _, _) = state
+  ParseState { input, char_offset, ... } = state
   Error(input, char_offset, expected, contexts)
 
 def fuel_failure(state: ParseState) -> ParseFailure:
@@ -285,15 +270,14 @@ def epsilon_failure_at(state: ParseState, expected: List[Expectation]) -> ParseF
   ParseFailure(Epsilon, error_at(state, expected, []))
 
 def mark_arresting(failure: ParseFailure) -> ParseFailure:
-  ParseFailure(_, err) = failure
-  ParseFailure(Arresting, err)
+  ParseFailure { kind: Arresting, ..failure }
 
 def failure_error(failure: ParseFailure) -> Error:
-  ParseFailure(_, err) = failure
-  err
+  ParseFailure { error, ... } = failure
+  error
 
 def failure_kind(failure: ParseFailure) -> FailureKind:
-  ParseFailure(kind, _) = failure
+  ParseFailure { kind, ... } = failure
   kind
 
 def merge_failures(left: ParseFailure, right: ParseFailure) -> ParseFailure:
@@ -310,37 +294,24 @@ def merge_failures(left: ParseFailure, right: ParseFailure) -> ParseFailure:
   ParseFailure(merged_kind, merged_error)
 
 def failure_with_context(failure: ParseFailure, ctx: String) -> ParseFailure:
-  ParseFailure(kind, err) = failure
-  ParseFailure(kind, push_context(err, ctx))
+  ParseFailure { error, ... } = failure
+  ParseFailure { error: push_context(error, ctx), ..failure }
 
 def failure_with_label(failure: ParseFailure, label: String) -> ParseFailure:
-  ParseFailure(kind, err) = failure
-  ParseFailure(kind, replace_expected(err, label))
+  ParseFailure { error, ... } = failure
+  ParseFailure { error: replace_expected(error, label), ..failure }
 
 def consumed_tokens(start: ParseState, end: ParseState) -> Bool:
   cmp_Int(state_token_offset(end), state_token_offset(start)) matches GT
 
-def take_prefix(items: List[a], count: Int) -> List[a]:
-  def loop_take(rem: Int, rest: List[a], acc_rev: List[a]) -> List[a]:
-    loop rem:
-      case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc_rev.reverse()
-      case _:
-        match rest:
-          case [head, *tail]:
-            loop_take(rem.sub(1), tail, [head, *acc_rev])
-          case []:
-            acc_rev.reverse()
-  loop_take(count, items, [])
-
 def matched_string(start: ParseState, end: ParseState) -> String:
-  ParseState(_, _, _, start_char_offset, _, _, _, _, _) = start
-  ParseState(_, _, _, end_char_offset, _, _, _, consumed_rev, _) = end
+  ParseState { char_offset: start_char_offset, ... } = start
+  ParseState { char_offset: end_char_offset, consumed_rev, ... } = end
   consumed_count = end_char_offset.sub(start_char_offset)
   if cmp_Int(consumed_count, 0) matches LT | EQ:
     ""
   else:
-    segment_rev = take_prefix(consumed_rev, consumed_count)
+    segment_rev = take_List(consumed_rev, consumed_count)
     char_List_to_String(segment_rev.reverse())
 
 def mk_parser0(run: ParseState -> Step[a], node_cost: Int, allows_epsilon_success: Bool) -> Parser0[a]:
@@ -680,10 +651,7 @@ def with_string(parser: Parser0[a]) -> Parser0[(a, String)]:
   )
 
 def matched(parser: Parser0[a]) -> Parser0[String]:
-  map0(with_string(parser), pair -> (
-    (_, text) = pair
-    text
-  ))
+  map0(with_string(parser), ((_, text)) -> text)
 
 def map_filter(parser: Parser0[a], fn: a -> Option[b]) -> Parser0[b]:
   mk_parser0(
@@ -913,37 +881,22 @@ def product(left: Parser[a], right: Parser[b]) -> Parser[(a, b)]:
   )
 
 def keep_left0(left: Parser0[a], right: Parser0[b]) -> Parser0[a]:
-  map0(product0(left, right), pair -> (
-    (left_value, _) = pair
-    left_value
-  ))
+  map0(product0(left, right), ((left_value, _)) -> left_value)
 
 def keep_right0(left: Parser0[a], right: Parser0[b]) -> Parser0[b]:
-  map0(product0(left, right), pair -> (
-    (_, right_value) = pair
-    right_value
-  ))
+  map0(product0(left, right), ((_, right_value)) -> right_value)
 
 def keep_left(left: Parser[a], right: Parser0[b]) -> Parser[a]:
-  map(product10(left, right), pair -> (
-    (left_value, _) = pair
-    left_value
-  ))
+  map(product10(left, right), ((left_value, _)) -> left_value)
 
 def keep_right(left: Parser0[a], right: Parser[b]) -> Parser[b]:
-  map(product01(left, right), pair -> (
-    (_, right_value) = pair
-    right_value
-  ))
+  map(product01(left, right), ((_, right_value)) -> right_value)
 
 def between0(open: Parser0[o], inner: Parser0[a], close: Parser0[c]) -> Parser0[a]:
   keep_left0(keep_right0(open, inner), close)
 
 def between(open: Parser0[o], inner: Parser[a], close: Parser0[c]) -> Parser[a]:
-  map(keep_left(product01(open, inner), close), pair -> (
-    (_, value) = pair
-    value
-  ))
+  map(keep_left(product01(open, inner), close), ((_, value)) -> value)
 
 def surrounded_by0(inner: Parser0[a], border: Parser0[b]) -> Parser0[a]:
   between0(border, inner, border)
@@ -1126,10 +1079,7 @@ def rep0(parser: Parser[a]) -> Parser0[List[a]]:
   )
 
 def rep(parser: Parser[a]) -> Parser[NonEmpty[a]]:
-  map(product10(parser, rep0(parser)), pair -> (
-    (head, tail) = pair
-    from_prepend_NonEmptyList(head, tail)
-  ))
+  map(product10(parser, rep0(parser)), ((head, tail)) -> from_prepend_NonEmptyList(head, tail))
 
 def rep_exactly(parser: Parser[a], times: Int) -> Parser[NonEmpty[a]]:
   if cmp_Int(times, 1) matches LT:
@@ -1200,11 +1150,10 @@ def rep_min(parser: Parser[a], min_items: Int) -> Parser[NonEmpty[a]]:
       1
     else:
       min_items
-  if normalized_min.eq_Int(1):
+  if normalized_min matches 1:
     rep(parser)
   else:
-    map(product10(rep_exactly(parser, normalized_min), rep0(parser)), pair -> (
-      (required_items, extra_items) = pair
+    map(product10(rep_exactly(parser, normalized_min), rep0(parser)), ((required_items, extra_items)) -> (
       from_prepend_NonEmptyList(
         head_NonEmptyList(required_items),
         [*tail_NonEmptyList(required_items), *extra_items],
@@ -1220,24 +1169,16 @@ def rep_min_max(parser: Parser[a], min_items: Int, max_items: Int) -> Parser[Non
   if cmp_Int(max_items, normalized_min) matches LT:
     fail_with("rep_min_max requires max >= min and min >= 1")
   else:
-    map(product10(rep_exactly(parser, normalized_min), rep0_max(parser, max_items.sub(normalized_min))), pair -> (
-      (required_items, extra_items) = pair
+    map(product10(rep_exactly(parser, normalized_min), rep0_max(parser, max_items.sub(normalized_min))), ((required_items, extra_items)) -> (
       from_prepend_NonEmptyList(
         head_NonEmptyList(required_items),
         [*tail_NonEmptyList(required_items), *extra_items],
       )
     ))
 
-def tail_value(pair: (a, b)) -> b:
-  (_, right) = pair
-  right
-
 def rep_sep(parser: Parser[a], sep: Parser0[s]) -> Parser[NonEmpty[a]]:
-  tail_parser = map(product01(sep, parser), tail_value)
-  map(product10(parser, rep0(tail_parser)), pair -> (
-    (head, tail) = pair
-    from_prepend_NonEmptyList(head, tail)
-  ))
+  tail_parser = map(product01(sep, parser), ((_, right)) -> right)
+  map(product10(parser, rep0(tail_parser)), ((head, tail)) -> from_prepend_NonEmptyList(head, tail))
 
 def rep_sep0(parser: Parser[a], sep: Parser0[s]) -> Parser0[List[a]]:
   map0(optional(rep_sep(parser, sep)), maybe_items -> (
@@ -1282,34 +1223,24 @@ def rep_until0(parser: Parser[a], end_parser: Parser0[e]) -> Parser0[List[a]]:
   )
 
 def rep_until(parser: Parser[a], end_parser: Parser0[e]) -> Parser[List[a]]:
-  map(product10(parser, rep_until0(parser, end_parser)), pair -> (
-    (head, tail) = pair
-    [head, *tail]
-  ))
+  map(product10(parser, rep_until0(parser, end_parser)), ((head, tail)) -> [head, *tail])
 
 def chain_left1(term: Parser[a], op: Parser[(a, a) -> a]) -> Parser[a]:
   pair_parser = product(op, term)
   tail_parser = rep0(pair_parser)
-  map(product10(term, tail_parser), pair -> (
-    (first, pairs) = pair
-    pairs.foldl_List(first, (acc, next_pair) -> (
-      (fn, rhs) = next_pair
-      fn(acc, rhs)
-    ))
+  map(product10(term, tail_parser), ((first, pairs)) -> (
+    pairs.foldl_List(first, (acc, (fn, rhs)) -> fn(acc, rhs))
   ))
 
 def chain_right1(term: Parser[a], op: Parser[(a, a) -> a]) -> Parser[a]:
   pair_parser = product(op, term)
   tail_parser = rep0(pair_parser)
-  map(product10(term, tail_parser), pair -> (
-    (first, pairs) = pair
+  map(product10(term, tail_parser), ((first, pairs)) -> (
     match pairs:
       case []:
         first
       case _:
-        (ops_rev, terms_rev) = pairs.foldl_List(([], [first]), (acc, next_pair) -> (
-          (ops_acc, terms_acc) = acc
-          (next_op, next_term) = next_pair
+        (ops_rev, terms_rev) = pairs.foldl_List(([], [first]), ((ops_acc, terms_acc), (next_op, next_term)) -> (
           ([next_op, *ops_acc], [next_term, *terms_acc])
         ))
         match terms_rev:
