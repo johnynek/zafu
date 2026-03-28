@@ -87,7 +87,7 @@ from Zafu/Text/Parse import (
 
 from Zafu/Text/Parse/Error import Error
 
-from Zafu/Text/Parse/Internal/Core import (
+from Zafu/Text/Parse/Types import (
   Parser,
 )
 
@@ -234,7 +234,7 @@ exposes (
   Zafu/Collection/NonEmptyChain,
   Zafu/Collection/NonEmptyList,
   Zafu/Control/Result,
-  Zafu/Text/Parse/Internal/Core,
+  Zafu/Text/Parse/Types,
   Zafu/Text/Pretty,
 )
 
