@@ -1,4 +1,4 @@
-package Zafu/Text/Parse/Internal/Core
+package Zafu/Text/Parse/Types
 
 from Zafu/Text/Parse/Error import (
   Expectation,
@@ -15,8 +15,8 @@ export (
   FailureKind(),
   ParseFailure(),
   Step(),
-  Parser0(),
-  Parser(),
+  Parser0,
+  Parser,
   mk_parser0,
   mk_parser,
   parser_as_parser0,
@@ -54,6 +54,8 @@ export (
 )
 
 exposes Zafu/Text/Parse/Error
+# Bosatsu requires the defining package for Parser0/Parser to also own the
+# low-level representation helpers used to construct and run them.
 struct ParseState(
   input: String,
   remaining: String,

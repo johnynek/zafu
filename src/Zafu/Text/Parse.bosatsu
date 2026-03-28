@@ -41,17 +41,14 @@ from Zafu/Control/Result import (
   Err,
 )
 
-from Zafu/Text/Parse/Internal/Core import (
+from Zafu/Text/Parse/Types import (
   ParseState,
-  FailureKind,
   Epsilon,
   Arresting,
   ParseFailure,
   Step,
   Success,
   Failure,
-  Parser0,
-  Parser,
   mk_parser0,
   mk_parser,
   parser_as_parser0,
@@ -80,6 +77,8 @@ from Zafu/Text/Parse/Internal/Core import (
   consumed_tokens,
   matched_string,
   min_cost,
+  Parser0,
+  Parser,
 )
 
 from Zafu/Text/Parse/Internal/Engine import (
@@ -178,7 +177,7 @@ exposes (
   Zafu/Collection/NonEmptyList,
   Zafu/Control/Result,
   Zafu/Text/Parse/Error,
-  Zafu/Text/Parse/Internal/Core,
+  Zafu/Text/Parse/Types,
 )
 # TODO(#52): Re-exporting imported parser/error types and symbolic operator aliases is a follow-up.
 # The named combinators are canonical in this first implementation.

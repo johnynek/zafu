@@ -5,19 +5,18 @@ from Zafu/Control/Result import (
   Ok,
   Err,
 )
-from Zafu/Text/Parse/Internal/Core import (
+from Zafu/Text/Parse/Types import (
   ParseState,
-  Parser0,
-  Parser,
-  Step,
   Success,
   Failure,
   make_state,
+  Parser0,
+  Parser,
+  failure_error,
   run_parser0,
   run_parser,
   parser0_cost,
   parser_cost,
-  failure_error,
 )
 from Zafu/Text/Parse/Error import Error
 
@@ -31,7 +30,7 @@ export (
 exposes (
   Zafu/Control/Result,
   Zafu/Text/Parse/Error,
-  Zafu/Text/Parse/Internal/Core,
+  Zafu/Text/Parse/Types,
 )
 def max_Int(left: Int, right: Int) -> Int:
   if cmp_Int(left, right) matches LT:

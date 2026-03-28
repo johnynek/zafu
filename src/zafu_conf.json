@@ -35,8 +35,7 @@
     "Zafu/Testing/HedgeHog/Size",
     "Zafu/Text/Parse",
     "Zafu/Text/Parse/Error",
-    "Zafu/Text/Parse/Internal/Core",
-    "Zafu/Text/Parse/Internal/Engine",
+    "Zafu/Text/Parse/Types",
     "Zafu/Text/Parse/Rfc5234",
     "Zafu/Text/Pretty",
     "Zafu/Tool/JsonFormat"
