@@ -105,6 +105,7 @@ export (
   main,
 )
 
+exposes Bosatsu/Prog
 enum Json:
   JNull
   JBool(value: Bool)

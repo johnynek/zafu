@@ -138,6 +138,16 @@ export (
   traverse_NonEmptyChain,
 )
 
+exposes (
+  Zafu/Abstract/Eq,
+  Zafu/Abstract/Foldable,
+  Zafu/Abstract/Hash,
+  Zafu/Abstract/Ord,
+  Zafu/Abstract/Semigroup,
+  Zafu/Abstract/Traverse,
+  Zafu/Collection/Chain,
+  Zafu/Collection/NonEmptyList,
+)
 enum NonEmptyChain[a: +*]:
   Prepend(head: a, tail: Chain[a])
   Append(init: Chain[a], last: a)

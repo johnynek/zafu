@@ -25,6 +25,7 @@ export (
   laws_Ord,
 )
 
+exposes Zafu/Abstract/Eq
 struct Ord[a](
   cmp_fn: (a, a) -> Comparison,
   lt_fn: (a, a) -> Bool,

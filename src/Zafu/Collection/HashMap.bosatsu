@@ -73,6 +73,7 @@ export (
   hash
 )
 
+exposes Zafu/Abstract/Eq, Zafu/Abstract/Hash
 def operator +(a, b): a.add(b)
 def operator -(a, b): a.sub(b)
 def operator &(a, b): a.and_Int(b)

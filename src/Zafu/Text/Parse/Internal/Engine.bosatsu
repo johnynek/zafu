@@ -28,6 +28,11 @@ export (
   parse1_with_state,
 )
 
+exposes (
+  Zafu/Control/Result,
+  Zafu/Text/Parse/Error,
+  Zafu/Text/Parse/Internal/Core,
+)
 def max_Int(left: Int, right: Int) -> Int:
   if cmp_Int(left, right) matches LT:
     right

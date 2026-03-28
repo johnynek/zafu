@@ -134,6 +134,15 @@ export (
   traverse_Vector,
 )
 
+exposes (
+  Zafu/Abstract/Eq,
+  Zafu/Abstract/Foldable,
+  Zafu/Abstract/Hash,
+  Zafu/Abstract/Monoid,
+  Zafu/Abstract/Ord,
+  Zafu/Abstract/Semigroup,
+  Zafu/Abstract/Traverse,
+)
 chunk_width = 32
 hash_seed_vector: Int = 1123
 hash_tag_vector: Int = 1129

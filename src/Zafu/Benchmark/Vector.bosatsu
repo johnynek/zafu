@@ -39,6 +39,7 @@ export (
   main,
 )
 
+exposes Bosatsu/Prog
 struct BenchInput(
   size: Int,
   source_tail: List[Int],

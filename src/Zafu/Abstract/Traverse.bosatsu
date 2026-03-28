@@ -46,6 +46,11 @@ export (
   laws_Traverse,
 )
 
+exposes (
+  Zafu/Abstract/Applicative,
+  Zafu/Abstract/Eq,
+  Zafu/Abstract/Foldable,
+)
 struct Traverse[f: * -> *](
   traverse_fn: forall g: * -> *, a, b. (f[a], Applicative[g], a -> g[b]) -> g[f[b]],
   map_fn: forall a, b. (f[a], a -> b) -> f[b],

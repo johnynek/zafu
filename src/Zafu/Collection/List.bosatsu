@@ -73,6 +73,11 @@ export (
   ord_List,
 )
 
+exposes (
+  Zafu/Abstract/Eq,
+  Zafu/Abstract/Ord,
+  Zafu/Abstract/Traverse,
+)
 def any(items: List[Bool]) -> Bool:
   def go(rem: List[Bool]) -> Bool:
     loop rem:

@@ -84,6 +84,15 @@ export (
   hash,
 )
 
+exposes (
+  Zafu/Abstract/Applicative,
+  Zafu/Abstract/Eq,
+  Zafu/Abstract/Hash,
+  Zafu/Abstract/Monad,
+  Zafu/Abstract/Ord,
+  Zafu/Abstract/Semigroup,
+  Zafu/Abstract/Traverse,
+)
 enum Result[e, a]:
   Err(err: e)
   Ok(ok: a)

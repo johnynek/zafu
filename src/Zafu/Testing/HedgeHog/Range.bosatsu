@@ -36,6 +36,7 @@ export (
   pos_int32_Range,
 )
 
+exposes Zafu/Testing/HedgeHog/Seed, Zafu/Testing/HedgeHog/Size
 # Size-sensitive integer range with an origin and bound scaling rule.
 struct Range(origin: Int, bounds_fn: Size -> (Int, Int))
 
