@@ -120,6 +120,14 @@ export (
   traverse_NonEmptyList,
 )
 
+exposes (
+  Zafu/Abstract/Eq,
+  Zafu/Abstract/Foldable,
+  Zafu/Abstract/Hash,
+  Zafu/Abstract/Ord,
+  Zafu/Abstract/Semigroup,
+  Zafu/Abstract/Traverse,
+)
 struct NonEmptyList[a: +*](head: a, tail: List[a])
 
 # Shared reconstruction helper for list-parity functions that should stay non-empty.

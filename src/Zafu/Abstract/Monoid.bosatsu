@@ -33,6 +33,7 @@ export (
   laws_Monoid,
 )
 
+exposes Zafu/Abstract/Eq, Zafu/Abstract/Semigroup
 struct Monoid[a](
   empty_value: a,
   semigroup_inst: Semigroup[a],

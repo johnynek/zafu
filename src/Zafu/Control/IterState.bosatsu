@@ -19,6 +19,7 @@ export (
   map_done,
 )
 
+exposes Bosatsu/Collection/Array
 enum IterState[cont: +*, done: +*]:
   Continue(cont: cont)
   Done(done: done)

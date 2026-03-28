@@ -342,6 +342,19 @@ export (
   hash_Tuple32,
 )
 
+exposes (
+  Bosatsu/Collection/Array,
+  Bosatsu/Prog,
+  Zafu/Abstract/Applicative,
+  Zafu/Abstract/Eq,
+  Zafu/Abstract/Foldable,
+  Zafu/Abstract/Hash,
+  Zafu/Abstract/Monad,
+  Zafu/Abstract/Monoid,
+  Zafu/Abstract/Ord,
+  Zafu/Abstract/Semigroup,
+  Zafu/Abstract/Traverse,
+)
 def cmp_then(first: Comparison, next: () -> Comparison) -> Comparison:
   if first matches EQ:
     next()

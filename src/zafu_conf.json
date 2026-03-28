@@ -3,18 +3,55 @@
   "repo_uri": "https://github.com/johnynek/zafu/",
   "doc_base_url": "https://johnynek.github.io/zafu",
   "next_version": "0.0.1",
-  "exported_packages": [],
+  "exported_packages": [
+    "Zafu/Abstract/Applicative",
+    "Zafu/Abstract/Eq",
+    "Zafu/Abstract/Foldable",
+    "Zafu/Abstract/Hash",
+    "Zafu/Abstract/Instances/Predef",
+    "Zafu/Abstract/Monad",
+    "Zafu/Abstract/Monoid",
+    "Zafu/Abstract/Ord",
+    "Zafu/Abstract/Semigroup",
+    "Zafu/Abstract/Traverse",
+    "Zafu/Benchmark/Vector",
+    "Zafu/Collection/Chain",
+    "Zafu/Collection/Deque",
+    "Zafu/Collection/HashMap",
+    "Zafu/Collection/HashSet",
+    "Zafu/Collection/Heap",
+    "Zafu/Collection/LazyList",
+    "Zafu/Collection/LazyTree",
+    "Zafu/Collection/List",
+    "Zafu/Collection/NonEmptyChain",
+    "Zafu/Collection/NonEmptyList",
+    "Zafu/Collection/Vector",
+    "Zafu/Control/IterState",
+    "Zafu/Control/PartialResult",
+    "Zafu/Control/Result",
+    "Zafu/Testing/HedgeHog",
+    "Zafu/Testing/HedgeHog/Range",
+    "Zafu/Testing/HedgeHog/Seed",
+    "Zafu/Testing/HedgeHog/Size",
+    "Zafu/Text/Parse",
+    "Zafu/Text/Parse/Error",
+    "Zafu/Text/Parse/Internal/Core",
+    "Zafu/Text/Parse/Internal/Engine",
+    "Zafu/Text/Parse/Rfc5234",
+    "Zafu/Text/Pretty",
+    "Zafu/Tool/JsonFormat"
+  ],
   "all_packages": [
     ".*"
   ],
-  "private_deps": {
+  "public_deps": {
     "core_alpha": {
-      "version": "6.0.1",
+      "version": "6.0.2",
       "hashes": [
-        "blake3:a67cb11914067718a1b47035f311c145d837bde831e0f7fdcd48e579074d47eb"
+        "blake3:da15baba22d20cef7c3f23fde1c982f6b851e2124c92d0c673acf88c97c1aa53"
       ],
       "uris": [
-        "https://github.com/johnynek/bosatsu/releases/download/v0.0.56/core_alpha-v6.0.1.bosatsu_lib"
+        "https://github.com/johnynek/bosatsu/releases/download/v0.0.59/core_alpha-v6.0.2.bosatsu_lib"
       ]
     }
   }

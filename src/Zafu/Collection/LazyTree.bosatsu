@@ -48,6 +48,12 @@ export (
   monad_LazyTree,
 )
 
+exposes (
+  Zafu/Abstract/Applicative,
+  Zafu/Abstract/Eq,
+  Zafu/Abstract/Monad,
+  Zafu/Collection/LazyList,
+)
 struct LazyTree[a: +*](value: a, children: LazyList[LazyTree[a]])
 
 def singleton(value: a) -> LazyTree[a]:

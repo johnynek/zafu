@@ -23,6 +23,7 @@ export (
   laws_Applicative,
 )
 
+exposes Zafu/Abstract/Eq
 struct Applicative[f: * -> *](
   pure_fn: forall a. a -> f[a],
   map_fn: forall a, b. (f[a], a -> b) -> f[b],

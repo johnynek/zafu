@@ -49,6 +49,11 @@ export (
   traverse_LazyList,
 )
 
+exposes (
+  Bosatsu/Lazy,
+  Zafu/Abstract/Foldable,
+  Zafu/Abstract/Traverse,
+)
 
 enum LazyList[a: +*]:
   Empty

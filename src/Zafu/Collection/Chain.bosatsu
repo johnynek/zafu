@@ -116,6 +116,14 @@ export (
   traverse_Chain,
 )
 
+exposes (
+  Zafu/Abstract/Eq,
+  Zafu/Abstract/Foldable,
+  Zafu/Abstract/Hash,
+  Zafu/Abstract/Ord,
+  Zafu/Abstract/Semigroup,
+  Zafu/Abstract/Traverse,
+)
 # Internal tree used to support O(1) concat while preserving order.
 # Invariant: WrapArray and WrapList only hold collections with at least two items.
 enum Chain[a: +*]:

@@ -26,6 +26,11 @@ export (
   laws_Monad,
 )
 
+exposes (
+  Zafu/Abstract/Applicative,
+  Zafu/Abstract/Eq,
+  Zafu/Control/IterState,
+)
 struct Monad[f: * -> *](
   applicative_inst: Applicative[f],
   flat_map_fn: forall a, b. (f[a], a -> f[b]) -> f[b],

@@ -66,6 +66,7 @@ export (
   traverse_Queue,
 )
 
+exposes Zafu/Abstract/Foldable, Zafu/Abstract/Traverse
 # Banker's deque represented by a front list and a reversed back list.
 enum Queue[a: +*]:
   Queue(size: Int, front: List[a], back_rev: List[a])

@@ -53,6 +53,7 @@ export (
   min_cost,
 )
 
+exposes Zafu/Text/Parse/Error
 struct ParseState(
   input: String,
   remaining: String,

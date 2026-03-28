@@ -27,6 +27,7 @@ export (
   laws_Semigroup,
 )
 
+exposes Zafu/Abstract/Eq
 struct Semigroup[a](
   combine_fn: (a, a) -> a,
   combine_n_positive_fn: (a, Int) -> a,
