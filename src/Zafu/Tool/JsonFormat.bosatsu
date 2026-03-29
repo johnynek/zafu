@@ -1,9 +1,12 @@
 package Zafu/Tool/JsonFormat
 
 from Bosatsu/Char import (
+  char_to_Int,
+  int_to_Char,
   is_ascii_digit,
   is_ascii_hex,
   string_to_Char_List,
+  to_digit,
 )
 
 from Bosatsu/IO/Core import (
@@ -21,6 +24,23 @@ from Bosatsu/IO/Bytes import (
 from Bosatsu/IO/Error import (
   IOError,
   error_to_String,
+)
+
+from Bosatsu/Json import (
+  Json,
+  JArray,
+  JBool,
+  JFloat,
+  JInt,
+  JNull,
+  JObject,
+  JString,
+  eq_Json,
+  render_Json as render_compact_json,
+)
+
+from Bosatsu/Num/Float64 import (
+  string_to_Float64,
 )
 
 from Bosatsu/Prog import (
@@ -60,6 +80,7 @@ from Zafu/Text/Parse import (
   optional,
   rep,
   rep0,
+  backtrack,
   label,
 )
 
@@ -106,17 +127,16 @@ export (
 )
 
 exposes Bosatsu/Prog
-enum Json:
-  JNull
-  JBool(value: Bool)
-  JNumber(raw: String)
-  JString(raw_content: String)
-  JArray(items: List[Json])
-  JObject(fields: List[(String, Json)])
 
 enum OutputStyle:
   Compact
   Pretty(indent_size: Int)
+
+enum ScalarToken:
+  TokNull
+  TokBool(value: Bool)
+  TokNumber(raw: String)
+  TokString(raw_content: String)
 
 read_chunk_size = 4096
 
@@ -136,10 +156,39 @@ e_char: Char = .'e'
 upper_e_char: Char = .'E'
 u_char: Char = .'u'
 
-simple_escape_chars = string_to_Char_List("\"\\/bfnrt")
+high_surrogate_start = 55296
+high_surrogate_end = 56319
+low_surrogate_start = 56320
+low_surrogate_end = 57343
+
+simple_escape_chars = [
+  double_quote_char,
+  backslash_char,
+  .'/',
+  .'b',
+  .'f',
+  .'n',
+  .'r',
+  .'t',
+]
 
 def is_json_space(ch: Char) -> Bool:
   ch matches .' ' | .'\t' | .'\n' | .'\r'
+
+def lte_Int(left: Int, right: Int) -> Bool:
+  cmp_Int(left, right) matches LT | EQ
+
+def gte_Int(left: Int, right: Int) -> Bool:
+  cmp_Int(left, right) matches GT | EQ
+
+def in_range_Int(item: Int, low: Int, high: Int) -> Bool:
+  and(gte_Int(item, low), lte_Int(item, high))
+
+def is_high_surrogate(code_unit: Int) -> Bool:
+  in_range_Int(code_unit, high_surrogate_start, high_surrogate_end)
+
+def is_low_surrogate(code_unit: Int) -> Bool:
+  in_range_Int(code_unit, low_surrogate_start, low_surrogate_end)
 
 json_space_char = char_where(is_json_space, "JSON whitespace")
 
@@ -194,8 +243,8 @@ unicode_escape_chunk: Parser[String] = (
 
 json_string_content_parser: Parser[String] = (
   piece_parser = one_of([
+    backtrack(simple_escape_chunk),
     unicode_escape_chunk,
-    simple_escape_chunk,
     unescaped_string_chunk,
   ])
   map(
@@ -284,30 +333,30 @@ number_sign0: Parser0[String] = (
   ))
 )
 
-json_number_parser: Parser[Json] = (
+json_number_parser: Parser[ScalarToken] = (
   core = map(product10(number_integer_part, product0(number_fraction0, number_exp0)), ((int_part, (fraction_part, exp_part))) -> (
     concat_String([int_part, fraction_part, exp_part])
   ))
 
   label(
     map(product01(number_sign0, core), ((sign_part, rest_part)) -> (
-      JNumber(concat_String([sign_part, rest_part]))
+      TokNumber(concat_String([sign_part, rest_part]))
     )),
     "JSON number",
   )
 )
 
-json_true_parser = map(string("true"), _ -> JBool(True))
-json_false_parser = map(string("false"), _ -> JBool(False))
-json_null_parser = map(string("null"), _ -> JNull)
+json_true_parser = map(string("true"), _ -> TokBool(True))
+json_false_parser = map(string("false"), _ -> TokBool(False))
+json_null_parser = map(string("null"), _ -> TokNull)
 
-scalar_json_parser: Parser[Json] = (
+scalar_token_parser: Parser[ScalarToken] = (
   one_of([
     json_null_parser,
     json_true_parser,
     json_false_parser,
     json_number_parser,
-    map(json_string_content_parser, content -> JString(content)),
+    map(json_string_content_parser, content -> TokString(content)),
   ])
 )
 
@@ -318,7 +367,7 @@ enum JsonToken:
   TokCloseArr
   TokColon
   TokComma
-  TokScalar(value: Json)
+  TokScalar(value: ScalarToken)
 
 json_token_parser: Parser[JsonToken] = (
   one_of([
@@ -328,7 +377,7 @@ json_token_parser: Parser[JsonToken] = (
     map(char(close_bracket_char), _ -> TokCloseArr),
     map(char(colon_char), _ -> TokColon),
     map(char(comma_char), _ -> TokComma),
-    map(scalar_json_parser, value -> TokScalar(value)),
+    map(scalar_token_parser, value -> TokScalar(value)),
   ])
 )
 
@@ -336,6 +385,111 @@ json_tokens_parser: Parser[List[JsonToken]] = (
   tok = token(label(json_token_parser, "JSON token"))
   map(product10(tok, rep0(tok)), ((head, tail)) -> [head, *tail])
 )
+
+def hex4_to_Int(h1: Char, h2: Char, h3: Char, h4: Char) -> Option[Int]:
+  match (to_digit(h1, 16), to_digit(h2, 16), to_digit(h3, 16), to_digit(h4, 16)):
+    case (Some(d1), Some(d2), Some(d3), Some(d4)):
+      Some(d1.mul(4096).add(d2.mul(256)).add(d3.mul(16)).add(d4))
+    case _:
+      None
+
+def decode_code_point(code_point: Int) -> Result[String, String]:
+  match int_to_Char(code_point):
+    case Some(ch):
+      Ok(char_to_String(ch))
+    case None:
+      Err("invalid unicode escape in JSON string")
+
+def decode_json_string_content(raw_content: String) -> Result[String, String]:
+  chars = string_to_Char_List(raw_content)
+
+  def loop(rem_chars: List[Char], rev_parts: List[String]) -> Result[String, String]:
+    loop rem_chars:
+      case []:
+        Ok(concat_String(rev_parts.reverse()))
+      case [.'\\', .'u', h1, h2, h3, h4, *tail] if and(is_ascii_hex(h1), and(is_ascii_hex(h2), and(is_ascii_hex(h3), is_ascii_hex(h4)))):
+        match hex4_to_Int(h1, h2, h3, h4):
+          case Some(code_unit):
+            if is_high_surrogate(code_unit):
+              match tail:
+                case [.'\\', .'u', l1, l2, l3, l4, *tail2] if and(is_ascii_hex(l1), and(is_ascii_hex(l2), and(is_ascii_hex(l3), is_ascii_hex(l4)))):
+                  match hex4_to_Int(l1, l2, l3, l4):
+                    case Some(low_unit) if is_low_surrogate(low_unit):
+                      code_point = 65536.add(code_unit.sub(high_surrogate_start).mul(1024)).add(low_unit.sub(low_surrogate_start))
+                      match decode_code_point(code_point):
+                        case Ok(value):
+                          loop(tail2, [value, *rev_parts])
+                        case Err(msg):
+                          Err(msg)
+                    case _:
+                      Err("invalid unicode escape in JSON string")
+                case _:
+                  Err("invalid unicode escape in JSON string")
+            elif is_low_surrogate(code_unit):
+              Err("invalid unicode escape in JSON string")
+            else:
+              match decode_code_point(code_unit):
+                case Ok(value):
+                  loop(tail, [value, *rev_parts])
+                case Err(msg):
+                  Err(msg)
+          case None:
+            Err("invalid unicode escape in JSON string")
+      case [.'\\', .'\"', *tail]:
+        loop(tail, ["\"", *rev_parts])
+      case [.'\\', .'\\', *tail]:
+        loop(tail, ["\\", *rev_parts])
+      case [.'\\', .'/', *tail]:
+        loop(tail, ["/", *rev_parts])
+      case [.'\\', .'b', *tail]:
+        loop(tail, ["\b", *rev_parts])
+      case [.'\\', .'f', *tail]:
+        loop(tail, ["\f", *rev_parts])
+      case [.'\\', .'n', *tail]:
+        loop(tail, ["\n", *rev_parts])
+      case [.'\\', .'r', *tail]:
+        loop(tail, ["\r", *rev_parts])
+      case [.'\\', .'t', *tail]:
+        loop(tail, ["\t", *rev_parts])
+      case [.'\\', *_]:
+        Err("invalid JSON string escape")
+      case [ch, *tail]:
+        loop(tail, [char_to_String(ch), *rev_parts])
+
+  loop(chars, [])
+
+def number_token_to_json(raw_value: String) -> Result[String, Json]:
+  match string_to_Int(raw_value):
+    case Some(int_value):
+      Ok(JInt(int_value))
+    case None:
+      match string_to_Float64(raw_value):
+        case Some(float_value):
+          Ok(JFloat(float_value))
+        case None:
+          Err("invalid JSON number")
+
+def scalar_token_to_json(token: ScalarToken) -> Result[String, Json]:
+  match token:
+    case TokNull:
+      Ok(JNull)
+    case TokBool(bool_value):
+      Ok(JBool(bool_value))
+    case TokNumber(raw_value):
+      number_token_to_json(raw_value)
+    case TokString(raw_content):
+      match decode_json_string_content(raw_content):
+        case Ok(content):
+          Ok(JString(content))
+        case Err(msg):
+          Err(msg)
+
+def scalar_token_to_object_key(token: ScalarToken) -> Result[String, String]:
+  match token:
+    case TokString(raw_content):
+      decode_json_string_content(raw_content)
+    case _:
+      Err("JSON object keys must be strings")
 
 enum BuildFrame:
   ArrExpectFirstOrClose(items_rev: List[Json])
@@ -412,18 +566,26 @@ def parse_json_tokens(tokens: List[JsonToken]) -> Result[String, Json]:
             loop(tail, next_stack, next_root)
           case Err(msg):
             Err(msg)
-      case ([TokScalar(JString(key)), *tail], [ObjExpectFirstKeyOrClose(fields_rev), *tail_stack]):
-        loop(tail, [ObjExpectColon(fields_rev, key), *tail_stack], root)
-      case ([TokScalar(_), *_], [ObjExpectFirstKeyOrClose(_), *_]):
-        Err("JSON object keys must be strings")
-      case ([TokScalar(JString(key)), *tail], [ObjExpectKeyAfterComma(fields_rev), *tail_stack]):
-        loop(tail, [ObjExpectColon(fields_rev, key), *tail_stack], root)
-      case ([TokScalar(_), *_], [ObjExpectKeyAfterComma(_), *_]):
-        Err("JSON object keys must be strings")
-      case ([TokScalar(value), *tail], current_stack):
-        match accept_value(value, current_stack, root):
-          case Ok((next_stack, next_root)):
-            loop(tail, next_stack, next_root)
+      case ([TokScalar(key_token), *tail], [ObjExpectFirstKeyOrClose(fields_rev), *tail_stack]):
+        match scalar_token_to_object_key(key_token):
+          case Ok(key):
+            loop(tail, [ObjExpectColon(fields_rev, key), *tail_stack], root)
+          case Err(msg):
+            Err(msg)
+      case ([TokScalar(key_token), *tail], [ObjExpectKeyAfterComma(fields_rev), *tail_stack]):
+        match scalar_token_to_object_key(key_token):
+          case Ok(key):
+            loop(tail, [ObjExpectColon(fields_rev, key), *tail_stack], root)
+          case Err(msg):
+            Err(msg)
+      case ([TokScalar(scalar_token), *tail], current_stack):
+        match scalar_token_to_json(scalar_token):
+          case Ok(value):
+            match accept_value(value, current_stack, root):
+              case Ok((next_stack, next_root)):
+                loop(tail, next_stack, next_root)
+              case Err(msg):
+                Err(msg)
           case Err(msg):
             Err(msg)
       case ([TokColon, *tail], [ObjExpectColon(fields_rev, key), *tail_stack]):
@@ -483,8 +645,11 @@ def parse_json_input(input: String) -> Result[String, Json]:
       Error(_, failed_at, _, _) = parse_err
       Err("JSON parse failed at character offset ${int_to_String(failed_at)}")
 
+def scalar_json_doc(value: Json) -> Doc:
+  text(render_compact_json(value))
+
 def json_string_doc(content: String) -> Doc:
-  text(concat_String(["\"", content, "\""]))
+  scalar_json_doc(JString(content))
 
 def indent_doc(level: Int, indent_size: Int) -> Doc:
   spaces(level.mul(indent_size))
@@ -492,20 +657,6 @@ def indent_doc(level: Int, indent_size: Int) -> Doc:
 enum RenderFrame:
   EmitDoc(doc: Doc)
   EmitValue(value: Json, level: Int)
-
-def push_compact_values(items: List[Json], level: Int, tail: List[RenderFrame]) -> List[RenderFrame]:
-  match items.reverse():
-    case []:
-      tail
-    case [last, *rest_rev]:
-      def loop(rem_rev: List[Json], acc: List[RenderFrame]) -> List[RenderFrame]:
-        loop rem_rev:
-          case []:
-            acc
-          case [next, *tail_rev]:
-            loop(tail_rev, [EmitValue(next, level), EmitDoc(comma), *acc])
-
-      loop(rest_rev, [EmitValue(last, level), *tail])
 
 def push_pretty_values(
   items: List[Json],
@@ -527,35 +678,6 @@ def push_pretty_values(
             loop(tail_rev, [EmitDoc(indent), EmitValue(next, level), EmitDoc(sep), *acc])
 
       loop(rest_rev, [EmitDoc(indent), EmitValue(last, level), *tail])
-
-def push_compact_fields(fields: List[(String, Json)], level: Int, tail: List[RenderFrame]) -> List[RenderFrame]:
-  match fields.reverse():
-    case []:
-      tail
-    case [(last_key, last_value), *rest_rev]:
-      seeded = [
-        EmitDoc(json_string_doc(last_key)),
-        EmitDoc(text(":")),
-        EmitValue(last_value, level),
-        *tail,
-      ]
-      def loop(rem_rev: List[(String, Json)], acc: List[RenderFrame]) -> List[RenderFrame]:
-        loop rem_rev:
-          case []:
-            acc
-          case [(next_key, next_value), *tail_rev]:
-            loop(
-              tail_rev,
-              [
-                EmitDoc(json_string_doc(next_key)),
-                EmitDoc(text(":")),
-                EmitValue(next_value, level),
-                EmitDoc(comma),
-                *acc,
-              ],
-            )
-
-      loop(rest_rev, seeded)
 
 def push_pretty_fields(
   fields: List[(String, Json)],
@@ -598,65 +720,51 @@ def push_pretty_fields(
 def expand_array(
   items: List[Json],
   level: Int,
-  style: OutputStyle,
+  indent_size: Int,
   tail: List[RenderFrame],
 ) -> List[RenderFrame]:
-  match style:
-    case Compact:
-      after_items = push_compact_values(items, level, [EmitDoc(text("]")), *tail])
-      [EmitDoc(text("[")), *after_items]
-    case Pretty(indent_size):
-      match items:
-        case []:
-          [EmitDoc(text("[]")), *tail]
-        case _:
-          closing = [
-            EmitDoc(hard_line),
-            EmitDoc(indent_doc(level, indent_size)),
-            EmitDoc(text("]")),
-            *tail,
-          ]
-          after_items = push_pretty_values(items, level.add(1), indent_size, closing)
-          [EmitDoc(text("[")), EmitDoc(hard_line), *after_items]
+  match items:
+    case []:
+      [EmitDoc(text("[]")), *tail]
+    case _:
+      closing = [
+        EmitDoc(hard_line),
+        EmitDoc(indent_doc(level, indent_size)),
+        EmitDoc(text("]")),
+        *tail,
+      ]
+      after_items = push_pretty_values(items, level.add(1), indent_size, closing)
+      [EmitDoc(text("[")), EmitDoc(hard_line), *after_items]
 
 def expand_object(
   fields: List[(String, Json)],
   level: Int,
-  style: OutputStyle,
+  indent_size: Int,
   tail: List[RenderFrame],
 ) -> List[RenderFrame]:
-  match style:
-    case Compact:
-      after_fields = push_compact_fields(fields, level, [EmitDoc(text("}")), *tail])
-      [EmitDoc(text("{")), *after_fields]
-    case Pretty(indent_size):
-      match fields:
-        case []:
-          [EmitDoc(text("{}")), *tail]
-        case _:
-          closing = [
-            EmitDoc(hard_line),
-            EmitDoc(indent_doc(level, indent_size)),
-            EmitDoc(text("}")),
-            *tail,
-          ]
-          after_fields = push_pretty_fields(fields, level.add(1), indent_size, closing)
-          [EmitDoc(text("{")), EmitDoc(hard_line), *after_fields]
+  match fields:
+    case []:
+      [EmitDoc(text("{}")), *tail]
+    case _:
+      closing = [
+        EmitDoc(hard_line),
+        EmitDoc(indent_doc(level, indent_size)),
+        EmitDoc(text("}")),
+        *tail,
+      ]
+      after_fields = push_pretty_fields(fields, level.add(1), indent_size, closing)
+      [EmitDoc(text("{")), EmitDoc(hard_line), *after_fields]
 
-def json_doc(value: Json, style: OutputStyle) -> Doc:
+def json_doc(value: Json, indent_size: Int) -> Doc:
   def drain_non_container(stack: List[RenderFrame], rev_docs: List[Doc]) -> (List[RenderFrame], List[Doc]):
     def loop(stack: List[RenderFrame], rev_docs: List[Doc]) -> (List[RenderFrame], List[Doc]):
       loop stack:
         case [EmitDoc(doc), *tail]:
           loop(tail, [doc, *rev_docs])
-        case [EmitValue(JNull, _), *tail]:
-          loop(tail, [text("null"), *rev_docs])
-        case [EmitValue(JBool(bool_value), _), *tail]:
-          loop(tail, [text("true" if bool_value else "false"), *rev_docs])
-        case [EmitValue(JNumber(raw_value), _), *tail]:
-          loop(tail, [text(raw_value), *rev_docs])
-        case [EmitValue(JString(content), _), *tail]:
-          loop(tail, [json_string_doc(content), *rev_docs])
+        case [EmitValue(JArray(_), _), *_] | [EmitValue(JObject(_), _), *_]:
+          (stack, rev_docs)
+        case [EmitValue(value, _), *tail]:
+          loop(tail, [scalar_json_doc(value), *rev_docs])
         case _:
           (stack, rev_docs)
 
@@ -672,9 +780,9 @@ def json_doc(value: Json, style: OutputStyle) -> Doc:
           case []:
             next_rev_docs
           case [EmitValue(JArray(items), level), *tail] if cmp_Int(fuel, 0) matches GT:
-            loop(fuel.sub(1), expand_array(items, level, style, tail), next_rev_docs)
+            loop(fuel.sub(1), expand_array(items, level, indent_size, tail), next_rev_docs)
           case [EmitValue(JObject(fields), level), *tail] if cmp_Int(fuel, 0) matches GT:
-            loop(fuel.sub(1), expand_object(fields, level, style, tail), next_rev_docs)
+            loop(fuel.sub(1), expand_object(fields, level, indent_size, tail), next_rev_docs)
           case _:
             [text("<render fuel exhausted>"), *next_rev_docs]
 
@@ -682,7 +790,55 @@ def json_doc(value: Json, style: OutputStyle) -> Doc:
   docs.foldl_List(empty, append)
 
 def render_json(value: Json, style: OutputStyle) -> String:
-  render(json_doc(value, style), 120)
+  match style:
+    case Compact:
+      render_compact_json(value)
+    case Pretty(indent_size):
+      render(json_doc(value, indent_size), 120)
+
+tests = TestSuite("json format", [
+  Assertion(
+    match parse_json_input("{\"msg\":\"line\\nnext\",\"nums\":[1,2.5],\"note\":\"plain\"}"):
+      case Ok(value):
+        eq_Json(
+          value,
+          JObject([
+            ("msg", JString("line\nnext")),
+            ("nums", JArray([JInt(1), JFloat(2.5)])),
+            ("note", JString("plain")),
+          ]),
+        )
+      case Err(_):
+        False,
+    "parser builds Bosatsu/Json on representative input",
+  ),
+  Assertion(
+    match parse_json_input("{\"emoji\":\"\\uD83D\\uDE00\"}"):
+      case Ok(value):
+        eq_Json(value, JObject([("emoji", JString("😀"))]))
+      case Err(_):
+        False,
+    "parser decodes surrogate pairs",
+  ),
+  Assertion(
+    parse_json_input("{1: true}") matches Err("JSON object keys must be strings"),
+    "parser keeps structural diagnostics",
+  ),
+  Assertion(
+    render_json(
+      JObject([
+        ("a", JInt(1)),
+        ("b", JArray([JBool(True), JNull])),
+      ]),
+      Pretty(2),
+    ) matches "{\n  \"a\": 1,\n  \"b\": [\n    true,\n    null\n  ]\n}",
+    "pretty render nested values",
+  ),
+  Assertion(
+    render_json(JString("quote: \" and line\n"), Pretty(2)) matches "\"quote: \\\" and line\\n\"",
+    "scalar render uses Bosatsu/Json escaping",
+  ),
+])
 
 style_args = (
   compact_flag = with_help(
