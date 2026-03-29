@@ -93,45 +93,7 @@ cat_command = with_help_flag(cli_command("cat", rest(string_value(text("FILE")),
 
 def io_error_context(err: IOError) -> String:
   match err:
-    case NotFound(context):
-      context
-    case AccessDenied(context):
-      context
-    case AlreadyExists(context):
-      context
-    case NotDirectory(context):
-      context
-    case IsDirectory(context):
-      context
-    case NotEmpty(context):
-      context
-    case TooManyOpenFiles(context):
-      context
-    case ReadOnlyFileSystem(context):
-      context
-    case CrossDeviceLink(context):
-      context
-    case NoSpace(context):
-      context
-    case QuotaExceeded(context):
-      context
-    case NameTooLong(context):
-      context
-    case InvalidArgument(context):
-      context
-    case InvalidUtf8(context):
-      context
-    case BadFileDescriptor(context):
-      context
-    case Interrupted(context):
-      context
-    case WouldBlock(context):
-      context
-    case TimedOut(context):
-      context
-    case BrokenPipe(context):
-      context
-    case Unsupported(context):
+    case NotFound(context) | AccessDenied(context) | AlreadyExists(context) | NotDirectory(context) | IsDirectory(context) | NotEmpty(context) | TooManyOpenFiles(context) | ReadOnlyFileSystem(context) | CrossDeviceLink(context) | NoSpace(context) | QuotaExceeded(context) | NameTooLong(context) | InvalidArgument(context) | InvalidUtf8(context) | BadFileDescriptor(context) | Interrupted(context) | WouldBlock(context) | TimedOut(context) | BrokenPipe(context) | Unsupported(context):
       context
     case Other(context, _, _):
       context
