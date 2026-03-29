@@ -13,8 +13,10 @@ This guide is for experienced programmers (or coding agents) who want to be prod
 2. Typecheck continuously while editing:
 
 ```bash
-./bosatsu check
+./bosatsu check --warn
 ```
+
+`--warn` keeps postponable lint diagnostics visible without failing the run.
 
 3. Keep incomplete code compiling with `todo(...)` stubs.
 
@@ -25,13 +27,20 @@ def hard_function(x, y):
 
 This is a key iteration trick: stub unfinished logic, keep `lib check` green, and fill implementations incrementally.
 
-4. Run tests when a unit of work is complete:
+4. Run tests during iteration:
 
 ```bash
+./bosatsu test --warn
+```
+
+5. Before a PR/release, run the strict local gate:
+
+```bash
+./bosatsu check
 ./bosatsu test
 ```
 
-5. Validate publishability in CI/local without mutating repo config:
+6. Validate publishability in CI/local without mutating repo config:
 
 ```bash
 scripts/test.sh
@@ -93,6 +102,7 @@ Use `recur` when non-tail recursion is intentional or when it is the clearer exp
 
 Write sequential pipelines with `<-` instead of nested `match`/`if_Some`/`await` chains.
 `if_Some` is not built in; define it locally (or import your shared helper).
+Keep continuation/callback arguments last so APIs work well with both dot-apply and `<-`.
 
 ```bosatsu
 def if_Some(o: Option[a], fn: a -> Option[b]) -> Option[b]:
@@ -116,7 +126,39 @@ now <- now_mono.await()
 pure(duration_to_nanos(now))
 ```
 
-## 5) Define local `def operator` for compact code
+## 5) Prefer Bosatsu-native patterns over ceremony
+
+Prefer concise pattern syntax over tearing values down and rebuilding them by hand.
+
+- Use `matches` for predicate-style checks.
+- Prefer record destructuring and struct update syntax when working with structs.
+- Prefer combined patterns and literal/string pattern matches over nested `match` chains.
+- Prefer total-pattern lambdas when the shape is already known.
+
+```bosatsu
+ParseState { remaining, ... } = state
+
+if value matches "":
+  ...
+
+match input:
+  case "true" | "True": True
+  case "false" | "False": False
+  case _: todo(input)
+
+next = ParseState { remaining: tail, ..state }
+```
+
+## 6) Keep typeclass calls readable
+
+- Use subject-first when one value is flowing through a pipeline: `fa.traverse(traverse_List, applicative_Option, fn)`.
+- Use dictionary-first for capabilities and peer-value combinators: `app.pure(value)`, `eq_inst.eq(left, right)`, `app.map2(fx, fy, fn)`.
+- Keep callback arguments last.
+- Prefer the shortest clear imported names over noisy aliases like `traverse_Traverse` when a shorter import works.
+
+For the full rule set, see `typeclass_design.md`.
+
+## 7) Define local `def operator` for compact code
 
 Bosatsu code is often clearer with local operators in math/logic-heavy files.
 
@@ -129,7 +171,7 @@ def operator ==(a, b): a.eq_Int(b)
 
 Guideline: define only the operators used heavily in that file; keep semantics obvious.
 
-## 6) Define local helper functions for `<-` pipelines
+## 8) Define local helper functions for `<-` pipelines
 
 Add small local/package-local helpers that return `Option`/`Prog` so `<-` pipelines stay flat and readable.
 
@@ -137,14 +179,17 @@ Add small local/package-local helpers that return `Option`/`Prog` so `<-` pipeli
 - Prefer tiny single-purpose helpers over one giant function.
 - Package-local functions are inlined at compile time, so you can prioritize readability without runtime cost.
 
-## 7) Practical quality bar
+## 9) Practical quality bar
 
 1. Keep APIs intentional with `export (...)`.
-2. Use explicit `Option`/sum types for failure.
-3. Add or update `tests` alongside behavior changes.
-4. Before PR/release, run `scripts/test.sh`.
+2. Keep `Internal` types and test packages out of public exports unless there is a clear reason.
+3. Reuse Predef/collection/typeclass helpers before adding new local helpers.
+4. Preserve specialized bulk operations (`fold_map`, `combine_all`, `map2_Gen`) when they exist; avoid accidentally quadratic rewrites.
+5. Use explicit `Option`/sum types for failure.
+6. Add or update `tests` alongside behavior changes.
+7. Before PR/release, run `scripts/test.sh`.
 
-## 8) Pointers
+## 10) Pointers
 
 - [Bosatsu Language Guide](https://johnynek.github.io/bosatsu/language_guide.html): full language reference.
 - [Writing Bosatsu in 5 minutes](https://johnynek.github.io/bosatsu/writing_bosatsu_5_minutes.html): official quick syntax/workflow refresher.
