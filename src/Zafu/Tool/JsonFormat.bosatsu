@@ -1,5 +1,14 @@
 package Zafu/Tool/JsonFormat
 
+from Bosatsu/Char import (
+  char_to_Int,
+  int_to_Char,
+  is_ascii_digit,
+  is_ascii_hex,
+  string_to_Char_List,
+  to_digit,
+)
+
 from Bosatsu/IO/Core import (
   read_all_bytes,
   stderr,
@@ -27,8 +36,11 @@ from Bosatsu/Json import (
   JObject,
   JString,
   eq_Json,
-  parse_Json,
   render_Json as render_compact_json,
+)
+
+from Bosatsu/Num/Float64 import (
+  string_to_Float64,
 )
 
 from Bosatsu/Prog import (
@@ -41,12 +53,42 @@ from Bosatsu/Prog import (
 
 from Zafu/Collection/NonEmptyList import (
   from_prepend as from_prepend_NonEmptyList,
+  to_List as to_List_NonEmptyList,
 )
 
 from Zafu/Control/Result import (
   Result,
   Ok,
   Err,
+)
+
+from Zafu/Text/Parse import (
+  parse,
+  char,
+  char_in,
+  char_where,
+  string,
+  map,
+  map0,
+  one_of,
+  product,
+  product0,
+  product10,
+  product01,
+  keep_left,
+  keep_right,
+  optional,
+  rep,
+  rep0,
+  backtrack,
+  label,
+)
+
+from Zafu/Text/Parse/Error import Error
+
+from Zafu/Text/Parse/Types import (
+  Parser,
+  Parser0,
 )
 
 from Zafu/Text/Pretty import (
@@ -90,14 +132,518 @@ enum OutputStyle:
   Compact
   Pretty(indent_size: Int)
 
+enum ScalarToken:
+  TokNull
+  TokBool(value: Bool)
+  TokNumber(raw: String)
+  TokString(raw_content: String)
+
 read_chunk_size = 4096
 
-def parse_json_input(input: String) -> Result[String, Json]:
-  match parse_Json(input):
-    case Some(value):
-      Ok(value)
+double_quote_char: Char = .'\"'
+backslash_char: Char = .'\\'
+minus_char: Char = .'-'
+plus_char: Char = .'+'
+dot_char: Char = .'.'
+comma_char: Char = .','
+colon_char: Char = .':'
+open_brace_char: Char = .'{'
+close_brace_char: Char = .'}'
+open_bracket_char: Char = .'['
+close_bracket_char: Char = .']'
+zero_char: Char = .'0'
+e_char: Char = .'e'
+upper_e_char: Char = .'E'
+u_char: Char = .'u'
+
+high_surrogate_start = 55296
+high_surrogate_end = 56319
+low_surrogate_start = 56320
+low_surrogate_end = 57343
+
+simple_escape_chars = [
+  double_quote_char,
+  backslash_char,
+  .'/',
+  .'b',
+  .'f',
+  .'n',
+  .'r',
+  .'t',
+]
+
+def is_json_space(ch: Char) -> Bool:
+  ch matches .' ' | .'\t' | .'\n' | .'\r'
+
+def lte_Int(left: Int, right: Int) -> Bool:
+  cmp_Int(left, right) matches LT | EQ
+
+def gte_Int(left: Int, right: Int) -> Bool:
+  cmp_Int(left, right) matches GT | EQ
+
+def in_range_Int(item: Int, low: Int, high: Int) -> Bool:
+  and(gte_Int(item, low), lte_Int(item, high))
+
+def is_high_surrogate(code_unit: Int) -> Bool:
+  in_range_Int(code_unit, high_surrogate_start, high_surrogate_end)
+
+def is_low_surrogate(code_unit: Int) -> Bool:
+  in_range_Int(code_unit, low_surrogate_start, low_surrogate_end)
+
+json_space_char = char_where(is_json_space, "JSON whitespace")
+
+def token(parser):
+  ws = map0(rep0(json_space_char), _ -> Unit)
+  keep_right(ws, keep_left(parser, ws))
+
+def nonempty_chars_to_String(chars) -> String:
+  char_List_to_String(to_List_NonEmptyList(chars))
+
+def is_unescaped_string_char(ch: Char) -> Bool:
+  if ch matches .'\"':
+    False
+  elif ch matches .'\\':
+    False
+  else:
+    cmp_Int(char_to_Int(ch), 32) matches GT | EQ
+
+unescaped_string_chunk: Parser[String] = (
+  chars = rep(char_where(is_unescaped_string_char, "JSON string character"))
+  map(chars, nonempty_chars_to_String)
+)
+
+hex_digit_char = char_where(is_ascii_hex, "hex digit")
+
+simple_escape_chunk: Parser[String] = (
+  map(product(char(backslash_char), char_in(simple_escape_chars)), ((_, escaped_char)) -> (
+    concat_String(["\\", char_to_String(escaped_char)])
+  ))
+)
+
+unicode_escape_chunk: Parser[String] = (
+  map(
+    product(
+      product(char(backslash_char), char(u_char)),
+      product(
+        product(hex_digit_char, hex_digit_char),
+        product(hex_digit_char, hex_digit_char),
+      ),
+    ),
+    ((_, ((h1, h2), (h3, h4)))) -> (
+      concat_String([
+        "\\u",
+        char_to_String(h1),
+        char_to_String(h2),
+        char_to_String(h3),
+        char_to_String(h4),
+      ])
+    ),
+  )
+)
+
+json_string_content_parser: Parser[String] = (
+  piece_parser = one_of([
+    backtrack(simple_escape_chunk),
+    unicode_escape_chunk,
+    unescaped_string_chunk,
+  ])
+  map(
+    product(
+      product10(char(double_quote_char), rep0(piece_parser)),
+      char(double_quote_char),
+    ),
+    ((((_, pieces), _))) -> (
+      concat_String(pieces)
+    ),
+  )
+)
+
+def is_nonzero_digit(ch: Char) -> Bool:
+  code = char_to_Int(ch)
+  and(cmp_Int(code, 48) matches GT, cmp_Int(code, 57) matches LT | EQ)
+
+digit_char = char_where(is_ascii_digit, "digit")
+nonzero_digit_char = char_where(is_nonzero_digit, "non-zero digit")
+
+def digits_to_String(head: Char, tail: List[Char]) -> String:
+  char_List_to_String([head, *tail])
+
+number_integer_part: Parser[String] = (
+  one_of([
+    map(char(zero_char), _ -> "0"),
+    map(product10(nonzero_digit_char, rep0(digit_char)), ((head, tail)) -> (
+      digits_to_String(head, tail)
+    )),
+  ])
+)
+
+number_fraction_part: Parser[String] = (
+  map(product(char(dot_char), rep(digit_char)), ((_, digits)) -> (
+    concat_String([".", nonempty_chars_to_String(digits)])
+  ))
+)
+
+number_exp_sign0: Parser0[String] = (
+  map0(optional(char_in([plus_char, minus_char])), maybe_sign -> (
+    match maybe_sign:
+      case Some(sign_char):
+        char_to_String(sign_char)
+      case None:
+        ""
+  ))
+)
+
+number_exp_part: Parser[String] = (
+  map(product(char_in([e_char, upper_e_char]), product01(number_exp_sign0, rep(digit_char))), ((exp_mark, (sign_part, digits))) -> (
+    concat_String([
+      char_to_String(exp_mark),
+      sign_part,
+      nonempty_chars_to_String(digits),
+    ])
+  ))
+)
+
+number_fraction0: Parser0[String] = (
+  map0(optional(number_fraction_part), maybe_fraction -> (
+    match maybe_fraction:
+      case Some(fraction):
+        fraction
+      case None:
+        ""
+  ))
+)
+
+number_exp0: Parser0[String] = (
+  map0(optional(number_exp_part), maybe_exp -> (
+    match maybe_exp:
+      case Some(exp_part):
+        exp_part
+      case None:
+        ""
+  ))
+)
+
+number_sign0: Parser0[String] = (
+  map0(optional(char(minus_char)), maybe_minus -> (
+    match maybe_minus:
+      case Some(_):
+        "-"
+      case None:
+        ""
+  ))
+)
+
+json_number_parser: Parser[ScalarToken] = (
+  core = map(product10(number_integer_part, product0(number_fraction0, number_exp0)), ((int_part, (fraction_part, exp_part))) -> (
+    concat_String([int_part, fraction_part, exp_part])
+  ))
+
+  label(
+    map(product01(number_sign0, core), ((sign_part, rest_part)) -> (
+      TokNumber(concat_String([sign_part, rest_part]))
+    )),
+    "JSON number",
+  )
+)
+
+json_true_parser = map(string("true"), _ -> TokBool(True))
+json_false_parser = map(string("false"), _ -> TokBool(False))
+json_null_parser = map(string("null"), _ -> TokNull)
+
+scalar_token_parser: Parser[ScalarToken] = (
+  one_of([
+    json_null_parser,
+    json_true_parser,
+    json_false_parser,
+    json_number_parser,
+    map(json_string_content_parser, content -> TokString(content)),
+  ])
+)
+
+enum JsonToken:
+  TokOpenObj
+  TokCloseObj
+  TokOpenArr
+  TokCloseArr
+  TokColon
+  TokComma
+  TokScalar(value: ScalarToken)
+
+json_token_parser: Parser[JsonToken] = (
+  one_of([
+    map(char(open_brace_char), _ -> TokOpenObj),
+    map(char(close_brace_char), _ -> TokCloseObj),
+    map(char(open_bracket_char), _ -> TokOpenArr),
+    map(char(close_bracket_char), _ -> TokCloseArr),
+    map(char(colon_char), _ -> TokColon),
+    map(char(comma_char), _ -> TokComma),
+    map(scalar_token_parser, value -> TokScalar(value)),
+  ])
+)
+
+json_tokens_parser: Parser[List[JsonToken]] = (
+  tok = token(label(json_token_parser, "JSON token"))
+  map(product10(tok, rep0(tok)), ((head, tail)) -> [head, *tail])
+)
+
+def hex4_to_Int(h1: Char, h2: Char, h3: Char, h4: Char) -> Option[Int]:
+  match (to_digit(h1, 16), to_digit(h2, 16), to_digit(h3, 16), to_digit(h4, 16)):
+    case (Some(d1), Some(d2), Some(d3), Some(d4)):
+      Some(d1.mul(4096).add(d2.mul(256)).add(d3.mul(16)).add(d4))
+    case _:
+      None
+
+def decode_code_point(code_point: Int) -> Result[String, String]:
+  match int_to_Char(code_point):
+    case Some(ch):
+      Ok(char_to_String(ch))
     case None:
-      Err("invalid JSON input")
+      Err("invalid unicode escape in JSON string")
+
+def decode_json_string_content(raw_content: String) -> Result[String, String]:
+  chars = string_to_Char_List(raw_content)
+
+  def loop(rem_chars: List[Char], rev_parts: List[String]) -> Result[String, String]:
+    loop rem_chars:
+      case []:
+        Ok(concat_String(rev_parts.reverse()))
+      case [.'\\', .'u', h1, h2, h3, h4, *tail] if and(is_ascii_hex(h1), and(is_ascii_hex(h2), and(is_ascii_hex(h3), is_ascii_hex(h4)))):
+        match hex4_to_Int(h1, h2, h3, h4):
+          case Some(code_unit):
+            if is_high_surrogate(code_unit):
+              match tail:
+                case [.'\\', .'u', l1, l2, l3, l4, *tail2] if and(is_ascii_hex(l1), and(is_ascii_hex(l2), and(is_ascii_hex(l3), is_ascii_hex(l4)))):
+                  match hex4_to_Int(l1, l2, l3, l4):
+                    case Some(low_unit) if is_low_surrogate(low_unit):
+                      code_point = 65536.add(code_unit.sub(high_surrogate_start).mul(1024)).add(low_unit.sub(low_surrogate_start))
+                      match decode_code_point(code_point):
+                        case Ok(value):
+                          loop(tail2, [value, *rev_parts])
+                        case Err(msg):
+                          Err(msg)
+                    case _:
+                      Err("invalid unicode escape in JSON string")
+                case _:
+                  Err("invalid unicode escape in JSON string")
+            elif is_low_surrogate(code_unit):
+              Err("invalid unicode escape in JSON string")
+            else:
+              match decode_code_point(code_unit):
+                case Ok(value):
+                  loop(tail, [value, *rev_parts])
+                case Err(msg):
+                  Err(msg)
+          case None:
+            Err("invalid unicode escape in JSON string")
+      case [.'\\', .'\"', *tail]:
+        loop(tail, ["\"", *rev_parts])
+      case [.'\\', .'\\', *tail]:
+        loop(tail, ["\\", *rev_parts])
+      case [.'\\', .'/', *tail]:
+        loop(tail, ["/", *rev_parts])
+      case [.'\\', .'b', *tail]:
+        loop(tail, ["\b", *rev_parts])
+      case [.'\\', .'f', *tail]:
+        loop(tail, ["\f", *rev_parts])
+      case [.'\\', .'n', *tail]:
+        loop(tail, ["\n", *rev_parts])
+      case [.'\\', .'r', *tail]:
+        loop(tail, ["\r", *rev_parts])
+      case [.'\\', .'t', *tail]:
+        loop(tail, ["\t", *rev_parts])
+      case [.'\\', *_]:
+        Err("invalid JSON string escape")
+      case [ch, *tail]:
+        loop(tail, [char_to_String(ch), *rev_parts])
+
+  loop(chars, [])
+
+def number_token_to_json(raw_value: String) -> Result[String, Json]:
+  match string_to_Int(raw_value):
+    case Some(int_value):
+      Ok(JInt(int_value))
+    case None:
+      match string_to_Float64(raw_value):
+        case Some(float_value):
+          Ok(JFloat(float_value))
+        case None:
+          Err("invalid JSON number")
+
+def scalar_token_to_json(token: ScalarToken) -> Result[String, Json]:
+  match token:
+    case TokNull:
+      Ok(JNull)
+    case TokBool(bool_value):
+      Ok(JBool(bool_value))
+    case TokNumber(raw_value):
+      number_token_to_json(raw_value)
+    case TokString(raw_content):
+      match decode_json_string_content(raw_content):
+        case Ok(content):
+          Ok(JString(content))
+        case Err(msg):
+          Err(msg)
+
+def scalar_token_to_object_key(token: ScalarToken) -> Result[String, String]:
+  match token:
+    case TokString(raw_content):
+      decode_json_string_content(raw_content)
+    case _:
+      Err("JSON object keys must be strings")
+
+enum BuildFrame:
+  ArrExpectFirstOrClose(items_rev: List[Json])
+  ArrExpectValueAfterComma(items_rev: List[Json])
+  ArrExpectCommaOrClose(items_rev: List[Json])
+  ObjExpectFirstKeyOrClose(fields_rev: List[(String, Json)])
+  ObjExpectKeyAfterComma(fields_rev: List[(String, Json)])
+  ObjExpectColon(fields_rev: List[(String, Json)], key: String)
+  ObjExpectValue(fields_rev: List[(String, Json)], key: String)
+  ObjExpectCommaOrClose(fields_rev: List[(String, Json)])
+
+def accept_value(
+  value: Json,
+  stack: List[BuildFrame],
+  root: Option[Json],
+) -> Result[String, (List[BuildFrame], Option[Json])]:
+  match stack:
+    case []:
+      match root:
+        case Some(_):
+          Err("multiple top-level JSON values")
+        case None:
+          Ok(([], Some(value)))
+    case [ArrExpectFirstOrClose(items_rev), *tail]:
+      Ok(([ArrExpectCommaOrClose([value, *items_rev]), *tail], root))
+    case [ArrExpectValueAfterComma(items_rev), *tail]:
+      Ok(([ArrExpectCommaOrClose([value, *items_rev]), *tail], root))
+    case [ObjExpectValue(fields_rev, key), *tail]:
+      Ok(([ObjExpectCommaOrClose([(key, value), *fields_rev]), *tail], root))
+    case _:
+      Err("unexpected JSON value")
+
+def begin_container(
+  frame: BuildFrame,
+  stack: List[BuildFrame],
+  root: Option[Json],
+) -> Result[String, (List[BuildFrame], Option[Json])]:
+  match stack:
+    case []:
+      match root:
+        case Some(_):
+          Err("multiple top-level JSON values")
+        case None:
+          Ok(([frame], root))
+    case [ArrExpectFirstOrClose(items_rev), *tail]:
+      Ok(([frame, ArrExpectFirstOrClose(items_rev), *tail], root))
+    case [ArrExpectValueAfterComma(items_rev), *tail]:
+      Ok(([frame, ArrExpectValueAfterComma(items_rev), *tail], root))
+    case [ObjExpectValue(fields_rev, key), *tail]:
+      Ok(([frame, ObjExpectValue(fields_rev, key), *tail], root))
+    case _:
+      Err("unexpected JSON container start")
+
+def parse_json_tokens(tokens: List[JsonToken]) -> Result[String, Json]:
+  def loop(rem: List[JsonToken], stack: List[BuildFrame], root: Option[Json]) -> Result[String, Json]:
+    loop (rem, stack):
+      case ([], []):
+        match root:
+          case Some(value):
+            Ok(value)
+          case None:
+            Err("empty JSON input")
+      case ([], _):
+        Err("unexpected end of JSON input")
+      case ([TokOpenArr, *tail], current_stack):
+        match begin_container(ArrExpectFirstOrClose([]), current_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokOpenObj, *tail], current_stack):
+        match begin_container(ObjExpectFirstKeyOrClose([]), current_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokScalar(key_token), *tail], [ObjExpectFirstKeyOrClose(fields_rev), *tail_stack]):
+        match scalar_token_to_object_key(key_token):
+          case Ok(key):
+            loop(tail, [ObjExpectColon(fields_rev, key), *tail_stack], root)
+          case Err(msg):
+            Err(msg)
+      case ([TokScalar(key_token), *tail], [ObjExpectKeyAfterComma(fields_rev), *tail_stack]):
+        match scalar_token_to_object_key(key_token):
+          case Ok(key):
+            loop(tail, [ObjExpectColon(fields_rev, key), *tail_stack], root)
+          case Err(msg):
+            Err(msg)
+      case ([TokScalar(scalar_token), *tail], current_stack):
+        match scalar_token_to_json(scalar_token):
+          case Ok(value):
+            match accept_value(value, current_stack, root):
+              case Ok((next_stack, next_root)):
+                loop(tail, next_stack, next_root)
+              case Err(msg):
+                Err(msg)
+          case Err(msg):
+            Err(msg)
+      case ([TokColon, *tail], [ObjExpectColon(fields_rev, key), *tail_stack]):
+        loop(tail, [ObjExpectValue(fields_rev, key), *tail_stack], root)
+      case ([TokColon, *_], _):
+        Err("unexpected ':' in JSON input")
+      case ([TokComma, *tail], [ArrExpectCommaOrClose(items_rev), *tail_stack]):
+        loop(tail, [ArrExpectValueAfterComma(items_rev), *tail_stack], root)
+      case ([TokComma, *tail], [ObjExpectCommaOrClose(fields_rev), *tail_stack]):
+        loop(tail, [ObjExpectKeyAfterComma(fields_rev), *tail_stack], root)
+      case ([TokComma, *_], _):
+        Err("unexpected ',' in JSON input")
+      case ([TokCloseArr, *tail], [ArrExpectFirstOrClose(items_rev), *tail_stack]):
+        match accept_value(JArray(items_rev.reverse()), tail_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokCloseArr, *tail], [ArrExpectCommaOrClose(items_rev), *tail_stack]):
+        match accept_value(JArray(items_rev.reverse()), tail_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokCloseArr, *_], [ArrExpectValueAfterComma(_), *_]):
+        Err("array cannot end right after ','")
+      case ([TokCloseArr, *_], _):
+        Err("unexpected ']' in JSON input")
+      case ([TokCloseObj, *tail], [ObjExpectFirstKeyOrClose(fields_rev), *tail_stack]):
+        match accept_value(JObject(fields_rev.reverse()), tail_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokCloseObj, *tail], [ObjExpectCommaOrClose(fields_rev), *tail_stack]):
+        match accept_value(JObject(fields_rev.reverse()), tail_stack, root):
+          case Ok((next_stack, next_root)):
+            loop(tail, next_stack, next_root)
+          case Err(msg):
+            Err(msg)
+      case ([TokCloseObj, *_], [ObjExpectKeyAfterComma(_), *_]):
+        Err("object cannot end right after ','")
+      case ([TokCloseObj, *_], [ObjExpectColon(_, _), *_]):
+        Err("expected ':' before '}'")
+      case ([TokCloseObj, *_], [ObjExpectValue(_, _), *_]):
+        Err("expected object value before '}'")
+      case ([TokCloseObj, *_], _):
+        Err("unexpected '}' in JSON input")
+
+  loop(tokens, [], None)
+
+def parse_json_input(input: String) -> Result[String, Json]:
+  match parse(json_tokens_parser, input):
+    case Ok(tokens):
+      parse_json_tokens(tokens)
+    case Err(parse_err):
+      Error(_, failed_at, _, _) = parse_err
+      Err("JSON parse failed at character offset ${int_to_String(failed_at)}")
 
 def scalar_json_doc(value: Json) -> Doc:
   text(render_compact_json(value))
@@ -252,18 +798,31 @@ def render_json(value: Json, style: OutputStyle) -> String:
 
 tests = TestSuite("json format", [
   Assertion(
-    match parse_json_input("{\"msg\":\"line\\nnext\",\"nums\":[1,2.5]}"):
+    match parse_json_input("{\"msg\":\"line\\nnext\",\"nums\":[1,2.5],\"note\":\"plain\"}"):
       case Ok(value):
         eq_Json(
           value,
           JObject([
             ("msg", JString("line\nnext")),
             ("nums", JArray([JInt(1), JFloat(2.5)])),
+            ("note", JString("plain")),
           ]),
         )
       case Err(_):
         False,
-    "parse_json_input delegates to Bosatsu/Json",
+    "parser builds Bosatsu/Json on representative input",
+  ),
+  Assertion(
+    match parse_json_input("{\"emoji\":\"\\uD83D\\uDE00\"}"):
+      case Ok(value):
+        eq_Json(value, JObject([("emoji", JString("😀"))]))
+      case Err(_):
+        False,
+    "parser decodes surrogate pairs",
+  ),
+  Assertion(
+    parse_json_input("{1: true}") matches Err("JSON object keys must be strings"),
+    "parser keeps structural diagnostics",
   ),
   Assertion(
     render_json(
