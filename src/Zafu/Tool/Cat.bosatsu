@@ -1,0 +1,353 @@
+package Zafu/Tool/Cat
+
+from Bosatsu/IO/Core import (
+  Handle,
+  Path,
+  Read,
+  close,
+  copy_bytes,
+  open_file,
+  stderr,
+  stdin,
+  stdout,
+  string_to_Path,
+  write_utf8,
+)
+
+from Bosatsu/IO/Error import (
+  IOError,
+  AccessDenied,
+  AlreadyExists,
+  BadFileDescriptor,
+  BrokenPipe,
+  CrossDeviceLink,
+  Interrupted,
+  InvalidArgument,
+  InvalidUtf8,
+  IsDirectory,
+  NameTooLong,
+  NoSpace,
+  NotDirectory,
+  NotEmpty,
+  NotFound,
+  Other,
+  QuotaExceeded,
+  ReadOnlyFileSystem,
+  TimedOut,
+  TooManyOpenFiles,
+  Unsupported,
+  WouldBlock,
+)
+
+from Bosatsu/Prog import (
+  Main,
+  Prog,
+  await,
+  pure,
+  raise_error,
+  recover,
+)
+
+from Zafu/Control/Result import (
+  Result,
+  Ok,
+  Err,
+)
+
+from Zafu/Text/Pretty import (
+  render_String as render,
+  text,
+)
+
+from Zafu/Cli/Args import (
+  arg_info,
+  command as cli_command,
+  default_parse_config,
+  parse as parse_cli,
+  rest,
+  string_value,
+  with_help_flag,
+)
+
+from Zafu/Cli/Args/Types import (
+  Parsed,
+  RequestedHelp,
+  RequestedVersion,
+  Failed,
+)
+
+export (
+  main,
+)
+
+exposes Bosatsu/Prog
+
+enum Source:
+  StdinSource
+  FileSource(raw_name: String, path: Path)
+  InvalidSource(raw_name: String)
+
+pump_chunk_size = 65536
+
+cat_command = with_help_flag(cli_command("cat", rest(string_value(text("FILE")), arg_info)))
+
+def io_error_context(err: IOError) -> String:
+  match err:
+    case NotFound(context):
+      context
+    case AccessDenied(context):
+      context
+    case AlreadyExists(context):
+      context
+    case NotDirectory(context):
+      context
+    case IsDirectory(context):
+      context
+    case NotEmpty(context):
+      context
+    case TooManyOpenFiles(context):
+      context
+    case ReadOnlyFileSystem(context):
+      context
+    case CrossDeviceLink(context):
+      context
+    case NoSpace(context):
+      context
+    case QuotaExceeded(context):
+      context
+    case NameTooLong(context):
+      context
+    case InvalidArgument(context):
+      context
+    case InvalidUtf8(context):
+      context
+    case BadFileDescriptor(context):
+      context
+    case Interrupted(context):
+      context
+    case WouldBlock(context):
+      context
+    case TimedOut(context):
+      context
+    case BrokenPipe(context):
+      context
+    case Unsupported(context):
+      context
+    case Other(context, _, _):
+      context
+
+def io_error_reason(err: IOError) -> String:
+  match err:
+    case NotFound(_):
+      "No such file or directory"
+    case AccessDenied(_):
+      "Permission denied"
+    case AlreadyExists(_):
+      "File exists"
+    case NotDirectory(_):
+      "Not a directory"
+    case IsDirectory(_):
+      "Is a directory"
+    case NotEmpty(_):
+      "Directory not empty"
+    case TooManyOpenFiles(_):
+      "Too many open files"
+    case ReadOnlyFileSystem(_):
+      "Read-only file system"
+    case CrossDeviceLink(_):
+      "Cross-device link"
+    case NoSpace(_):
+      "No space left on device"
+    case QuotaExceeded(_):
+      "Disk quota exceeded"
+    case NameTooLong(_):
+      "File name too long"
+    case InvalidArgument(_):
+      "Invalid argument"
+    case InvalidUtf8(_):
+      "Invalid UTF-8"
+    case BadFileDescriptor(_):
+      "Bad file descriptor"
+    case Interrupted(_):
+      "Interrupted system call"
+    case WouldBlock(_):
+      "Resource temporarily unavailable"
+    case TimedOut(_):
+      "Operation timed out"
+    case BrokenPipe(_):
+      "Broken pipe"
+    case Unsupported(_):
+      "Operation not supported"
+    case Other(_, _, message):
+      if message matches "":
+        "I/O error"
+      else:
+        message
+
+def emit_stderr_line[e](line: String) -> Prog[e, Unit]:
+  _ <- recover(write_utf8(stderr, "${line}\n"), _ -> pure(Unit)).await()
+  pure(Unit)
+
+def emit_source_reason[e](raw_name: String, reason: String) -> Prog[e, Unit]:
+  emit_stderr_line("cat: ${raw_name}: ${reason}")
+
+def emit_source_io_error[e](raw_name: String, err: IOError) -> Prog[e, Unit]:
+  emit_source_reason(raw_name, io_error_reason(err))
+
+# `Main` may hand us argv with the command name first. For `cat`, only leading
+# dash-prefixed tokens can be real options; keeping slash-prefixed argv0 values
+# would misclassify absolute executable paths as input files.
+def normalize_cli_args(args: List[String]) -> List[String]:
+  match args:
+    case ["-${_}", *_] | []:
+      args
+    case [_, *tail]:
+      tail
+
+def plan_operand(raw_name: String) -> Source:
+  match raw_name:
+    case "-":
+      StdinSource
+    case _:
+      match string_to_Path(raw_name):
+        case Some(path):
+          FileSource(raw_name, path)
+        case None:
+          InvalidSource(raw_name)
+
+def plan_sources(raw_names: List[String]) -> List[Source]:
+  match raw_names:
+    case []:
+      [StdinSource]
+    case _:
+      raw_names.map_List(plan_operand)
+
+def is_source_copy_error(err: IOError) -> Bool:
+  io_error_context(err) matches "reading${_}"
+
+# `copy_bytes` reports read and write failures with distinct context prefixes.
+# Only read-side failures are recoverable operand errors; write-side failures
+# escape so the top-level handler can stop immediately.
+def pump_handle(raw_name: String, handle: Handle) -> Prog[IOError, Bool]:
+  copy_result <- recover((
+    _ <- copy_bytes(handle, stdout, pump_chunk_size, None).await()
+    pure(Ok(Unit))
+  ), err -> pure(Err(err))).await()
+  match copy_result:
+    case Ok(_):
+      pure(False)
+    case Err(err):
+      if is_source_copy_error(err):
+        _ <- emit_source_io_error(raw_name, err).await()
+        pure(True)
+      else:
+        raise_error(err)
+
+def close_file_source(raw_name: String, handle: Handle) -> Prog[IOError, Bool]:
+  close_result <- recover((
+    _ <- close(handle).await()
+    pure(Ok(Unit))
+  ), err -> pure(Err(err))).await()
+  match close_result:
+    case Ok(_):
+      pure(False)
+    case Err(err):
+      _ <- emit_source_io_error(raw_name, err).await()
+      pure(True)
+
+def run_file_source(raw_name: String, path: Path) -> Prog[IOError, Bool]:
+  open_result <- recover((
+    handle <- open_file(path, Read).await()
+    pure(Ok(handle))
+  ), err -> pure(Err(err))).await()
+  match open_result:
+    case Err(err):
+      _ <- emit_source_io_error(raw_name, err).await()
+      pure(True)
+    case Ok(handle):
+      pump_result <- recover((
+        had_error <- pump_handle(raw_name, handle).await()
+        pure(Ok(had_error))
+      ), err -> pure(Err(err))).await()
+      match pump_result:
+        case Ok(had_error):
+          close_error <- close_file_source(raw_name, handle).await()
+          pure(or(had_error, close_error))
+        case Err(err):
+          _ <- recover(close(handle), _ -> pure(Unit)).await()
+          raise_error(err)
+
+def run_source(source: Source) -> Prog[IOError, Bool]:
+  match source:
+    case StdinSource:
+      pump_handle("-", stdin)
+    case FileSource(raw_name, path):
+      run_file_source(raw_name, path)
+    case InvalidSource(raw_name):
+      _ <- emit_source_reason(raw_name, "invalid path").await()
+      pure(True)
+
+def run_sources(sources: List[Source]) -> Prog[IOError, Bool]:
+  def go(rem: List[Source], had_error: Bool) -> Prog[IOError, Bool]:
+    recur rem:
+      case []:
+        pure(had_error)
+      case [head, *tail]:
+        source_error <- run_source(head).await()
+        go(tail, or(had_error, source_error))
+  go(sources, False)
+
+def run(args: List[String]) -> Prog[IOError, Int]:
+  cli_args = normalize_cli_args(args)
+  match parse_cli(default_parse_config, cat_command, cli_args):
+    case Failed(_, doc):
+      _ <- write_utf8(stderr, "${render(doc, 80)}\n").await()
+      pure(2)
+    case RequestedHelp(_, doc):
+      _ <- write_utf8(stdout, "${render(doc, 80)}\n").await()
+      pure(0)
+    case RequestedVersion(doc):
+      _ <- write_utf8(stdout, "${render(doc, 80)}\n").await()
+      pure(0)
+    case Parsed(raw_names):
+      had_error <- run_sources(plan_sources(raw_names)).await()
+      if had_error:
+        pure(1)
+      else:
+        pure(0)
+
+tests = TestSuite("cat tool", [
+  Assertion(normalize_cli_args([]) matches [], "normalize leaves empty argv untouched"),
+  Assertion(normalize_cli_args(["--help"]) matches ["--help"], "normalize keeps leading options"),
+  Assertion(
+    normalize_cli_args(["/tmp/zafu-cat", "/tmp/input"]) matches ["/tmp/input"],
+    "normalize strips an absolute executable path",
+  ),
+  Assertion(normalize_cli_args(["cat", "alpha", "beta"]) matches ["alpha", "beta"], "normalize drops executable name"),
+  Assertion(plan_sources([]) matches [StdinSource], "zero operands default to stdin"),
+  Assertion(plan_sources(["-"]) matches [StdinSource], "dash operands map to stdin"),
+  Assertion(
+    plan_sources(["alpha", "-", "beta"]) matches [
+      FileSource("alpha", _),
+      StdinSource,
+      FileSource("beta", _),
+    ],
+    "planning preserves operand order",
+  ),
+  Assertion(plan_sources([""]) matches [InvalidSource("")], "planning keeps invalid paths as runtime errors"),
+  Assertion(
+    parse_cli(default_parse_config, cat_command, ["--", "-dash"]) matches Parsed(["-dash"]),
+    "double dash passes leading dash file names through",
+  ),
+])
+
+main: Main = Main(args -> (
+  recover(run(args), err -> (
+    match err:
+      case BrokenPipe(_):
+        pure(1)
+      case _:
+        _ <- emit_stderr_line("cat: ${io_error_reason(err)}").await()
+        pure(1)
+  ))
+))
