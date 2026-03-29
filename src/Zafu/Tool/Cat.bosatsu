@@ -194,6 +194,12 @@ def emit_source_reason[e](raw_name: String, reason: String) -> Prog[e, Unit]:
 def emit_source_io_error[e](raw_name: String, err: IOError) -> Prog[e, Unit]:
   emit_source_reason(raw_name, io_error_reason(err))
 
+def attempt[e, a, err](prog: Prog[e, a]) -> Prog[err, Result[e, a]]:
+  recover((
+    value <- prog.await()
+    pure(Ok(value))
+  ), raised -> pure(Err(raised)))
+
 # `Main` may hand us argv with the command name first. For `cat`, only leading
 # dash-prefixed tokens can be real options; keeping slash-prefixed argv0 values
 # would misclassify absolute executable paths as input files.
@@ -229,10 +235,7 @@ def is_source_copy_error(err: IOError) -> Bool:
 # Only read-side failures are recoverable operand errors; write-side failures
 # escape so the top-level handler can stop immediately.
 def pump_handle(raw_name: String, handle: Handle) -> Prog[IOError, Bool]:
-  copy_result <- recover((
-    _ <- copy_bytes(handle, stdout, pump_chunk_size, None).await()
-    pure(Ok(Unit))
-  ), err -> pure(Err(err))).await()
+  copy_result <- copy_bytes(handle, stdout, pump_chunk_size, None).attempt().await()
   match copy_result:
     case Ok(_):
       pure(False)
@@ -244,10 +247,7 @@ def pump_handle(raw_name: String, handle: Handle) -> Prog[IOError, Bool]:
         raise_error(err)
 
 def close_file_source(raw_name: String, handle: Handle) -> Prog[IOError, Bool]:
-  close_result <- recover((
-    _ <- close(handle).await()
-    pure(Ok(Unit))
-  ), err -> pure(Err(err))).await()
+  close_result <- close(handle).attempt().await()
   match close_result:
     case Ok(_):
       pure(False)
@@ -256,19 +256,13 @@ def close_file_source(raw_name: String, handle: Handle) -> Prog[IOError, Bool]:
       pure(True)
 
 def run_file_source(raw_name: String, path: Path) -> Prog[IOError, Bool]:
-  open_result <- recover((
-    handle <- open_file(path, Read).await()
-    pure(Ok(handle))
-  ), err -> pure(Err(err))).await()
+  open_result <- open_file(path, Read).attempt().await()
   match open_result:
     case Err(err):
       _ <- emit_source_io_error(raw_name, err).await()
       pure(True)
     case Ok(handle):
-      pump_result <- recover((
-        had_error <- pump_handle(raw_name, handle).await()
-        pure(Ok(had_error))
-      ), err -> pure(Err(err))).await()
+      pump_result <- pump_handle(raw_name, handle).attempt().await()
       match pump_result:
         case Ok(had_error):
           close_error <- close_file_source(raw_name, handle).await()
