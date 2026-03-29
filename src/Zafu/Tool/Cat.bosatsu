@@ -5,13 +5,18 @@ from Bosatsu/IO/Core import (
   Path,
   Read,
   close,
-  copy_bytes,
   open_file,
+  read_bytes,
   stderr,
   stdin,
   stdout,
   string_to_Path,
+  write_bytes,
   write_utf8,
+)
+
+from Bosatsu/IO/Bytes import (
+  Bytes,
 )
 
 from Bosatsu/IO/Error import (
@@ -46,6 +51,7 @@ from Bosatsu/Prog import (
   pure,
   raise_error,
   recover,
+  recursive,
 )
 
 from Zafu/Control/Result import (
@@ -90,13 +96,6 @@ enum Source:
 pump_chunk_size = 65536
 
 cat_command = with_help_flag(cli_command("cat", rest(string_value(text("FILE")), arg_info)))
-
-def io_error_context(err: IOError) -> String:
-  match err:
-    case NotFound(context) | AccessDenied(context) | AlreadyExists(context) | NotDirectory(context) | IsDirectory(context) | NotEmpty(context) | TooManyOpenFiles(context) | ReadOnlyFileSystem(context) | CrossDeviceLink(context) | NoSpace(context) | QuotaExceeded(context) | NameTooLong(context) | InvalidArgument(context) | InvalidUtf8(context) | BadFileDescriptor(context) | Interrupted(context) | WouldBlock(context) | TimedOut(context) | BrokenPipe(context) | Unsupported(context):
-      context
-    case Other(context, _, _):
-      context
 
 def io_error_reason(err: IOError) -> String:
   match err:
@@ -190,23 +189,24 @@ def plan_sources(raw_names: List[String]) -> List[Source]:
     case _:
       raw_names.map_List(plan_operand)
 
-def is_source_copy_error(err: IOError) -> Bool:
-  io_error_context(err) matches "reading${_}"
-
-# `copy_bytes` reports read and write failures with distinct context prefixes.
-# Only read-side failures are recoverable operand errors; write-side failures
-# escape so the top-level handler can stop immediately.
+# Read failures stay local to the current operand; write failures escape so the
+# top-level handler can stop immediately on a broken stdout.
 def pump_handle(raw_name: String, handle: Handle) -> Prog[IOError, Bool]:
-  copy_result <- copy_bytes(handle, stdout, pump_chunk_size, None).attempt().await()
-  match copy_result:
-    case Ok(_):
-      pure(False)
-    case Err(err):
-      if is_source_copy_error(err):
-        _ <- emit_source_io_error(raw_name, err).await()
-        pure(True)
-      else:
-        raise_error(err)
+  go = recursive(rec ->
+    _ -> (
+      read_result <- read_bytes(handle, pump_chunk_size).attempt().await()
+      match read_result:
+        case Err(err):
+          _ <- emit_source_io_error(raw_name, err).await()
+          pure(True)
+        case Ok(None):
+          pure(False)
+        case Ok(Some(chunk)):
+          _ <- write_bytes(stdout, chunk).await()
+          rec(Unit)
+    )
+  )
+  go(Unit)
 
 def close_file_source(raw_name: String, handle: Handle) -> Prog[IOError, Bool]:
   close_result <- close(handle).attempt().await()
