@@ -7,20 +7,21 @@
 ## Metadata
 
 - Roadmap issue: `#166`
-- Graph version: `3`
-- Node count: `9`
+- Graph version: `4`
+- Node count: `10`
 
 ## Dependency Overview
 
 1. `suite_spec` (`reference_doc`): none
 2. `suite_contract_doc` (`reference_doc`): `suite_spec` (`planned`)
 3. `suite_contract_artifact_v2` (`reference_doc`): `suite_contract_doc` (`planned`)
-4. `bench_common_v3` (`small_job`): `suite_contract_artifact_v2` (`planned`)
-5. `bitmap_output_v3` (`small_job`): `bench_common_v3` (`implemented`), `suite_contract_artifact_v2` (`planned`)
-6. `numeric_kernels_v3` (`small_job`): `bench_common_v3` (`implemented`), `suite_contract_artifact_v2` (`planned`)
-7. `structural_kernels_v3` (`small_job`): `bench_common_v3` (`implemented`), `suite_contract_artifact_v2` (`planned`)
-8. `compare_harness_v3` (`small_job`): `bench_common_v3` (`implemented`), `bitmap_output_v3` (`implemented`), `numeric_kernels_v3` (`implemented`), `structural_kernels_v3` (`implemented`), `suite_contract_artifact_v2` (`planned`)
-9. `docs_baseline_v3` (`small_job`): `compare_harness_v3` (`implemented`), `suite_contract_artifact_v2` (`planned`)
+4. `suite_contract_artifact_v3` (`reference_doc`): `suite_contract_artifact_v2` (`planned`)
+5. `bench_common_v4` (`small_job`): `suite_contract_artifact_v3` (`planned`)
+6. `bitmap_output_v4` (`small_job`): `bench_common_v4` (`implemented`), `suite_contract_artifact_v3` (`planned`)
+7. `numeric_kernels_v4` (`small_job`): `bench_common_v4` (`implemented`), `suite_contract_artifact_v3` (`planned`)
+8. `structural_kernels_v4` (`small_job`): `bench_common_v4` (`implemented`), `suite_contract_artifact_v3` (`planned`)
+9. `compare_harness_v4` (`small_job`): `bench_common_v4` (`implemented`), `bitmap_output_v4` (`implemented`), `numeric_kernels_v4` (`implemented`), `structural_kernels_v4` (`implemented`), `suite_contract_artifact_v3` (`planned`)
+10. `docs_baseline_v4` (`small_job`): `compare_harness_v4` (`implemented`), `suite_contract_artifact_v3` (`planned`)
 
 ## Nodes
 
@@ -91,18 +92,41 @@ Produce the missing concrete suite-spec artifact at `docs/design/166-benchmarksg
 - The doc stays materially aligned with the merged issue #173 reference doc and names the exact planned source, fixture, vendor, script, and results paths that later nodes will touch.
 - The child issue lands only the missing concrete suite-spec doc artifact.
 
-### `bench_common_v3`
+### `suite_contract_artifact_v3`
+
+- Kind: `reference_doc`
+- Title: Materialize the concrete benchmark game suite spec artifact on main
+- Depends on: `suite_contract_artifact_v2` (`planned`)
+
+#### Body
+
+Produce the concrete suite-spec artifact at `docs/design/166-benchmarksgame-suite.md` on the default branch so downstream implementation nodes can consume the promised contract file directly.
+
+## Direct Inputs
+- `suite_contract_artifact_v2` (`planned`): the merged corrective reference doc at `docs/design/176-create-the-missing-concrete-benchmark-game-suite-spec-artifact.md`.
+
+## Scope
+- Add `docs/design/166-benchmarksgame-suite.md` by transcribing the reviewed contract from the merged issue #176 reference doc without widening scope beyond the already approved benchmark matrix, deferred-benchmark rationale, pinned Java/C source pages, repo layout conventions, validation rules, and single-machine comparison protocol.
+- Keep this issue doc-only and artifact-focused: create the missing concrete suite-spec file and only the minimal doc cross-links strictly required for clarity. Do not touch `src/`, `fixtures/`, `vendor/`, `scripts/`, `README.md`, or benchmark result artifacts.
+- Preserve the exact planned downstream path names and command-shape contract so later workers can rely on `docs/design/166-benchmarksgame-suite.md` alone instead of reconstructing intent from the issue #176 planning doc.
+
+## Acceptance Criteria
+- `docs/design/166-benchmarksgame-suite.md` exists on the default branch and contains the full phase-1 benchmark contract needed by downstream implementation nodes.
+- The doc stays materially aligned with the merged issue #176 reference doc and preserves the exact benchmark list, path names, validation rules, and comparison protocol it specifies.
+- The child issue lands only the missing concrete suite-spec doc artifact.
+
+### `bench_common_v4`
 
 - Kind: `small_job`
 - Title: Add shared benchmark game harness utilities
-- Depends on: `suite_contract_artifact_v2` (`planned`)
+- Depends on: `suite_contract_artifact_v3` (`planned`)
 
 #### Body
 
 Build the shared benchmark-game support layer that all benchmark implementations will use.
 
 ## Direct Inputs
-- `suite_contract_artifact_v2` (`planned`): the merged suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
+- `suite_contract_artifact_v3` (`planned`): the merged suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
 
 ## Scope
 - Add shared Bosatsu support under `src/Zafu/Benchmark/Game/` for command-line argument normalization, structured benchmark results, CSV row rendering, and reusable validation or output helpers required by the suite spec.
@@ -115,19 +139,19 @@ Build the shared benchmark-game support layer that all benchmark implementations
 - New common modules are fully exercised by repo tests and fit existing Bosatsu style.
 - `scripts/test.sh` passes.
 
-### `bitmap_output_v3`
+### `bitmap_output_v4`
 
 - Kind: `small_job`
 - Title: Implement the mandelbrot benchmark program
-- Depends on: `bench_common_v3` (`implemented`), `suite_contract_artifact_v2` (`planned`)
+- Depends on: `bench_common_v4` (`implemented`), `suite_contract_artifact_v3` (`planned`)
 
 #### Body
 
 Implement `mandelbrot` with exact portable-bitmap output.
 
 ## Direct Inputs
-- `suite_contract_artifact_v2` (`planned`): the merged suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
-- `bench_common_v3` (`implemented`): the shipped shared benchmark-game helpers from the common harness node.
+- `suite_contract_artifact_v3` (`planned`): the merged suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
+- `bench_common_v4` (`implemented`): the shipped shared benchmark-game helpers from the common harness node.
 
 ## Scope
 - Add a pure pixel and row-generation core plus a thin runnable `main` entrypoint under `src/Zafu/Benchmark/Game/`.
@@ -140,19 +164,19 @@ Implement `mandelbrot` with exact portable-bitmap output.
 - The executable runs on both Bosatsu JVM and C targets.
 - Changed Bosatsu modules reach the repo's 100% coverage target and `scripts/test.sh` passes.
 
-### `numeric_kernels_v3`
+### `numeric_kernels_v4`
 
 - Kind: `small_job`
 - Title: Implement n-body and spectral-norm benchmark programs
-- Depends on: `bench_common_v3` (`implemented`), `suite_contract_artifact_v2` (`planned`)
+- Depends on: `bench_common_v4` (`implemented`), `suite_contract_artifact_v3` (`planned`)
 
 #### Body
 
 Implement the numeric phase-1 benchmarks: `n-body` and `spectral-norm`.
 
 ## Direct Inputs
-- `suite_contract_artifact_v2` (`planned`): the merged suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
-- `bench_common_v3` (`implemented`): the shipped shared benchmark-game helpers from the common harness node.
+- `suite_contract_artifact_v3` (`planned`): the merged suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
+- `bench_common_v4` (`implemented`): the shipped shared benchmark-game helpers from the common harness node.
 
 ## Scope
 - Add pure kernel modules plus thin runnable `main` entrypoints for `n-body` and `spectral-norm` under `src/Zafu/Benchmark/Game/`.
@@ -165,19 +189,19 @@ Implement the numeric phase-1 benchmarks: `n-body` and `spectral-norm`.
 - Both programs run through `./bosatsu eval --run` and `./bosatsu build` on the chosen entrypoints.
 - Changed Bosatsu modules reach the repo's 100% coverage target and `scripts/test.sh` stays green.
 
-### `structural_kernels_v3`
+### `structural_kernels_v4`
 
 - Kind: `small_job`
 - Title: Implement binary-trees and fannkuch-redux benchmark programs
-- Depends on: `bench_common_v3` (`implemented`), `suite_contract_artifact_v2` (`planned`)
+- Depends on: `bench_common_v4` (`implemented`), `suite_contract_artifact_v3` (`planned`)
 
 #### Body
 
 Implement the allocation and permutation phase-1 benchmarks: `binary-trees` and `fannkuch-redux`.
 
 ## Direct Inputs
-- `suite_contract_artifact_v2` (`planned`): the merged suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
-- `bench_common_v3` (`implemented`): the shipped shared benchmark-game helpers from the common harness node.
+- `suite_contract_artifact_v3` (`planned`): the merged suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
+- `bench_common_v4` (`implemented`): the shipped shared benchmark-game helpers from the common harness node.
 
 ## Scope
 - Add pure kernels plus thin runnable `main` entrypoints for `binary-trees` and `fannkuch-redux` under `src/Zafu/Benchmark/Game/`.
@@ -190,22 +214,22 @@ Implement the allocation and permutation phase-1 benchmarks: `binary-trees` and 
 - Both programs run through `./bosatsu eval --run` and `./bosatsu build` on the chosen entrypoints.
 - Changed Bosatsu modules reach the repo's 100% coverage target and `scripts/test.sh` stays green.
 
-### `compare_harness_v3`
+### `compare_harness_v4`
 
 - Kind: `small_job`
 - Title: Vendor Java and C baselines and add the comparison runner
-- Depends on: `bench_common_v3` (`implemented`), `bitmap_output_v3` (`implemented`), `numeric_kernels_v3` (`implemented`), `structural_kernels_v3` (`implemented`), `suite_contract_artifact_v2` (`planned`)
+- Depends on: `bench_common_v4` (`implemented`), `bitmap_output_v4` (`implemented`), `numeric_kernels_v4` (`implemented`), `structural_kernels_v4` (`implemented`), `suite_contract_artifact_v3` (`planned`)
 
 #### Body
 
 Vendor the comparison baselines and make local cross-language runs reproducible.
 
 ## Direct Inputs
-- `suite_contract_artifact_v2` (`planned`): the merged suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
-- `bench_common_v3` (`implemented`): the shipped benchmark-game result schema and shared helpers.
-- `numeric_kernels_v3` (`implemented`): the shipped Bosatsu `n-body` and `spectral-norm` programs.
-- `structural_kernels_v3` (`implemented`): the shipped Bosatsu `binary-trees` and `fannkuch-redux` programs.
-- `bitmap_output_v3` (`implemented`): the shipped Bosatsu `mandelbrot` program.
+- `suite_contract_artifact_v3` (`planned`): the merged suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
+- `bench_common_v4` (`implemented`): the shipped benchmark-game result schema and shared helpers.
+- `numeric_kernels_v4` (`implemented`): the shipped Bosatsu `n-body` and `spectral-norm` programs.
+- `structural_kernels_v4` (`implemented`): the shipped Bosatsu `binary-trees` and `fannkuch-redux` programs.
+- `bitmap_output_v4` (`implemented`): the shipped Bosatsu `mandelbrot` program.
 
 ## Scope
 - Vendor the exact Java and C reference sources named in the suite spec under a checked-in directory, together with a small provenance manifest that records source URLs, date or commit identifiers, required compiler flags, and benchmark arguments.
@@ -218,19 +242,19 @@ Vendor the comparison baselines and make local cross-language runs reproducible.
 - Reference program provenance is explicit and reproducible.
 - Result normalization is tested, and the repo test suite remains green.
 
-### `docs_baseline_v3`
+### `docs_baseline_v4`
 
 - Kind: `small_job`
 - Title: Document the benchmark workflow and capture a first baseline
-- Depends on: `compare_harness_v3` (`implemented`), `suite_contract_artifact_v2` (`planned`)
+- Depends on: `compare_harness_v4` (`implemented`), `suite_contract_artifact_v3` (`planned`)
 
 #### Body
 
 Document the workflow and check in a first reproducible local baseline.
 
 ## Direct Inputs
-- `suite_contract_artifact_v2` (`planned`): the merged suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
-- `compare_harness_v3` (`implemented`): the shipped comparison runner, vendored baselines, and normalized results format.
+- `suite_contract_artifact_v3` (`planned`): the merged suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
+- `compare_harness_v4` (`implemented`): the shipped comparison runner, vendored baselines, and normalized results format.
 
 ## Scope
 - Update `README.md` with how to fetch prerequisites, build the Bosatsu benchmark-game programs, run the comparison harness, and interpret the emitted results without over-claiming benchmarksgame significance.
