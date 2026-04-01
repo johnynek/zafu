@@ -63,7 +63,7 @@ The doc should explicitly mark these out of scope for phase 1 and preserve the r
 | `reverse-complement` | Dominated by streaming byte I/O and line-wrapping behavior rather than the phase-1 kernel and harness support layer. |
 | `regex-redux` | Would mostly measure regex engine or FFI or library behavior, which the repo does not yet abstract cleanly for Bosatsu comparison. |
 | `fasta` | Primarily RNG plus large text emission and mainly serves the deferred text benchmarks; `mandelbrot` already covers exact-output streaming in phase 1. |
-| `pidigits` | Requires arbitrary-precision integer support that does not exist in the current repo or planned shared harness. |
+| `pidigits` | Bosatsu `Int` already supports arbitrary precision, but `pidigits` would widen phase 1 beyond the reviewed five-program suite and shift the benchmark mix toward big-integer digit-streaming work instead of the numeric, structural, and bitmap kernels this contract is pinning first. |
 
 ### Benchmark Contract Matrix
 The doc should reproduce the benchmark matrix from `#168` with these exact columns: `Benchmark`, `Why it is in phase 1`, `Benchmarksgame description`, `Official validation source`, `Large-N performance input`, `Required CLI/output contract`, `Pinned Java reference`, and `Pinned C reference`.
