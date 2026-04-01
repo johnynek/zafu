@@ -82,6 +82,10 @@ The repository layout section must name the exact downstream paths reserved by t
 - `docs/benchmarksgame/baseline-local.json`
 - `docs/benchmarksgame/baseline-local.csv`
 
+These names are intentional parts of the pinned contract, not cleanup targets for issue `#176`. The `mandelbrot` fixture keeps the `n200` suffix because the checked-in PBM sample is tied to the exact validation input used by the byte-compare rule, while the text fixtures reuse the benchmark-specific output names already reviewed in `#173`.
+
+The vendored C filenames also retain the source identifier in the basename so the local file name, pinned benchmarksgame page, and `vendor/benchmarksgame/manifest.json` provenance entry stay unambiguous. The Java entries keep the simpler `.java` basenames because their source identity is already carried by the containing directory plus the manifest metadata.
+
 The comparison protocol section should preserve the four local targets `bosatsu_jvm`, `bosatsu_c`, `java`, and `c`; their reviewed build and run command shapes; validation-before-measurement; warmups; five measured repeats; fixed benchmark ordering with rotated target order; `mandelbrot` file-handling rules; required metadata capture; and the JSON plus CSV result artifact format. It should also retain the reviewed caveats that benchmarksgame leaderboard timings are not directly comparable to local results, that the pinned Java sources are benchmarksgame `graalvmaot` submissions run locally on HotSpot, and that phase-1 results are informational rather than CI gates.
 
 The direct source of truth for this issue is `docs/design/173-author-the-concrete-benchmark-game-suite-spec-document.md`. If earlier planning artifacts use slightly different wording or filename spellings, prefer the merged `#173` reference doc for the concrete file created by issue #176.
