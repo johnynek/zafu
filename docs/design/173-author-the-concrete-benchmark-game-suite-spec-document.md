@@ -78,6 +78,7 @@ The doc should reproduce the benchmark matrix from `#168` with these exact colum
 
 ### Repository Layout Conventions
 The concrete suite spec should carry forward these conventions explicitly:
+- `src/zafu_conf.json` remains the package-level build configuration entrypoint. Downstream benchmark-game work should update it to expose any new `Zafu/Benchmark/Game/*` packages and keep the Bosatsu dependency or build metadata needed for both JVM and C benchmark entrypoints centralized in one file.
 - Each Bosatsu benchmark package lives in its own `src/Zafu/Benchmark/Game/*.bosatsu` file and exports a thin `main` with pure helpers kept testable alongside a paired `*Tests` file.
 - `src/Zafu/Benchmark/Game/Harness.bosatsu` owns CLI normalization, stable result rows, validation helpers, and shared formatting so later benchmark nodes do not duplicate that logic.
 - `fixtures/benchmarksgame/` stores the official small-input validation artifacts exactly as downloaded. `n-body` is the only tolerance-based validator; the other four benchmarks validate by exact text or byte compare.
@@ -141,7 +142,7 @@ vendor/benchmarksgame/java/fannkuchredux-graalvmaot-2/fannkuchredux.java
 vendor/benchmarksgame/java/mandelbrot-graalvmaot-8/mandelbrot.java
 vendor/benchmarksgame/c/nbody-gcc-6/nbody.gcc-6.c
 vendor/benchmarksgame/c/spectralnorm-gcc-8/spectralnorm.gcc-8.c
-vendor/benchmarksgame/c/binarytrees-gcc-1/binarytrees.c
+vendor/benchmarksgame/c/binarytrees-gcc-1/binarytrees.gcc-1.c
 vendor/benchmarksgame/c/fannkuchredux-gcc-3/fannkuchredux.gcc-3.c
 vendor/benchmarksgame/c/mandelbrot-gcc-8/mandelbrot.gcc-8.c
 
