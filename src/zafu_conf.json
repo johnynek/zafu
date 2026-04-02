@@ -14,6 +14,8 @@
     "Zafu/Abstract/Ord",
     "Zafu/Abstract/Semigroup",
     "Zafu/Abstract/Traverse",
+    "Zafu/Benchmark/Game/BinaryTrees",
+    "Zafu/Benchmark/Game/FannkuchRedux",
     "Zafu/Benchmark/Game/Harness",
     "Zafu/Benchmark/Vector",
     "Zafu/Collection/Chain",

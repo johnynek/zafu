@@ -1,0 +1,268 @@
+package Zafu/Benchmark/Game/FannkuchRedux
+
+from Bosatsu/Collection/Array import (
+  Array,
+  from_List_Array,
+  get_or_Array,
+  set_or_self_Array,
+  size_Array,
+  tabulate_Array,
+  to_List_Array,
+)
+from Bosatsu/Prog import (
+  Main,
+  Prog,
+  await,
+  pure,
+  recover,
+)
+from Bosatsu/IO/Core import (
+  stderr,
+  stdout,
+  write_utf8,
+)
+from Bosatsu/IO/Error import (
+  IOError,
+  error_to_String,
+)
+from Bosatsu/Predef import (
+  int_to_String,
+)
+from Zafu/Benchmark/Game/Harness import (
+  RunInput,
+  ExitCli,
+  StdoutChannel,
+  StderrChannel,
+  parse_benchmark_cli,
+  render_text_output,
+)
+
+export (
+  FannkuchResult(),
+  rotate_prefix_left,
+  flip_count,
+  flip_score,
+  first_permutations,
+  run_kernel,
+  render_output,
+  main,
+)
+
+exposes Bosatsu/Prog
+
+struct FannkuchResult(checksum: Int, max_flips: Int)
+
+struct PermutationState(
+  perm: Array[Int],
+  counts: Array[Int],
+  index: Int,
+  odd: Bool,
+)
+
+def min_Int(a: Int, b: Int) -> Int:
+  match cmp_Int(a, b):
+    case LT | EQ:
+      a
+    case GT:
+      b
+
+def max_Int(a: Int, b: Int) -> Int:
+  match cmp_Int(a, b):
+    case LT:
+      b
+    case GT | EQ:
+      a
+
+def rotate_prefix_left_array(values: Array[Int], last_idx: Int) -> Array[Int]:
+  size = size_Array(values)
+  if cmp_Int(size, 1) matches LT | EQ:
+    values
+  else:
+    effective_last = min_Int(last_idx, size.sub(1))
+    if cmp_Int(effective_last, 0) matches LT | EQ:
+      values
+    else:
+      head = get_or_Array(values, 0, _ -> 0)
+      tabulate_Array(size, idx -> (
+        if cmp_Int(idx, effective_last) matches LT:
+          get_or_Array(values, idx.add(1), _ -> head)
+        elif idx.eq_Int(effective_last):
+          head
+        else:
+          get_or_Array(values, idx, _ -> head)
+      ))
+
+def reverse_prefix_array(values: Array[Int], last_idx: Int) -> Array[Int]:
+  size = size_Array(values)
+  if cmp_Int(size, 1) matches LT | EQ:
+    values
+  else:
+    effective_last = min_Int(last_idx, size.sub(1))
+    if cmp_Int(effective_last, 0) matches LT | EQ:
+      values
+    else:
+      # Arrays are immutable here, so a prefix reversal still needs one
+      # replacement array. Keep it to a single tabulation over the source.
+      tabulate_Array(size, idx -> (
+        if cmp_Int(idx, effective_last) matches GT:
+          get_or_Array(values, idx, _ -> 0)
+        else:
+          get_or_Array(values, effective_last.sub(idx), _ -> 0)
+      ))
+
+def flip_count_array(values: Array[Int]) -> Int:
+  n_size = size_Array(values)
+  fuel0 = n_size.mul(n_size).add(1)
+
+  def go(curr: Array[Int], flips: Int, fuel: Int) -> Int:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        flips
+      case _:
+        first = get_or_Array(curr, 0, _ -> 0)
+        if first.eq_Int(0):
+          flips
+        else:
+          go(reverse_prefix_array(curr, first), flips.add(1), fuel.sub(1))
+
+  go(values, 0, fuel0)
+
+def flip_score_array(values: Array[Int]) -> Int:
+  first = get_or_Array(values, 0, _ -> 0)
+  if first.eq_Int(0):
+    0
+  elif get_or_Array(values, first, _ -> -1).eq_Int(0):
+    1
+  else:
+    flip_count_array(values)
+
+def rotate_prefix_left(values: List[Int], last_idx: Int) -> List[Int]:
+  to_List_Array(rotate_prefix_left_array(from_List_Array(values), last_idx))
+
+def flip_count(values: List[Int]) -> Int:
+  flip_count_array(from_List_Array(values))
+
+def flip_score(values: List[Int]) -> Int:
+  flip_score_array(from_List_Array(values))
+
+def initial_state(n: Int) -> PermutationState:
+  PermutationState(
+    tabulate_Array(n, idx -> idx),
+    tabulate_Array(n, _ -> 0),
+    0,
+    False,
+  )
+
+def factorial(n: Int) -> Int:
+  def go(rem: Int, next: Int, acc: Int) -> Int:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        go(rem.sub(1), next.add(1), acc.mul(next))
+
+  go(n, 1, 1)
+
+def next_permutation_state(n: Int, state: PermutationState) -> Option[PermutationState]:
+  PermutationState(perm0, counts0, index0, odd0) = state
+
+  def go(perm: Array[Int], counts: Array[Int], index: Int, odd: Bool, fuel: Int) -> Option[PermutationState]:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        None
+      case _:
+        if cmp_Int(index, n) matches GT | EQ:
+          None
+        else:
+          rotated = rotate_prefix_left_array(perm, index)
+          count_at = get_or_Array(counts, index, _ -> 0)
+          if cmp_Int(count_at, index) matches GT | EQ:
+            next_counts = set_or_self_Array(counts, index, 0)
+            go(rotated, next_counts, index.add(1), odd, fuel.sub(1))
+          else:
+            next_counts = set_or_self_Array(counts, index, count_at.add(1))
+            Some(PermutationState(rotated, next_counts, 1, not(odd)))
+
+  go(perm0, counts0, index0, odd0, n.add(1))
+
+def first_permutations(n: Int, limit: Int) -> List[List[Int]]:
+  if or(cmp_Int(n, 0) matches LT, cmp_Int(limit, 0) matches LT | EQ):
+    []
+  else:
+    available = min_Int(limit, factorial(n))
+
+    def collect(rem: Int, state_opt: Option[PermutationState], rev_acc: List[List[Int]]) -> List[List[Int]]:
+      loop rem:
+        case _ if cmp_Int(rem, 0) matches LT | EQ:
+          rev_acc.reverse()
+        case _:
+          match state_opt:
+            case None:
+              rev_acc.reverse()
+            case Some(state):
+              PermutationState(perm, _, _, _) = state
+              collect(rem.sub(1), next_permutation_state(n, state), [to_List_Array(perm), *rev_acc])
+
+    collect(available, Some(initial_state(n)), [])
+
+def run_kernel(n: Int) -> FannkuchResult:
+  if cmp_Int(n, 0) matches LT:
+    FannkuchResult(0, 0)
+  else:
+    def go(rem: Int, state_opt: Option[PermutationState], checksum: Int, max_flips: Int) -> FannkuchResult:
+      loop rem:
+        case _ if cmp_Int(rem, 0) matches LT | EQ:
+          FannkuchResult(checksum, max_flips)
+        case _:
+          match state_opt:
+            case None:
+              FannkuchResult(checksum, max_flips)
+            case Some(state):
+              PermutationState(perm, _, _, odd) = state
+              flips = flip_score_array(perm)
+              next_checksum = if odd:
+                checksum.sub(flips)
+              else:
+                checksum.add(flips)
+              next_max_flips = max_Int(max_flips, flips)
+              go(rem.sub(1), next_permutation_state(n, state), next_checksum, next_max_flips)
+
+    go(factorial(n), Some(initial_state(n)), 0, 0)
+
+def render_output(n: Int) -> String:
+  FannkuchResult(checksum, max_flips) = run_kernel(n)
+  render_text_output([
+    int_to_String(checksum),
+    "Pfannkuchen(${int_to_String(n)}) = ${int_to_String(max_flips)}",
+  ])
+
+def write_output(channel, output: String) -> Prog[IOError, Unit]:
+  match channel:
+    case StdoutChannel:
+      write_utf8(stdout, output)
+    case StderrChannel:
+      write_utf8(stderr, output)
+
+def normalize_entry_args(args: List[String]) -> List[String]:
+  match args:
+    case ["bosatsu-eval", *tail]:
+      tail
+    case _:
+      args
+
+def run(args: List[String]) -> Prog[IOError, Int]:
+  match parse_benchmark_cli("fannkuch-redux", normalize_entry_args(args)):
+    case RunInput(input):
+      _ <- write_output(StdoutChannel, render_output(input)).await()
+      pure(0)
+    case ExitCli(exit_code, channel, message):
+      _ <- write_output(channel, "${message}\n").await()
+      pure(exit_code)
+
+main: Main = Main(args -> (
+  recover(run(args), err -> (
+    err_msg = "fannkuch-redux failed: ${error_to_String(err)}"
+    _ <- recover(write_utf8(stderr, "${err_msg}\n"), _ -> pure(Unit)).await()
+    pure(1)
+  ))
+))
