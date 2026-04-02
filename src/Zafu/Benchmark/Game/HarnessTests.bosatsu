@@ -5,6 +5,10 @@ from Bosatsu/Char import (
   string_to_Char_List,
 )
 
+from Bosatsu/IO/Bytes import (
+  from_List_Int,
+)
+
 from Zafu/Control/Result import (
   Ok,
   Err,
@@ -22,8 +26,11 @@ from Zafu/Benchmark/Game/Harness import (
   render_csv_row,
   render_benchmark_result_csv_row,
   render_text_output,
+  render_binary_output,
   normalize_text_fixture,
   validate_exact_text_output,
+  validate_float_lines_output,
+  validate_exact_bytes_output,
 )
 
 def contains_prefix(chars: List[Char], prefix: List[Char]) -> Bool:
@@ -109,11 +116,61 @@ tests = TestSuite("Benchmark game harness tests", [
     "exact validation compares normalized fixtures",
   ),
   Assertion(
+    match validate_exact_text_output("spectral-norm", "1.234567890\n", "1.234567890"):
+      case Err(message):
+        contains_text(message, "output must end with a newline")
+      case Ok(_):
+        False,
+    "exact validation preserves the required terminal newline",
+  ),
+  Assertion(
     match validate_exact_text_output("binary-trees", "a\nb\n", "a\nc\n"):
       case Err(message):
         contains_text(message, "binary-trees validation failed at character offset 2")
       case Ok(_):
         False,
     "exact validation reports the first mismatch offset",
+  ),
+  Assertion(
+    validate_float_lines_output(
+      "n-body",
+      0.00000001,
+      "-0.169075164\n-0.169059907\n",
+      "-0.169075155\n-0.169059907\n",
+    ) matches Ok(_),
+    "float-line validation accepts values within the absolute tolerance",
+  ),
+  Assertion(
+    match validate_float_lines_output(
+      "n-body",
+      0.00000001,
+      "-0.169075164\n-0.169059907\n",
+      "-0.169075140\n-0.169059907\n",
+    ):
+      case Err(message):
+        contains_text(message, "n-body validation failed at line 1")
+      case Ok(_):
+        False,
+    "float-line validation reports out-of-tolerance lines",
+  ),
+  Assertion(
+    validate_exact_bytes_output(
+      "mandelbrot",
+      from_List_Int([80, 52, 10, 0, 255]),
+      render_binary_output([from_List_Int([80, 52, 10]), from_List_Int([0, 255])]),
+    ) matches Ok(_),
+    "binary output rendering concatenates exact byte chunks",
+  ),
+  Assertion(
+    match validate_exact_bytes_output(
+      "mandelbrot",
+      from_List_Int([80, 52, 10, 0, 255]),
+      from_List_Int([80, 52, 10, 1, 255]),
+    ):
+      case Err(message):
+        contains_text(message, "mandelbrot validation failed at byte offset 3")
+      case Ok(_):
+        False,
+    "byte validation reports the first mismatched byte",
   ),
 ])
