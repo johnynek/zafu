@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The native Bosatsu CLI can exhaust smaller default stacks on generated
+# fixture-heavy modules in CI. Raise the soft limit when the host allows it.
+ulimit -S -s 16384 2>/dev/null || true
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
