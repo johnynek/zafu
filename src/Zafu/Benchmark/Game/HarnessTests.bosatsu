@@ -65,9 +65,26 @@ tests = TestSuite("Benchmark game harness tests", [
   Assertion(benchmark_result_csv_header matches "benchmark,target,input,repeat_index,elapsed_ns,exit_code,validation_passed,source_id,git_sha,timestamp_utc", "csv header stays stable"),
   Assertion(normalize_cli_args(["binary-trees", "21"]) matches ["21"], "normalize strips command names"),
   Assertion(normalize_cli_args(["21"]) matches ["21"], "normalize keeps direct integer argv"),
+  Assertion(normalize_cli_args(["oops", "21"]) matches ["oops", "21"], "normalize keeps invalid direct argv intact"),
   Assertion(
     parse_benchmark_cli("n-body", ["n-body", "1000"]) matches RunInput(1000),
     "cli parsing accepts a required integer input",
+  ),
+  Assertion(
+    match parse_benchmark_cli("binary-trees", ["oops", "21"]):
+      case ExitCli(2, StderrChannel, _):
+        True
+      case _:
+        False,
+    "cli parsing does not treat invalid direct argv as argv0",
+  ),
+  Assertion(
+    match parse_benchmark_cli("binary-trees", ["oops"]):
+      case ExitCli(2, StderrChannel, _):
+        True
+      case _:
+        False,
+    "cli parsing rejects a single invalid direct argv token",
   ),
   Assertion(
     match parse_benchmark_cli("spectral-norm", ["/tmp/spectral-norm", "--help"]):

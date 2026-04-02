@@ -98,6 +98,26 @@ benchmark_result_csv_header =
 def keep_leading_cli_token(token: String) -> Bool:
   or(token matches "-${_}", string_to_Int(token) matches Some(_))
 
+def contains_path_separator(token: String) -> Bool:
+  def loop_chars(rem: List[Char]) -> Bool:
+    loop rem:
+      case []:
+        False
+      case [.'/', *_]:
+        True
+      case [_, *tail]:
+        loop_chars(tail)
+
+  loop_chars(string_to_Char_List(token))
+
+def is_benchmark_command_name(token: String) -> Bool:
+  token matches "n-body" | "spectral-norm" | "binary-trees" | "fannkuch-redux" | "mandelbrot"
+
+# Only strip argv0 when it is clearly the benchmark executable or path.
+# Invalid direct argv should stay intact so the shared CLI path rejects them.
+def looks_like_argv0(token: String) -> Bool:
+  or(is_benchmark_command_name(token), contains_path_separator(token))
+
 def normalize_cli_args(args: List[String]) -> List[String]:
   match args:
     case []:
@@ -105,8 +125,10 @@ def normalize_cli_args(args: List[String]) -> List[String]:
     case [head, *tail]:
       if keep_leading_cli_token(head):
         args
-      else:
+      elif looks_like_argv0(head):
         tail
+      else:
+        args
 
 def benchmark_command(command_name: String):
   with_help_flag(cli_command(command_name, positional(int_value(text("N")), arg_info)))
