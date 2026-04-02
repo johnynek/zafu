@@ -35,7 +35,7 @@ def reverse_prefix_model(values: List[Int], first: Int) -> List[Int]:
   [*front.reverse(), *back]
 
 def flip_count_model(values: List[Int]) -> Int:
-  fuel0 = values.foldl_List(0, (acc, _) -> acc.add(1))
+  fuel0 = length_List(values)
   max_fuel = fuel0.mul(fuel0).add(1)
 
   def go(curr: List[Int], flips: Int, fuel: Int) -> Int:

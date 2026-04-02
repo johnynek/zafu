@@ -118,7 +118,8 @@ def reverse_prefix_array(values: Array[Int], last_idx: Int) -> Array[Int]:
       go(swap_count, values, 0, effective_last)
 
 def flip_count_array(values: Array[Int]) -> Int:
-  fuel0 = size_Array(values).mul(size_Array(values)).add(1)
+  n_size = size_Array(values)
+  fuel0 = n_size.mul(n_size).add(1)
 
   def go(curr: Array[Int], flips: Int, fuel: Int) -> Int:
     loop fuel:
