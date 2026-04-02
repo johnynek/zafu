@@ -1,0 +1,267 @@
+package Zafu/Benchmark/Game/Harness
+
+from Bosatsu/Char import (
+  char_to_Int,
+  string_to_Char_List,
+)
+
+from Zafu/Control/Result import (
+  Result,
+  Ok,
+  Err,
+)
+
+from Zafu/Text/Pretty import (
+  render_String as render,
+  text,
+)
+
+from Zafu/Cli/Args import (
+  arg_info,
+  command as cli_command,
+  default_parse_config,
+  int_value,
+  parse as parse_cli,
+  positional,
+  with_help_flag,
+)
+
+from Zafu/Cli/Args/Types import (
+  Parsed,
+  RequestedHelp,
+  RequestedVersion,
+  Failed,
+)
+
+export (
+  OutputChannel(),
+  BenchmarkCli(),
+  BenchmarkRunResult(),
+  benchmark_result_csv_header,
+  normalize_cli_args,
+  parse_benchmark_cli,
+  render_csv_row,
+  render_benchmark_result_csv_row,
+  render_text_output,
+  normalize_text_fixture,
+  render_validation_error,
+  validate_exact_text_output,
+)
+
+exposes (
+  Zafu/Control/Result,
+)
+
+enum OutputChannel:
+  StdoutChannel
+  StderrChannel
+
+enum BenchmarkCli:
+  RunInput(input: Int)
+  ExitCli(exit_code: Int, channel: OutputChannel, message: String)
+
+struct BenchmarkRunResult(
+  benchmark: String,
+  target: String,
+  input: Int,
+  repeat_index: Int,
+  elapsed_ns: Int,
+  exit_code: Int,
+  validation_passed: Bool,
+  source_id: String,
+  git_sha: String,
+  timestamp_utc: String,
+)
+
+benchmark_result_csv_header =
+  "benchmark,target,input,repeat_index,elapsed_ns,exit_code,validation_passed,source_id,git_sha,timestamp_utc"
+
+def keep_leading_cli_token(token: String) -> Bool:
+  or(token matches "-${_}", string_to_Int(token) matches Some(_))
+
+def normalize_cli_args(args: List[String]) -> List[String]:
+  match args:
+    case []:
+      []
+    case [head, *tail]:
+      if keep_leading_cli_token(head):
+        args
+      else:
+        tail
+
+def benchmark_command(command_name: String):
+  with_help_flag(cli_command(command_name, positional(int_value(text("N")), arg_info)))
+
+def parse_benchmark_cli(command_name: String, args: List[String]) -> BenchmarkCli:
+  cli_args = normalize_cli_args(args)
+  match parse_cli(default_parse_config, benchmark_command(command_name), cli_args):
+    case Parsed(input):
+      RunInput(input)
+    case RequestedHelp(_, doc):
+      ExitCli(0, StdoutChannel, render(doc, 80))
+    case RequestedVersion(doc):
+      ExitCli(0, StdoutChannel, render(doc, 80))
+    case Failed(_, doc):
+      ExitCli(2, StderrChannel, render(doc, 80))
+
+def bool_to_csv(value: Bool) -> String:
+  if value:
+    "true"
+  else:
+    "false"
+
+def needs_csv_quotes(value: String) -> Bool:
+  def loop_chars(rem: List[Char]) -> Bool:
+    loop rem:
+      case []:
+        False
+      case [head, *tail]:
+        if head matches .',' | .'\"' | .'\n' | .'\r':
+          True
+        else:
+          loop_chars(tail)
+
+  loop_chars(string_to_Char_List(value))
+
+def escape_csv_quotes(value: String) -> String:
+  def loop_chars(rem: List[Char], rev_parts: List[String]) -> String:
+    loop rem:
+      case []:
+        concat_String(rev_parts.reverse())
+      case [.'\"', *tail]:
+        loop_chars(tail, ["\"\"", *rev_parts])
+      case [head, *tail]:
+        loop_chars(tail, [char_to_String(head), *rev_parts])
+
+  loop_chars(string_to_Char_List(value), [])
+
+def render_csv_field(value: String) -> String:
+  if needs_csv_quotes(value):
+    "\"${escape_csv_quotes(value)}\""
+  else:
+    value
+
+def render_csv_row(fields: List[String]) -> String:
+  match fields:
+    case []:
+      ""
+    case [head, *tail]:
+      def loop_fields(rem: List[String], rev_parts: List[String]) -> String:
+        loop rem:
+          case []:
+            concat_String(rev_parts.reverse())
+          case [next, *rest]:
+            loop_fields(rest, [render_csv_field(next), ",", *rev_parts])
+
+      loop_fields(tail, [render_csv_field(head)])
+
+def render_benchmark_result_csv_row(result: BenchmarkRunResult) -> String:
+  BenchmarkRunResult(
+    benchmark,
+    target,
+    input,
+    repeat_index,
+    elapsed_ns,
+    exit_code,
+    validation_passed,
+    source_id,
+    git_sha,
+    timestamp_utc,
+  ) = result
+
+  render_csv_row([
+    benchmark,
+    target,
+    int_to_String(input),
+    int_to_String(repeat_index),
+    int_to_String(elapsed_ns),
+    int_to_String(exit_code),
+    bool_to_csv(validation_passed),
+    source_id,
+    git_sha,
+    timestamp_utc,
+  ])
+
+def render_text_output(lines: List[String]) -> String:
+  def loop_lines(rem: List[String], rev_parts: List[String]) -> String:
+    loop rem:
+      case []:
+        concat_String(rev_parts.reverse())
+      case [line, *tail]:
+        loop_lines(tail, ["\n", line, *rev_parts])
+
+  loop_lines(lines, [])
+
+def normalize_line_endings(value: String) -> String:
+  def loop_chars(rem: List[Char], rev_parts: List[String]) -> String:
+    loop rem:
+      case []:
+        concat_String(rev_parts.reverse())
+      case [.'\r', .'\n', *tail]:
+        loop_chars(tail, ["\n", *rev_parts])
+      case [.'\r', *tail]:
+        loop_chars(tail, ["\n", *rev_parts])
+      case [head, *tail]:
+        loop_chars(tail, [char_to_String(head), *rev_parts])
+
+  loop_chars(string_to_Char_List(value), [])
+
+def ends_with_newline(value: String) -> Bool:
+  match string_to_Char_List(value).reverse():
+    case [.'\n', *_]:
+      True
+    case _:
+      False
+
+def normalize_text_fixture(value: String) -> String:
+  normalized = normalize_line_endings(value)
+  if normalized matches "":
+    ""
+  elif ends_with_newline(normalized):
+    normalized
+  else:
+    "${normalized}\n"
+
+def chars_eq(left: Char, right: Char) -> Bool:
+  char_to_Int(left).eq_Int(char_to_Int(right))
+
+def strings_eq(left: String, right: String) -> Bool:
+  cmp_String(left, right) matches EQ
+
+def first_difference_offset(expected: String, actual: String) -> Option[Int]:
+  def loop_chars(index: Int, left: List[Char], right: List[Char]) -> Option[Int]:
+    loop left:
+      case []:
+        match right:
+          case []:
+            None
+          case _:
+            Some(index)
+      case [left_head, *left_tail]:
+        match right:
+          case [right_head, *right_tail]:
+            if chars_eq(left_head, right_head):
+              loop_chars(index.add(1), left_tail, right_tail)
+            else:
+              Some(index)
+          case []:
+            Some(index)
+
+  loop_chars(0, string_to_Char_List(expected), string_to_Char_List(actual))
+
+def render_validation_error(label: String, expected: String, actual: String) -> String:
+  expected_len = length_String(expected)
+  actual_len = length_String(actual)
+  match first_difference_offset(expected, actual):
+    case Some(offset):
+      "${label} validation failed at character offset ${int_to_String(offset)}: expected normalized fixture (${int_to_String(expected_len)} chars), got ${int_to_String(actual_len)} chars"
+    case None:
+      "${label} validation failed: expected normalized fixture (${int_to_String(expected_len)} chars), got ${int_to_String(actual_len)} chars"
+
+def validate_exact_text_output(label: String, expected_fixture: String, actual_output: String) -> Result[String, Unit]:
+  expected = normalize_text_fixture(expected_fixture)
+  actual = normalize_text_fixture(actual_output)
+  if strings_eq(expected, actual):
+    Ok(Unit)
+  else:
+    Err(render_validation_error(label, expected, actual))

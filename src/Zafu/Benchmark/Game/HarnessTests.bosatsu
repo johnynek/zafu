@@ -1,0 +1,119 @@
+package Zafu/Benchmark/Game/HarnessTests
+
+from Bosatsu/Char import (
+  char_to_Int,
+  string_to_Char_List,
+)
+
+from Zafu/Control/Result import (
+  Ok,
+  Err,
+)
+
+from Zafu/Benchmark/Game/Harness import (
+  BenchmarkRunResult,
+  RunInput,
+  ExitCli,
+  StdoutChannel,
+  StderrChannel,
+  benchmark_result_csv_header,
+  normalize_cli_args,
+  parse_benchmark_cli,
+  render_csv_row,
+  render_benchmark_result_csv_row,
+  render_text_output,
+  normalize_text_fixture,
+  validate_exact_text_output,
+)
+
+def contains_prefix(chars: List[Char], prefix: List[Char]) -> Bool:
+  def loop_chars(next_chars: List[Char], next_prefix: List[Char]) -> Bool:
+    loop next_prefix:
+      case []:
+        True
+      case [prefix_head, *prefix_tail]:
+        match next_chars:
+          case [char_head, *char_tail]:
+            if char_to_Int(prefix_head).eq_Int(char_to_Int(char_head)):
+              loop_chars(char_tail, prefix_tail)
+            else:
+              False
+          case []:
+            False
+
+  loop_chars(chars, prefix)
+
+def contains_text(haystack: String, needle: String) -> Bool:
+  needle_chars = string_to_Char_List(needle)
+  def loop_chars(rem_chars: List[Char]) -> Bool:
+    recur rem_chars:
+      case []:
+        needle_chars matches []
+      case [_, *tail_chars]:
+        or(contains_prefix(rem_chars, needle_chars), loop_chars(tail_chars))
+
+  loop_chars(string_to_Char_List(haystack))
+
+tests = TestSuite("Benchmark game harness tests", [
+  Assertion(benchmark_result_csv_header matches "benchmark,target,input,repeat_index,elapsed_ns,exit_code,validation_passed,source_id,git_sha,timestamp_utc", "csv header stays stable"),
+  Assertion(normalize_cli_args(["binary-trees", "21"]) matches ["21"], "normalize strips command names"),
+  Assertion(normalize_cli_args(["21"]) matches ["21"], "normalize keeps direct integer argv"),
+  Assertion(
+    parse_benchmark_cli("n-body", ["n-body", "1000"]) matches RunInput(1000),
+    "cli parsing accepts a required integer input",
+  ),
+  Assertion(
+    match parse_benchmark_cli("spectral-norm", ["/tmp/spectral-norm", "--help"]):
+      case ExitCli(0, StdoutChannel, message):
+        contains_text(message, "N")
+      case _:
+        False,
+    "cli parsing preserves help output after argv normalization",
+  ),
+  Assertion(
+    match parse_benchmark_cli("binary-trees", ["binary-trees"]):
+      case ExitCli(2, StderrChannel, message):
+        contains_text(message, "N")
+      case _:
+        False,
+    "cli parsing reports missing required input",
+  ),
+  Assertion(
+    render_csv_row(["alpha", "needs,comma", "quote\"here"]) matches "alpha,\"needs,comma\",\"quote\"\"here\"",
+    "csv rendering quotes and escapes special fields",
+  ),
+  Assertion(
+    render_benchmark_result_csv_row(
+      BenchmarkRunResult(
+        "n-body",
+        "bosatsu_jvm",
+        50000000,
+        3,
+        123456789,
+        0,
+        True,
+        "nbody-graalvmaot-4",
+        "abc123",
+        "2026-04-01T00:00:00Z",
+      ),
+    ) matches "n-body,bosatsu_jvm,50000000,3,123456789,0,true,nbody-graalvmaot-4,abc123,2026-04-01T00:00:00Z",
+    "benchmark result rows use the suite contract column order",
+  ),
+  Assertion(render_text_output(["alpha", "beta"]) matches "alpha\nbeta\n", "text output joins lines with trailing newlines"),
+  Assertion(
+    normalize_text_fixture("alpha\r\nbeta\rgamma") matches "alpha\nbeta\ngamma\n",
+    "fixture normalization canonicalizes line endings and terminal newlines",
+  ),
+  Assertion(
+    validate_exact_text_output("fannkuch-redux", "first\r\nsecond", "first\nsecond\n") matches Ok(_),
+    "exact validation compares normalized fixtures",
+  ),
+  Assertion(
+    match validate_exact_text_output("binary-trees", "a\nb\n", "a\nc\n"):
+      case Err(message):
+        contains_text(message, "binary-trees validation failed at character offset 2")
+      case Ok(_):
+        False,
+    "exact validation reports the first mismatch offset",
+  ),
+])
