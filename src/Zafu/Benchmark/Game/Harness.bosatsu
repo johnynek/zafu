@@ -1,0 +1,534 @@
+package Zafu/Benchmark/Game/Harness
+
+from Bosatsu/Char import (
+  char_to_Int,
+  is_ascii_digit,
+  string_to_Char_List,
+)
+
+from Bosatsu/IO/Bytes import (
+  Bytes,
+  concat_all_Bytes,
+  get_or_Bytes,
+  size_Bytes,
+)
+
+from Bosatsu/Num/Float64 import (
+  abs,
+  float64_to_String,
+  string_to_Float64,
+  subf,
+)
+
+from Zafu/Control/Result import (
+  Result,
+  Ok,
+  Err,
+)
+
+from Zafu/Text/Pretty import (
+  render_String as render,
+  text,
+)
+
+from Zafu/Cli/Args import (
+  arg_info,
+  command as cli_command,
+  default_parse_config,
+  int_value,
+  parse as parse_cli,
+  positional,
+  with_help_flag,
+)
+
+from Zafu/Cli/Args/Types import (
+  Parsed,
+  RequestedHelp,
+  RequestedVersion,
+  Failed,
+)
+
+export (
+  OutputChannel(),
+  BenchmarkCli(),
+  BenchmarkRunRecord(),
+  BenchmarkRunResult(),
+  to_benchmark_run_result,
+  benchmark_result_csv_header,
+  normalize_cli_args,
+  parse_benchmark_cli,
+  render_csv_row,
+  render_benchmark_result_csv_row,
+  render_text_output,
+  render_binary_output,
+  normalize_text_fixture,
+  render_validation_error,
+  validate_exact_text_output,
+  validate_float_lines_output,
+  validate_exact_bytes_output,
+)
+
+exposes (
+  Bosatsu/IO/Bytes,
+  Zafu/Control/Result,
+)
+
+enum OutputChannel:
+  StdoutChannel
+  StderrChannel
+
+enum BenchmarkCli:
+  RunInput(input: Int)
+  ExitCli(exit_code: Int, channel: OutputChannel, message: String)
+
+# CSV rows intentionally keep the stable 10-column subset. Use
+# `BenchmarkRunRecord` for the full per-run contract and project down when
+# writing the checked-in CSV companion artifact.
+struct BenchmarkRunRecord(
+  benchmark: String,
+  target: String,
+  input: Int,
+  repeat_index: Int,
+  elapsed_ns: Int,
+  exit_code: Int,
+  validation_passed: Bool,
+  source_id: String,
+  source_url: String,
+  build_command: String,
+  run_command: String,
+  git_sha: String,
+  bosatsu_version: String,
+  java_version: String,
+  gcc_version: String,
+  os: String,
+  cpu_model: String,
+  timestamp_utc: String,
+  output_byte_count: Option[Int],
+  output_sha256: Option[String],
+)
+
+struct BenchmarkRunResult(
+  benchmark: String,
+  target: String,
+  input: Int,
+  repeat_index: Int,
+  elapsed_ns: Int,
+  exit_code: Int,
+  validation_passed: Bool,
+  source_id: String,
+  git_sha: String,
+  timestamp_utc: String,
+)
+
+benchmark_result_csv_header =
+  "benchmark,target,input,repeat_index,elapsed_ns,exit_code,validation_passed,source_id,git_sha,timestamp_utc"
+
+def to_benchmark_run_result(record: BenchmarkRunRecord) -> BenchmarkRunResult:
+  BenchmarkRunRecord {
+    benchmark,
+    target,
+    input,
+    repeat_index,
+    elapsed_ns,
+    exit_code,
+    validation_passed,
+    source_id,
+    git_sha,
+    timestamp_utc,
+    ...
+  } = record
+
+  BenchmarkRunResult(
+    benchmark,
+    target,
+    input,
+    repeat_index,
+    elapsed_ns,
+    exit_code,
+    validation_passed,
+    source_id,
+    git_sha,
+    timestamp_utc,
+  )
+
+def keep_leading_cli_token(token: String) -> Bool:
+  or(token matches "-${_}", string_to_Int(token) matches Some(_))
+
+def contains_path_separator(token: String) -> Bool:
+  def loop_chars(rem: List[Char]) -> Bool:
+    loop rem:
+      case []:
+        False
+      case [.'/', *_]:
+        True
+      case [_, *tail]:
+        loop_chars(tail)
+
+  loop_chars(string_to_Char_List(token))
+
+def path_basename(token: String) -> String:
+  def loop_chars(rem: List[Char], rev_parts: List[String]) -> String:
+    loop rem:
+      case []:
+        concat_String(rev_parts)
+      case [.'/', *_]:
+        concat_String(rev_parts)
+      case [head, *tail]:
+        loop_chars(tail, [char_to_String(head), *rev_parts])
+
+  loop_chars(string_to_Char_List(token).reverse(), [])
+
+def looks_like_argv0(command_name: String, token: String) -> Bool:
+  or(
+    eq_String(token, command_name),
+    and(contains_path_separator(token), eq_String(path_basename(token), command_name)),
+  )
+
+# Only strip argv0 when it names the active benchmark executable. Invalid
+# direct argv should stay intact so the shared CLI path rejects the supplied
+# token instead of silently dropping it.
+def normalize_cli_args(command_name: String, args: List[String]) -> List[String]:
+  match args:
+    case []:
+      []
+    case [head, *tail]:
+      if keep_leading_cli_token(head):
+        args
+      elif looks_like_argv0(command_name, head):
+        tail
+      else:
+        args
+
+def benchmark_command(command_name: String):
+  with_help_flag(cli_command(command_name, positional(int_value(text("N")), arg_info)))
+
+def parse_benchmark_cli(command_name: String, args: List[String]) -> BenchmarkCli:
+  cli_args = normalize_cli_args(command_name, args)
+  match parse_cli(default_parse_config, benchmark_command(command_name), cli_args):
+    case Parsed(input):
+      RunInput(input)
+    case RequestedHelp(_, doc):
+      ExitCli(0, StdoutChannel, render(doc, 80))
+    case RequestedVersion(doc):
+      ExitCli(0, StdoutChannel, render(doc, 80))
+    case Failed(_, doc):
+      ExitCli(2, StderrChannel, render(doc, 80))
+
+def bool_to_csv(value: Bool) -> String:
+  "true" if value else "false"
+
+def needs_csv_quotes(value: String) -> Bool:
+  def loop_chars(rem: List[Char]) -> Bool:
+    loop rem:
+      case []:
+        False
+      case [.',' | .'\"' | .'\n' | .'\r', *_]:
+        True
+      case [_, *tail]:
+        loop_chars(tail)
+
+  loop_chars(string_to_Char_List(value))
+
+def escape_csv_quotes(value: String) -> String:
+  def loop_chars(rem: List[Char], rev_parts: List[String]) -> String:
+    loop rem:
+      case []:
+        concat_String(rev_parts.reverse())
+      case [.'\"', *tail]:
+        loop_chars(tail, ["\"\"", *rev_parts])
+      case [head, *tail]:
+        loop_chars(tail, [char_to_String(head), *rev_parts])
+
+  loop_chars(string_to_Char_List(value), [])
+
+def render_csv_field(value: String) -> String:
+  if needs_csv_quotes(value):
+    "\"${escape_csv_quotes(value)}\""
+  else:
+    value
+
+def render_csv_row(fields: List[String]) -> String:
+  match fields:
+    case []:
+      ""
+    case [head, *tail]:
+      def loop_fields(rem: List[String], rev_parts: List[String]) -> String:
+        loop rem:
+          case []:
+            concat_String(rev_parts.reverse())
+          case [next, *rest]:
+            loop_fields(rest, [render_csv_field(next), ",", *rev_parts])
+
+      loop_fields(tail, [render_csv_field(head)])
+
+def render_benchmark_result_csv_row(result: BenchmarkRunResult) -> String:
+  BenchmarkRunResult(
+    benchmark,
+    target,
+    input,
+    repeat_index,
+    elapsed_ns,
+    exit_code,
+    validation_passed,
+    source_id,
+    git_sha,
+    timestamp_utc,
+  ) = result
+
+  render_csv_row([
+    benchmark,
+    target,
+    int_to_String(input),
+    int_to_String(repeat_index),
+    int_to_String(elapsed_ns),
+    int_to_String(exit_code),
+    bool_to_csv(validation_passed),
+    source_id,
+    git_sha,
+    timestamp_utc,
+  ])
+
+def render_text_output(lines: List[String]) -> String:
+  def loop_lines(rem: List[String], rev_parts: List[String]) -> String:
+    loop rem:
+      case []:
+        concat_String(rev_parts.reverse())
+      case [line, *tail]:
+        loop_lines(tail, ["\n", line, *rev_parts])
+
+  loop_lines(lines, [])
+
+def render_binary_output(chunks: List[Bytes]) -> Bytes:
+  concat_all_Bytes(chunks)
+
+def normalize_line_endings(value: String) -> String:
+  def loop_chars(rem: List[Char], rev_parts: List[String]) -> String:
+    loop rem:
+      case []:
+        concat_String(rev_parts.reverse())
+      case [.'\r', .'\n', *tail]:
+        loop_chars(tail, ["\n", *rev_parts])
+      case [.'\r', *tail]:
+        loop_chars(tail, ["\n", *rev_parts])
+      case [head, *tail]:
+        loop_chars(tail, [char_to_String(head), *rev_parts])
+
+  loop_chars(string_to_Char_List(value), [])
+
+def ends_with_newline(value: String) -> Bool:
+  string_to_Char_List(value).reverse() matches [.'\n', *_]
+
+def normalize_text_fixture(value: String) -> String:
+  normalized = normalize_line_endings(value)
+  if normalized matches "":
+    ""
+  elif ends_with_newline(normalized):
+    normalized
+  else:
+    "${normalized}\n"
+
+# Fixtures can normalize line endings for portability, but actual benchmark
+# stdout must be compared exactly as produced so CRLF output still fails the
+# shared suite validators.
+def normalize_actual_text_output(value: String) -> String:
+  value
+
+def split_lines(value: String) -> List[String]:
+  def loop_chars(rem: List[Char], rev_current: List[String], rev_lines: List[String]) -> List[String]:
+    loop rem:
+      case []:
+        if rev_current matches []:
+          rev_lines.reverse()
+        else:
+          [concat_String(rev_current.reverse()), *rev_lines].reverse()
+      case [.'\n', *tail]:
+        next_line = concat_String(rev_current.reverse())
+        loop_chars(tail, [], [next_line, *rev_lines])
+      case [head, *tail]:
+        loop_chars(tail, [char_to_String(head), *rev_current], rev_lines)
+
+  loop_chars(string_to_Char_List(value), [], [])
+
+def render_missing_terminal_newline_error(label: String) -> String:
+  "${label} validation failed: output must end with a newline"
+
+def prepare_text_validation_inputs(label: String, expected_fixture: String, actual_output: String) -> Result[String, (String, String)]:
+  expected = normalize_text_fixture(expected_fixture)
+  actual = normalize_actual_text_output(actual_output)
+  if and(not(actual matches ""), not(ends_with_newline(actual))):
+    Err(render_missing_terminal_newline_error(label))
+  else:
+    Ok((expected, actual))
+
+def chars_eq(left: Char, right: Char) -> Bool:
+  char_to_Int(left).eq_Int(char_to_Int(right))
+
+def first_difference_offset(expected: String, actual: String) -> Option[Int]:
+  def loop_chars(index: Int, left: List[Char], right: List[Char]) -> Option[Int]:
+    loop (left, right):
+      case ([], []):
+        None
+      case ([left_head, *left_tail], [right_head, *right_tail]) if chars_eq(left_head, right_head):
+        loop_chars(index.add(1), left_tail, right_tail)
+      case _:
+        Some(index)
+
+  loop_chars(0, string_to_Char_List(expected), string_to_Char_List(actual))
+
+def render_validation_error(label: String, expected: String, actual: String) -> String:
+  expected_len = length_String(expected)
+  actual_len = length_String(actual)
+  match first_difference_offset(expected, actual):
+    case Some(offset):
+      "${label} validation failed at character offset ${int_to_String(offset)}: expected normalized fixture (${int_to_String(expected_len)} chars), got ${int_to_String(actual_len)} chars"
+    case None:
+      "${label} validation failed: expected normalized fixture (${int_to_String(expected_len)} chars), got ${int_to_String(actual_len)} chars"
+
+def validate_exact_text_output(label: String, expected_fixture: String, actual_output: String) -> Result[String, Unit]:
+  match prepare_text_validation_inputs(label, expected_fixture, actual_output):
+    case Err(message):
+      Err(message)
+    case Ok((expected, actual)):
+      if eq_String(expected, actual):
+        Ok(Unit)
+      else:
+        Err(render_validation_error(label, expected, actual))
+
+def render_line_count_error(label: String, expected_count: Int, actual_count: Int) -> String:
+  "${label} validation failed: expected ${int_to_String(expected_count)} lines, got ${int_to_String(actual_count)}"
+
+def render_float_parse_error(label: String, line_index: Int, which_side: String) -> String:
+  "${label} validation failed at line ${int_to_String(line_index.add(1))}: ${which_side} is not a Float64"
+
+def render_float_format_error(label: String, line_index: Int) -> String:
+  "${label} validation failed at line ${int_to_String(line_index.add(1))}: actual output must use fixed-point decimal formatting with exactly 9 fractional digits"
+
+def render_float_tolerance_error(label: String, line_index: Int, delta: Float64, abs_tolerance: Float64) -> String:
+  "${label} validation failed at line ${int_to_String(line_index.add(1))}: |expected - actual| = ${float64_to_String(delta)} exceeds ${float64_to_String(abs_tolerance)}"
+
+def min_Int(a: Int, b: Int) -> Int:
+  match cmp_Int(a, b):
+    case LT | EQ:
+      a
+    case GT:
+      b
+
+def all_ascii_digits(chars: List[Char]) -> Bool:
+  not(chars matches [*_, d, *_] if not(is_ascii_digit(d)))
+
+def has_fixed_9_fractional_digits(value: String) -> Bool:
+  def unsigned_decimal(chars: List[Char]) -> Bool:
+    def loop_integral(rem: List[Char], saw_digit: Bool) -> Bool:
+      loop rem:
+        case []:
+          False
+        case [.'.', *fraction]:
+          and(saw_digit, and(length_List(fraction).eq_Int(9), all_ascii_digits(fraction)))
+        case [head, *tail]:
+          if is_ascii_digit(head):
+            loop_integral(tail, True)
+          else:
+            False
+
+    loop_integral(chars, False)
+
+  match string_to_Char_List(value):
+    case [.'-', *tail]:
+      unsigned_decimal(tail)
+    case chars:
+      unsigned_decimal(chars)
+
+def validate_float_line_output(
+  label: String,
+  abs_tolerance: Float64,
+  line_index: Int,
+  expected_line: String,
+  actual_line: String,
+) -> Result[String, Unit]:
+  match string_to_Float64(expected_line):
+    case None:
+      Err(render_float_parse_error(label, line_index, "expected fixture"))
+    case Some(expected_value):
+      if not(has_fixed_9_fractional_digits(actual_line)):
+        Err(render_float_format_error(label, line_index))
+      else:
+        match string_to_Float64(actual_line):
+          case None:
+            Err(render_float_parse_error(label, line_index, "actual output"))
+          case Some(actual_value):
+            delta = abs(subf(expected_value, actual_value))
+            if cmp_Float64(delta, abs_tolerance) matches GT:
+              Err(render_float_tolerance_error(label, line_index, delta, abs_tolerance))
+            else:
+              Ok(Unit)
+
+def validate_float_lines_loop(
+  label: String,
+  abs_tolerance: Float64,
+  line_index: Int,
+  expected_lines: List[String],
+  actual_lines: List[String],
+) -> Result[String, Unit]:
+  loop (expected_lines, actual_lines):
+    case ([], []):
+      Ok(Unit)
+    case ([], _):
+      Err(render_line_count_error(label, line_index, line_index.add(length_List(actual_lines))))
+    case (_, []):
+      Err(render_line_count_error(label, line_index.add(length_List(expected_lines)), line_index))
+    case ([expected_head, *expected_tail], [actual_head, *actual_tail]):
+      match validate_float_line_output(label, abs_tolerance, line_index, expected_head, actual_head):
+        case Err(message):
+          Err(message)
+        case Ok(_):
+          validate_float_lines_loop(label, abs_tolerance, line_index.add(1), expected_tail, actual_tail)
+
+def validate_float_lines_output(
+  label: String,
+  abs_tolerance: Float64,
+  expected_fixture: String,
+  actual_output: String,
+) -> Result[String, Unit]:
+  match prepare_text_validation_inputs(label, expected_fixture, actual_output):
+    case Err(message):
+      Err(message)
+    case Ok((expected, actual)):
+      validate_float_lines_loop(label, abs_tolerance, 0, split_lines(expected), split_lines(actual))
+
+def first_difference_offset_bytes(expected: Bytes, actual: Bytes) -> Option[Int]:
+  expected_size = size_Bytes(expected)
+  actual_size = size_Bytes(actual)
+  shared_size = min_Int(expected_size, actual_size)
+
+  def loop_bytes(rem: Int, index: Int) -> Option[Int]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        if expected_size.eq_Int(actual_size):
+          None
+        else:
+          Some(index)
+      case _:
+        expected_byte = get_or_Bytes(expected, index, _ -> -1)
+        actual_byte = get_or_Bytes(actual, index, _ -> -2)
+        if expected_byte.eq_Int(actual_byte):
+          loop_bytes(rem.sub(1), index.add(1))
+        else:
+          Some(index)
+
+  loop_bytes(shared_size, 0)
+
+def render_bytes_validation_error(label: String, expected: Bytes, actual: Bytes) -> String:
+  expected_size = size_Bytes(expected)
+  actual_size = size_Bytes(actual)
+  match first_difference_offset_bytes(expected, actual):
+    case Some(offset):
+      "${label} validation failed at byte offset ${int_to_String(offset)}: expected ${int_to_String(expected_size)} bytes, got ${int_to_String(actual_size)} bytes"
+    case None:
+      "${label} validation failed: expected ${int_to_String(expected_size)} bytes, got ${int_to_String(actual_size)} bytes"
+
+def validate_exact_bytes_output(label: String, expected: Bytes, actual: Bytes) -> Result[String, Unit]:
+  match first_difference_offset_bytes(expected, actual):
+    case None:
+      Ok(Unit)
+    case Some(_):
+      Err(render_bytes_validation_error(label, expected, actual))
