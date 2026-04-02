@@ -51,7 +51,9 @@ from Zafu/Cli/Args/Types import (
 export (
   OutputChannel(),
   BenchmarkCli(),
+  BenchmarkRunRecord(),
   BenchmarkRunResult(),
+  to_benchmark_run_result,
   benchmark_result_csv_header,
   normalize_cli_args,
   parse_benchmark_cli,
@@ -79,6 +81,30 @@ enum BenchmarkCli:
   RunInput(input: Int)
   ExitCli(exit_code: Int, channel: OutputChannel, message: String)
 
+# CSV rows intentionally keep the stable 10-column subset. Use
+# `BenchmarkRunRecord` for the full per-run contract and project down when
+# writing the checked-in CSV companion artifact.
+struct BenchmarkRunRecord(
+  benchmark: String,
+  target: String,
+  input: Int,
+  repeat_index: Int,
+  elapsed_ns: Int,
+  exit_code: Int,
+  validation_passed: Bool,
+  source_id: String,
+  source_url: String,
+  build_command: String,
+  run_command: String,
+  git_sha: String,
+  bosatsu_version: String,
+  java_version: String,
+  gcc_version: String,
+  os: String,
+  cpu_model: String,
+  timestamp_utc: String,
+)
+
 struct BenchmarkRunResult(
   benchmark: String,
   target: String,
@@ -94,6 +120,41 @@ struct BenchmarkRunResult(
 
 benchmark_result_csv_header =
   "benchmark,target,input,repeat_index,elapsed_ns,exit_code,validation_passed,source_id,git_sha,timestamp_utc"
+
+def to_benchmark_run_result(record: BenchmarkRunRecord) -> BenchmarkRunResult:
+  BenchmarkRunRecord(
+    benchmark,
+    target,
+    input,
+    repeat_index,
+    elapsed_ns,
+    exit_code,
+    validation_passed,
+    source_id,
+    _,
+    _,
+    _,
+    git_sha,
+    _,
+    _,
+    _,
+    _,
+    _,
+    timestamp_utc,
+  ) = record
+
+  BenchmarkRunResult(
+    benchmark,
+    target,
+    input,
+    repeat_index,
+    elapsed_ns,
+    exit_code,
+    validation_passed,
+    source_id,
+    git_sha,
+    timestamp_utc,
+  )
 
 def keep_leading_cli_token(token: String) -> Bool:
   or(token matches "-${_}", string_to_Int(token) matches Some(_))
