@@ -43,6 +43,7 @@ from Zafu/Benchmark/Game/Harness import (
 
 from Zafu/Benchmark/Game/Mandelbrot/Internal import (
   header_bytes,
+  nonnegative,
   render_row_bytes,
   should_bridge_binary_stdout,
 )
@@ -64,9 +65,6 @@ def write_channel_line(channel: OutputChannel, message: String) -> Prog[IOError,
     case StderrChannel:
       write_utf8(stderr, "${message}\n")
 
-def row_count(size: Int) -> Int:
-  0 if cmp_Int(size, 0) matches LT else size
-
 def write_rows(handle: Handle, size: Int) -> Prog[IOError, Unit]:
   go = recursive(self -> (state -> (
     RowWriteState(handle0, size0, remaining_rows, row_index) = state
@@ -77,7 +75,7 @@ def write_rows(handle: Handle, size: Int) -> Prog[IOError, Unit]:
       self(RowWriteState(handle0, size0, remaining_rows.sub(1), row_index.add(1)))
   )))
 
-  go(RowWriteState(handle, size, row_count(size), 0))
+  go(RowWriteState(handle, size, nonnegative(size), 0))
 
 def write_bitmap(handle: Handle, size: Int) -> Prog[IOError, Unit]:
   _ <- write_bytes(handle, header_bytes(size)).await()

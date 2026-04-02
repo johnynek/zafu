@@ -16,11 +16,13 @@ from Bosatsu/Num/Float64 import (
 )
 
 from Zafu/Benchmark/Game/Harness import (
+  is_bosatsu_eval_argv0,
   render_binary_output,
 )
 
 export (
   header_bytes,
+  nonnegative,
   pack_row_bits,
   pixel_in_set,
   row_pixels,
@@ -170,12 +172,6 @@ def header_bytes(size: Int) -> Bytes:
 
 def render_output(size: Int) -> Bytes:
   render_binary_output([header_bytes(size), *render_rows(size)])
-
-def is_bosatsu_eval_argv0(token: String) -> Bool:
-  or(
-    token matches "bosatsu-eval",
-    token.rpartition_String("/") matches Some((_, "bosatsu-eval")),
-  )
 
 def should_bridge_binary_stdout(args: List[String]) -> Bool:
   match args:
