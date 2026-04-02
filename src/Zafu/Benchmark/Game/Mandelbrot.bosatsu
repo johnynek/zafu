@@ -28,6 +28,7 @@ from Bosatsu/Prog import (
   await,
   pure,
   raise_error,
+  recursive,
   recover,
 )
 
@@ -41,7 +42,8 @@ from Zafu/Benchmark/Game/Harness import (
 )
 
 from Zafu/Benchmark/Game/Mandelbrot/Internal import (
-  render_output,
+  header_bytes,
+  render_row_bytes,
   should_bridge_binary_stdout,
 )
 
@@ -53,6 +55,8 @@ exposes (
   Bosatsu/Prog,
 )
 
+struct RowWriteState(handle: Handle, size: Int, remaining_rows: Int, row_index: Int)
+
 def write_channel_line(channel: OutputChannel, message: String) -> Prog[IOError, Unit]:
   match channel:
     case StdoutChannel:
@@ -60,8 +64,24 @@ def write_channel_line(channel: OutputChannel, message: String) -> Prog[IOError,
     case StderrChannel:
       write_utf8(stderr, "${message}\n")
 
+def row_count(size: Int) -> Int:
+  0 if cmp_Int(size, 0) matches LT else size
+
+def write_rows(handle: Handle, size: Int) -> Prog[IOError, Unit]:
+  go = recursive(self -> (state -> (
+    RowWriteState(handle0, size0, remaining_rows, row_index) = state
+    if cmp_Int(remaining_rows, 0) matches LT | EQ:
+      pure(Unit)
+    else:
+      _ <- write_bytes(handle0, render_row_bytes(size0, row_index)).await()
+      self(RowWriteState(handle0, size0, remaining_rows.sub(1), row_index.add(1)))
+  )))
+
+  go(RowWriteState(handle, size, row_count(size), 0))
+
 def write_bitmap(handle: Handle, size: Int) -> Prog[IOError, Unit]:
-  write_bytes(handle, render_output(size))
+  _ <- write_bytes(handle, header_bytes(size)).await()
+  write_rows(handle, size)
 
 def close_ignore_error[e](handle: Handle) -> Prog[e, Unit]:
   _ <- recover(close(handle), _ -> pure(Unit)).await()
@@ -69,7 +89,7 @@ def close_ignore_error[e](handle: Handle) -> Prog[e, Unit]:
 
 # `bosatsu eval --run` currently routes stdout through a UTF-8 text path.
 # Stream the PBM bytes into a child that inherits stdout so the JVM runner
-# stays byte-exact while direct executables keep writing to stdout themselves.
+# stays byte-exact while direct executables keep writing row-by-row themselves.
 def write_via_stdout_bridge(size: Int) -> Prog[IOError, Int]:
   child <- spawn("cat", [], StdioConfig(Pipe, Inherit, Inherit)).await()
   SpawnResult(proc, stdin_opt, _, _) = child
