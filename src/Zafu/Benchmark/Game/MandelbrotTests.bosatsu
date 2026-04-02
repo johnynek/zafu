@@ -35,6 +35,14 @@ tests = TestSuite("Mandelbrot benchmark tests", [
   ),
   Assertion(
     validate_exact_bytes_output(
+      "mandelbrot negative header normalization",
+      utf8_bytes_from_String("P4\n0 0\n"),
+      header_bytes(-1),
+    ) matches Ok(_),
+    "negative sizes normalize to an empty portable bitmap header in the pure renderer",
+  ),
+  Assertion(
+    validate_exact_bytes_output(
       "mandelbrot row packing",
       from_List_Int([170, 128]),
       pack_row_bits([True, False, True, False, True, False, True, False, True, False]),

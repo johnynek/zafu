@@ -115,7 +115,10 @@ def run(args: List[String]) -> Prog[IOError, Int]:
       _ <- write_channel_line(channel, message).await()
       pure(exit_code)
     case RunInput(size):
-      if should_bridge_binary_stdout(args):
+      if cmp_Int(size, 0) matches LT:
+        _ <- write_channel_line(StderrChannel, "mandelbrot requires N >= 0").await()
+        pure(2)
+      elif should_bridge_binary_stdout(args):
         write_via_stdout_bridge(size)
       else:
         _ <- write_bitmap(stdout, size).await()

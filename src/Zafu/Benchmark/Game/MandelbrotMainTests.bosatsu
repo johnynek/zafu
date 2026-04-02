@@ -1,0 +1,20 @@
+package Zafu/Benchmark/Game/MandelbrotMainTests
+
+from Bosatsu/Prog import (
+  Main,
+  ProgTest,
+  await,
+  pure,
+)
+
+from Zafu/Benchmark/Game/Mandelbrot import (
+  main,
+)
+
+tests = ProgTest(_ -> (
+  Main(run_main) = main
+  exit_code <- run_main(["-1"]).await()
+  pure(TestSuite("Mandelbrot main tests", [
+    Assertion(exit_code.eq_Int(2), "negative N is rejected with the CLI failure exit code"),
+  ]))
+))

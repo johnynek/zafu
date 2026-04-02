@@ -165,7 +165,8 @@ def render_rows(size: Int) -> List[Bytes]:
   go(row_count, 0, [])
 
 def header_bytes(size: Int) -> Bytes:
-  utf8_bytes_from_String("P4\n${int_to_String(size)} ${int_to_String(size)}\n")
+  safe_size = nonnegative(size)
+  utf8_bytes_from_String("P4\n${int_to_String(safe_size)} ${int_to_String(safe_size)}\n")
 
 def render_output(size: Int) -> Bytes:
   render_binary_output([header_bytes(size), *render_rows(size)])
