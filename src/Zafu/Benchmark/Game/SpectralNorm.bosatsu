@@ -102,10 +102,9 @@ def eval_At_times_u(values: Array[Float64]) -> Array[Float64]:
 def eval_AtA_times_u(values: Array[Float64]) -> Array[Float64]:
   eval_At_times_u(eval_A_times_u(values))
 
+# Mirror the benchmarksgame reference loop: each round advances `u -> v` and
+# then `v -> u`, so `power_iterations_count = 10` means 10 paired updates.
 def power_iterations(values: Array[Float64], rounds: Int) -> (Array[Float64], Array[Float64]):
-  size = size_Array(values)
-  empty = tabulate_Array(size, _ -> 0.0)
-
   def go(rem: Int, current_u: Array[Float64], current_v: Array[Float64]) -> (Array[Float64], Array[Float64]):
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
@@ -115,7 +114,7 @@ def power_iterations(values: Array[Float64], rounds: Int) -> (Array[Float64], Ar
         next_u = eval_AtA_times_u(next_v)
         go(rem.sub(1), next_u, next_v)
 
-  go(rounds, values, empty)
+  go(rounds, values, values)
 
 def dot(left: Array[Float64], right: Array[Float64]) -> Float64:
   total = size_Array(left)

@@ -339,6 +339,8 @@ def render_fixed_9(value: Float64) -> String:
     float64_to_String(value)
   else:
     sign = "-" if has_negative_sign(value) else ""
+    # `float64_to_Int` already rounds finite values to nearest (ties-to-even),
+    # so adding 0.5 here would double-round exact half-step cases.
     scaled = abs(value).mulf(fixed_9_scale_float)
     rounded_abs = match float64_to_Int(scaled):
       case Some(rounded):
