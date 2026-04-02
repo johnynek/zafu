@@ -147,10 +147,12 @@ tests = TestSuite("Benchmark game harness tests", [
           "macOS",
           "M4",
           "2026-04-01T00:00:00Z",
+          Some(8192),
+          Some("0123456789abcdef"),
         ),
       ),
     ) matches "n-body,bosatsu_jvm,50000000,3,123456789,0,true,nbody-graalvmaot-4,abc123,2026-04-01T00:00:00Z",
-    "full run records project to the stable csv row shape",
+    "full run records project to the stable csv row shape while ignoring extra metadata",
   ),
   Assertion(render_text_output(["alpha", "beta"]) matches "alpha\nbeta\n", "text output joins lines with trailing newlines"),
   Assertion(
@@ -168,6 +170,14 @@ tests = TestSuite("Benchmark game harness tests", [
       case Ok(_):
         False,
     "exact validation preserves the required terminal newline",
+  ),
+  Assertion(
+    match validate_exact_text_output("spectral-norm", "1.234567890\n", "1.234567890\r\n"):
+      case Err(message):
+        contains_text(message, "character offset 11")
+      case Ok(_):
+        False,
+    "exact validation rejects CRLF actual output instead of normalizing it",
   ),
   Assertion(
     match validate_exact_text_output("binary-trees", "a\nb\n", "a\nc\n"):

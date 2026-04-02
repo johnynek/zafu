@@ -103,6 +103,8 @@ struct BenchmarkRunRecord(
   os: String,
   cpu_model: String,
   timestamp_utc: String,
+  output_byte_count: Option[Int],
+  output_sha256: Option[String],
 )
 
 struct BenchmarkRunResult(
@@ -141,6 +143,8 @@ def to_benchmark_run_result(record: BenchmarkRunRecord) -> BenchmarkRunResult:
     _,
     _,
     timestamp_utc,
+    _,
+    _,
   ) = record
 
   BenchmarkRunResult(
@@ -328,10 +332,10 @@ def normalize_text_fixture(value: String) -> String:
     "${normalized}\n"
 
 # Fixtures can normalize line endings for portability, but actual benchmark
-# stdout must preserve whether the terminal newline was present so validators
-# still enforce the suite contract.
+# stdout must be compared exactly as produced so CRLF output still fails the
+# shared suite validators.
 def normalize_actual_text_output(value: String) -> String:
-  normalize_line_endings(value)
+  value
 
 def count_items[a](items: List[a]) -> Int:
   def loop_items(rem: List[a], acc: Int) -> Int:
