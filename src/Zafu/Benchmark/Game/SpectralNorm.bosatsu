@@ -1,0 +1,168 @@
+package Zafu/Benchmark/Game/SpectralNorm
+
+from Bosatsu/Prog import (
+  Main,
+  Prog,
+  await,
+  pure,
+  recover,
+)
+from Bosatsu/IO/Core import (
+  stderr,
+  stdout,
+  write_utf8,
+)
+from Bosatsu/IO/Error import (
+  IOError,
+  error_to_String,
+)
+from Bosatsu/Collection/Array import (
+  Array,
+  get_or_Array,
+  size_Array,
+  tabulate_Array,
+)
+from Bosatsu/Num/Float64 import (
+  addf,
+  divf,
+  int_to_Float64,
+  mulf,
+  sqrt,
+)
+from Zafu/Benchmark/Game/Harness import (
+  OutputChannel,
+  RunInput,
+  ExitCli,
+  StdoutChannel,
+  StderrChannel,
+  parse_benchmark_cli,
+  render_fixed_9,
+  render_text_output,
+)
+
+export (
+  main,
+  eval_A,
+  eval_A_times_u,
+  eval_At_times_u,
+  eval_AtA_times_u,
+  spectral_norm,
+  render_spectral_norm_output,
+)
+
+exposes (
+  Bosatsu/Collection/Array,
+  Bosatsu/Prog,
+)
+
+power_iterations_count = 10
+
+def eval_A(i: Int, j: Int) -> Float64:
+  ij = i.add(j)
+  denominator = ij.mul(ij.add(1)).div(2).add(i).add(1)
+  divf(1.0, int_to_Float64(denominator))
+
+def sum_A_row(row_index: Int, values: Array[Float64]) -> Float64:
+  total = size_Array(values)
+
+  def go(rem: Int, col_index: Int, acc: Float64) -> Float64:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        item = get_or_Array(values, col_index, _ -> 0.0)
+        next_acc = addf(acc, mulf(eval_A(row_index, col_index), item))
+        go(rem.sub(1), col_index.add(1), next_acc)
+
+  go(total, 0, 0.0)
+
+def sum_At_row(row_index: Int, values: Array[Float64]) -> Float64:
+  total = size_Array(values)
+
+  def go(rem: Int, col_index: Int, acc: Float64) -> Float64:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        item = get_or_Array(values, col_index, _ -> 0.0)
+        next_acc = addf(acc, mulf(eval_A(col_index, row_index), item))
+        go(rem.sub(1), col_index.add(1), next_acc)
+
+  go(total, 0, 0.0)
+
+def eval_A_times_u(values: Array[Float64]) -> Array[Float64]:
+  size = size_Array(values)
+  tabulate_Array(size, row_index -> sum_A_row(row_index, values))
+
+def eval_At_times_u(values: Array[Float64]) -> Array[Float64]:
+  size = size_Array(values)
+  tabulate_Array(size, row_index -> sum_At_row(row_index, values))
+
+def eval_AtA_times_u(values: Array[Float64]) -> Array[Float64]:
+  eval_At_times_u(eval_A_times_u(values))
+
+def power_iterations(values: Array[Float64], rounds: Int) -> (Array[Float64], Array[Float64]):
+  size = size_Array(values)
+  empty = tabulate_Array(size, _ -> 0.0)
+
+  def go(rem: Int, current_u: Array[Float64], current_v: Array[Float64]) -> (Array[Float64], Array[Float64]):
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        (current_u, current_v)
+      case _:
+        next_v = eval_AtA_times_u(current_u)
+        next_u = eval_AtA_times_u(next_v)
+        go(rem.sub(1), next_u, next_v)
+
+  go(rounds, values, empty)
+
+def dot(left: Array[Float64], right: Array[Float64]) -> Float64:
+  total = size_Array(left)
+
+  def go(rem: Int, index: Int, acc: Float64) -> Float64:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        left_item = get_or_Array(left, index, _ -> 0.0)
+        right_item = get_or_Array(right, index, _ -> 0.0)
+        next_acc = addf(acc, mulf(left_item, right_item))
+        go(rem.sub(1), index.add(1), next_acc)
+
+  go(total, 0, 0.0)
+
+def spectral_norm(size: Int) -> Float64:
+  if cmp_Int(size, 0) matches LT | EQ:
+    0.0
+  else:
+    initial = tabulate_Array(size, _ -> 1.0)
+    (u, v) = power_iterations(initial, power_iterations_count)
+    sqrt(divf(dot(u, v), dot(v, v)))
+
+def render_spectral_norm_output(size: Int) -> String:
+  render_text_output([render_fixed_9(spectral_norm(size))])
+
+def write_cli_exit(exit_code: Int, channel: OutputChannel, message: String) -> Prog[IOError, Int]:
+  match channel:
+    case StdoutChannel:
+      _ <- write_utf8(stdout, "${message}\n").await()
+      pure(exit_code)
+    case StderrChannel:
+      _ <- write_utf8(stderr, "${message}\n").await()
+      pure(exit_code)
+
+def run(args: List[String]) -> Prog[IOError, Int]:
+  match parse_benchmark_cli("spectral-norm", args):
+    case RunInput(size):
+      _ <- write_utf8(stdout, render_spectral_norm_output(size)).await()
+      pure(0)
+    case ExitCli(exit_code, channel, message):
+      write_cli_exit(exit_code, channel, message)
+
+main: Main = Main(args -> (
+  recover(run(args), err -> (
+    io_err = "spectral-norm benchmark failed: ${error_to_String(err)}"
+    _ <- recover(write_utf8(stderr, "${io_err}\n"), _ -> pure(Unit)).await()
+    pure(1)
+  ))
+))

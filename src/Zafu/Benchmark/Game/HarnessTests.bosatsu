@@ -22,6 +22,7 @@ from Zafu/Benchmark/Game/Harness import (
   to_benchmark_run_result,
   render_csv_row,
   render_benchmark_result_csv_row,
+  render_fixed_9,
   render_text_output,
   render_binary_output,
   normalize_text_fixture,
@@ -36,6 +37,7 @@ def contains_text(haystack: String, needle: String) -> Bool:
 tests = TestSuite("Benchmark game harness tests", [
   Assertion(benchmark_result_csv_header matches "benchmark,target,input,repeat_index,elapsed_ns,exit_code,validation_passed,source_id,git_sha,timestamp_utc", "csv header stays stable"),
   Assertion(normalize_cli_args("binary-trees", ["binary-trees", "21"]) matches ["21"], "normalize strips command names"),
+  Assertion(normalize_cli_args("n-body", ["bosatsu-eval", "1000"]) matches ["1000"], "normalize strips bosatsu eval argv0"),
   Assertion(normalize_cli_args("binary-trees", ["21"]) matches ["21"], "normalize keeps direct integer argv"),
   Assertion(normalize_cli_args("binary-trees", ["oops", "21"]) matches ["oops", "21"], "normalize keeps invalid direct argv intact"),
   Assertion(
@@ -45,6 +47,10 @@ tests = TestSuite("Benchmark game harness tests", [
   Assertion(
     parse_benchmark_cli("n-body", ["n-body", "1000"]) matches RunInput(1000),
     "cli parsing accepts a required integer input",
+  ),
+  Assertion(
+    parse_benchmark_cli("n-body", ["bosatsu-eval", "1000"]) matches RunInput(1000),
+    "cli parsing accepts bosatsu eval argv",
   ),
   Assertion(
     parse_benchmark_cli("binary-trees", ["oops", "21"]) matches ExitCli(2, StderrChannel, _),
@@ -117,6 +123,8 @@ tests = TestSuite("Benchmark game harness tests", [
     "full run records project to the stable csv row shape while ignoring extra metadata",
   ),
   Assertion(render_text_output(["alpha", "beta"]) matches "alpha\nbeta\n", "text output joins lines with trailing newlines"),
+  Assertion(render_fixed_9(1.2) matches "1.200000000", "fixed float rendering pads trailing zeroes"),
+  Assertion(render_fixed_9(1.9999999996) matches "2.000000000", "fixed float rendering rounds across the decimal point"),
   Assertion(
     normalize_text_fixture("alpha\r\nbeta\rgamma") matches "alpha\nbeta\ngamma\n",
     "fixture normalization canonicalizes line endings and terminal newlines",

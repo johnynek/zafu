@@ -15,6 +15,8 @@
     "Zafu/Abstract/Semigroup",
     "Zafu/Abstract/Traverse",
     "Zafu/Benchmark/Game/Harness",
+    "Zafu/Benchmark/Game/NBody",
+    "Zafu/Benchmark/Game/SpectralNorm",
     "Zafu/Benchmark/Vector",
     "Zafu/Collection/Chain",
     "Zafu/Collection/Deque",
