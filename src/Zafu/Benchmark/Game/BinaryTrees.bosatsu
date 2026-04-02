@@ -44,8 +44,7 @@ export (
 exposes Bosatsu/Prog
 
 enum BinaryTree:
-  Leaf
-  Node(left: BinaryTree, right: BinaryTree)
+  BinaryTree(left: Option[BinaryTree], right: Option[BinaryTree])
 
 struct DepthCheck(depth: Int, iterations: Int, check: Int)
 
@@ -82,18 +81,30 @@ def max_depth(n: Int) -> Int:
 def build_tree(depth: Int) -> BinaryTree:
   recur depth:
     case _ if cmp_Int(depth, 0) matches LT | EQ:
-      Leaf
+      # Leaves still allocate a full node so the benchmark performs the same
+      # per-node allocation shape at the fringe as it does for interior nodes.
+      BinaryTree(None, None)
     case _:
       # Build both children independently so the benchmark still performs the
       # required allocation work instead of sharing a single subtree.
-      Node(build_tree(depth.sub(1)), build_tree(depth.sub(1)))
+      BinaryTree(Some(build_tree(depth.sub(1))), Some(build_tree(depth.sub(1))))
 
 def item_check(tree: BinaryTree) -> Int:
   recur tree:
-    case Leaf:
-      1
-    case Node(left, right):
-      1.add(item_check(left)).add(item_check(right))
+    case BinaryTree(left, right):
+      left_check = match left:
+        case None:
+          0
+        case Some(left_tree):
+          item_check(left_tree)
+
+      right_check = match right:
+        case None:
+          0
+        case Some(right_tree):
+          item_check(right_tree)
+
+      1.add(left_check).add(right_check)
 
 def total_check(iterations: Int, depth: Int) -> Int:
   def go(rem: Int, acc: Int) -> Int:
