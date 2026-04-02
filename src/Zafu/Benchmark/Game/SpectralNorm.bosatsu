@@ -18,16 +18,23 @@ from Bosatsu/IO/Error import (
 )
 from Bosatsu/Collection/Array import (
   Array,
+  from_List_Array,
   get_or_Array,
   size_Array,
   tabulate_Array,
+  to_List_Array,
 )
 from Bosatsu/Num/Float64 import (
+  abs,
   addf,
   divf,
   int_to_Float64,
   mulf,
   sqrt,
+  subf,
+)
+from Zafu/Control/Result import (
+  Ok,
 )
 from Zafu/Benchmark/Game/Harness import (
   OutputChannel,
@@ -38,22 +45,16 @@ from Zafu/Benchmark/Game/Harness import (
   parse_benchmark_cli,
   render_fixed_9,
   render_text_output,
+  validate_exact_text_output,
 )
 
+# Export only the runnable benchmark entrypoint; matrix helpers stay
+# package-local so validation tests do not widen the shipped API.
 export (
   main,
-  eval_A,
-  eval_A_times_u,
-  eval_At_times_u,
-  eval_AtA_times_u,
-  spectral_norm,
-  render_spectral_norm_output,
 )
 
-exposes (
-  Bosatsu/Collection/Array,
-  Bosatsu/Prog,
-)
+exposes Bosatsu/Prog
 
 power_iterations_count = 10
 
@@ -166,3 +167,56 @@ main: Main = Main(args -> (
     pure(1)
   ))
 ))
+
+spectralnorm_sample_fixture = "1.274219991\n"
+small_vector = from_List_Array([1.0, 2.0, 3.0])
+vector_tolerance = 0.0000000001
+
+def within_tolerance(actual: Float64, expected: Float64, tolerance: Float64) -> Bool:
+  cmp_Float64(abs(subf(actual, expected)), tolerance) matches LT | EQ
+
+def vector3_within(actual: Array[Float64], expected0: Float64, expected1: Float64, expected2: Float64, tolerance: Float64) -> Bool:
+  match to_List_Array(actual):
+    case [item0, item1, item2]:
+      and(
+        within_tolerance(item0, expected0, tolerance),
+        and(
+          within_tolerance(item1, expected1, tolerance),
+          within_tolerance(item2, expected2, tolerance),
+        ),
+      )
+    case _:
+      False
+
+tests = TestSuite("spectral-norm benchmark", [
+  Assertion(within_tolerance(eval_A(0, 0), 1.0, vector_tolerance), "A(0,0)"),
+  Assertion(within_tolerance(eval_A(1, 2), 0.125, vector_tolerance), "A(1,2)"),
+  Assertion(
+    vector3_within(
+      eval_A_times_u(small_vector),
+      2.75,
+      1.1083333333333334,
+      0.6196581196581197,
+      vector_tolerance,
+    ),
+    "A * u matches the naive matrix-vector result",
+  ),
+  Assertion(
+    vector3_within(
+      eval_At_times_u(small_vector),
+      2.1666666666666665,
+      1.2333333333333334,
+      0.7307692307692308,
+      vector_tolerance,
+    ),
+    "A^T * u matches the naive matrix-vector result",
+  ),
+  Assertion(
+    render_spectral_norm_output(1) matches "1.000000000\n",
+    "size-1 spectral norm renders with fixed decimals",
+  ),
+  Assertion(
+    validate_exact_text_output("spectral-norm", spectralnorm_sample_fixture, render_spectral_norm_output(100)) matches Ok(_),
+    "official sample output matches exactly",
+  ),
+])
