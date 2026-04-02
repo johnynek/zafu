@@ -37,18 +37,16 @@ from Zafu/Benchmark/Game/Harness import (
 
 def contains_prefix(chars: List[Char], prefix: List[Char]) -> Bool:
   def loop_chars(next_chars: List[Char], next_prefix: List[Char]) -> Bool:
-    loop next_prefix:
-      case []:
+    loop (next_prefix, next_chars):
+      case ([], _):
         True
-      case [prefix_head, *prefix_tail]:
-        match next_chars:
-          case [char_head, *char_tail]:
-            if char_to_Int(prefix_head).eq_Int(char_to_Int(char_head)):
-              loop_chars(char_tail, prefix_tail)
-            else:
-              False
-          case []:
-            False
+      case ([prefix_head, *prefix_tail], [char_head, *char_tail]):
+        if char_to_Int(prefix_head).eq_Int(char_to_Int(char_head)):
+          loop_chars(char_tail, prefix_tail)
+        else:
+          False
+      case _:
+        False
 
   loop_chars(chars, prefix)
 

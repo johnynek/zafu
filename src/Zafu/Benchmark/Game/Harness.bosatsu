@@ -395,22 +395,16 @@ def strings_eq(left: String, right: String) -> Bool:
 
 def first_difference_offset(expected: String, actual: String) -> Option[Int]:
   def loop_chars(index: Int, left: List[Char], right: List[Char]) -> Option[Int]:
-    loop left:
-      case []:
-        match right:
-          case []:
-            None
-          case _:
-            Some(index)
-      case [left_head, *left_tail]:
-        match right:
-          case [right_head, *right_tail]:
-            if chars_eq(left_head, right_head):
-              loop_chars(index.add(1), left_tail, right_tail)
-            else:
-              Some(index)
-          case []:
-            Some(index)
+    loop (left, right):
+      case ([], []):
+        None
+      case ([], _) | (_, []):
+        Some(index)
+      case ([left_head, *left_tail], [right_head, *right_tail]):
+        if chars_eq(left_head, right_head):
+          loop_chars(index.add(1), left_tail, right_tail)
+        else:
+          Some(index)
 
   loop_chars(0, string_to_Char_List(expected), string_to_Char_List(actual))
 
@@ -518,22 +512,19 @@ def validate_float_lines_loop(
   expected_lines: List[String],
   actual_lines: List[String],
 ) -> Result[String, Unit]:
-  loop expected_lines:
-    case []:
-      if actual_lines matches []:
-        Ok(Unit)
-      else:
-        Err(render_line_count_error(label, line_index, line_index.add(count_items(actual_lines))))
-    case [expected_head, *expected_tail]:
-      match actual_lines:
-        case []:
-          Err(render_line_count_error(label, line_index.add(count_items(expected_lines)), line_index))
-        case [actual_head, *actual_tail]:
-          match validate_float_line_output(label, abs_tolerance, line_index, expected_head, actual_head):
-            case Err(message):
-              Err(message)
-            case Ok(_):
-              validate_float_lines_loop(label, abs_tolerance, line_index.add(1), expected_tail, actual_tail)
+  loop (expected_lines, actual_lines):
+    case ([], []):
+      Ok(Unit)
+    case ([], _):
+      Err(render_line_count_error(label, line_index, line_index.add(count_items(actual_lines))))
+    case (_, []):
+      Err(render_line_count_error(label, line_index.add(count_items(expected_lines)), line_index))
+    case ([expected_head, *expected_tail], [actual_head, *actual_tail]):
+      match validate_float_line_output(label, abs_tolerance, line_index, expected_head, actual_head):
+        case Err(message):
+          Err(message)
+        case Ok(_):
+          validate_float_lines_loop(label, abs_tolerance, line_index.add(1), expected_tail, actual_tail)
 
 def validate_float_lines_output(
   label: String,
