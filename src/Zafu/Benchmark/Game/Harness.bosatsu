@@ -175,22 +175,35 @@ def contains_path_separator(token: String) -> Bool:
 
   loop_chars(string_to_Char_List(token))
 
-def is_benchmark_command_name(token: String) -> Bool:
-  token matches "n-body" | "spectral-norm" | "binary-trees" | "fannkuch-redux" | "mandelbrot"
+def path_basename(token: String) -> String:
+  def loop_chars(rem: List[Char], rev_parts: List[String]) -> String:
+    loop rem:
+      case []:
+        concat_String(rev_parts)
+      case [.'/', *_]:
+        concat_String(rev_parts)
+      case [head, *tail]:
+        loop_chars(tail, [char_to_String(head), *rev_parts])
 
-# Only strip argv0 when it is clearly the benchmark executable or path.
-# Invalid direct argv should stay intact so the shared CLI path rejects them.
-def looks_like_argv0(token: String) -> Bool:
-  or(is_benchmark_command_name(token), contains_path_separator(token))
+  loop_chars(string_to_Char_List(token).reverse(), [])
 
-def normalize_cli_args(args: List[String]) -> List[String]:
+def looks_like_argv0(command_name: String, token: String) -> Bool:
+  or(
+    cmp_String(token, command_name) matches EQ,
+    and(contains_path_separator(token), cmp_String(path_basename(token), command_name) matches EQ),
+  )
+
+# Only strip argv0 when it names the active benchmark executable. Invalid
+# direct argv should stay intact so the shared CLI path rejects the supplied
+# token instead of silently dropping it.
+def normalize_cli_args(command_name: String, args: List[String]) -> List[String]:
   match args:
     case []:
       []
     case [head, *tail]:
       if keep_leading_cli_token(head):
         args
-      elif looks_like_argv0(head):
+      elif looks_like_argv0(command_name, head):
         tail
       else:
         args
@@ -199,7 +212,7 @@ def benchmark_command(command_name: String):
   with_help_flag(cli_command(command_name, positional(int_value(text("N")), arg_info)))
 
 def parse_benchmark_cli(command_name: String, args: List[String]) -> BenchmarkCli:
-  cli_args = normalize_cli_args(args)
+  cli_args = normalize_cli_args(command_name, args)
   match parse_cli(default_parse_config, benchmark_command(command_name), cli_args):
     case Parsed(input):
       RunInput(input)
