@@ -2,6 +2,7 @@ package Zafu/Benchmark/Game/Harness
 
 from Bosatsu/Char import (
   char_to_Int,
+  is_ascii_digit,
   string_to_Char_List,
 )
 
@@ -338,6 +339,9 @@ def render_line_count_error(label: String, expected_count: Int, actual_count: In
 def render_float_parse_error(label: String, line_index: Int, which_side: String) -> String:
   "${label} validation failed at line ${int_to_String(line_index.add(1))}: ${which_side} is not a Float64"
 
+def render_float_format_error(label: String, line_index: Int) -> String:
+  "${label} validation failed at line ${int_to_String(line_index.add(1))}: actual output must use fixed-point decimal formatting with exactly 9 fractional digits"
+
 def render_float_tolerance_error(label: String, line_index: Int, delta: Float64, abs_tolerance: Float64) -> String:
   "${label} validation failed at line ${int_to_String(line_index.add(1))}: |expected - actual| = ${float64_to_String(delta)} exceeds ${float64_to_String(abs_tolerance)}"
 
@@ -347,6 +351,41 @@ def min_Int(a: Int, b: Int) -> Int:
       a
     case GT:
       b
+
+def all_ascii_digits(chars: List[Char]) -> Bool:
+  def loop_digits(rem: List[Char]) -> Bool:
+    loop rem:
+      case []:
+        True
+      case [head, *tail]:
+        if is_ascii_digit(head):
+          loop_digits(tail)
+        else:
+          False
+
+  loop_digits(chars)
+
+def has_fixed_9_fractional_digits(value: String) -> Bool:
+  def unsigned_decimal(chars: List[Char]) -> Bool:
+    def loop_integral(rem: List[Char], saw_digit: Bool) -> Bool:
+      loop rem:
+        case []:
+          False
+        case [.'.', *fraction]:
+          and(saw_digit, and(count_items(fraction).eq_Int(9), all_ascii_digits(fraction)))
+        case [head, *tail]:
+          if is_ascii_digit(head):
+            loop_integral(tail, True)
+          else:
+            False
+
+    loop_integral(chars, False)
+
+  match string_to_Char_List(value):
+    case [.'-', *tail]:
+      unsigned_decimal(tail)
+    case chars:
+      unsigned_decimal(chars)
 
 def validate_float_line_output(
   label: String,
@@ -359,15 +398,18 @@ def validate_float_line_output(
     case None:
       Err(render_float_parse_error(label, line_index, "expected fixture"))
     case Some(expected_value):
-      match string_to_Float64(actual_line):
-        case None:
-          Err(render_float_parse_error(label, line_index, "actual output"))
-        case Some(actual_value):
-          delta = abs(subf(expected_value, actual_value))
-          if cmp_Float64(delta, abs_tolerance) matches GT:
-            Err(render_float_tolerance_error(label, line_index, delta, abs_tolerance))
-          else:
-            Ok(Unit)
+      if not(has_fixed_9_fractional_digits(actual_line)):
+        Err(render_float_format_error(label, line_index))
+      else:
+        match string_to_Float64(actual_line):
+          case None:
+            Err(render_float_parse_error(label, line_index, "actual output"))
+          case Some(actual_value):
+            delta = abs(subf(expected_value, actual_value))
+            if cmp_Float64(delta, abs_tolerance) matches GT:
+              Err(render_float_tolerance_error(label, line_index, delta, abs_tolerance))
+            else:
+              Ok(Unit)
 
 def validate_float_lines_loop(
   label: String,
