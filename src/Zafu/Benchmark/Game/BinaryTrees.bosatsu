@@ -1,0 +1,174 @@
+package Zafu/Benchmark/Game/BinaryTrees
+
+from Bosatsu/Prog import (
+  Main,
+  Prog,
+  await,
+  pure,
+  recover,
+)
+from Bosatsu/IO/Core import (
+  stderr,
+  stdout,
+  write_utf8,
+)
+from Bosatsu/IO/Error import (
+  IOError,
+  error_to_String,
+)
+from Bosatsu/Predef import (
+  int_to_String,
+)
+from Zafu/Benchmark/Game/Harness import (
+  RunInput,
+  ExitCli,
+  StdoutChannel,
+  StderrChannel,
+  parse_benchmark_cli,
+  render_text_output,
+)
+
+export (
+  BinaryTree(),
+  DepthCheck(),
+  BinaryTreesReport(),
+  min_depth,
+  build_tree,
+  item_check,
+  benchmark_report,
+  report_lines,
+  render_report,
+  main,
+)
+
+exposes Bosatsu/Prog
+
+enum BinaryTree:
+  Leaf
+  Node(left: BinaryTree, right: BinaryTree)
+
+struct DepthCheck(depth: Int, iterations: Int, check: Int)
+
+struct BinaryTreesReport(
+  stretch_depth: Int,
+  stretch_check: Int,
+  depth_checks: List[DepthCheck],
+  long_lived_depth: Int,
+  long_lived_check: Int,
+)
+
+min_depth = 4
+
+def max_Int(a: Int, b: Int) -> Int:
+  match cmp_Int(a, b):
+    case LT:
+      b
+    case GT | EQ:
+      a
+
+def pow2(exp: Int) -> Int:
+  def go(rem: Int, acc: Int) -> Int:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        go(rem.sub(1), acc.mul(2))
+
+  go(exp, 1)
+
+def max_depth(n: Int) -> Int:
+  max_Int(n, min_depth.add(2))
+
+def build_tree(depth: Int) -> BinaryTree:
+  recur depth:
+    case _ if cmp_Int(depth, 0) matches LT | EQ:
+      Leaf
+    case _:
+      # Build both children independently so the benchmark still performs the
+      # required allocation work instead of sharing a single subtree.
+      Node(build_tree(depth.sub(1)), build_tree(depth.sub(1)))
+
+def item_check(tree: BinaryTree) -> Int:
+  recur tree:
+    case Leaf:
+      1
+    case Node(left, right):
+      1.add(item_check(left)).add(item_check(right))
+
+def total_check(iterations: Int, depth: Int) -> Int:
+  def go(rem: Int, acc: Int) -> Int:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        next_tree = build_tree(depth)
+        go(rem.sub(1), acc.add(item_check(next_tree)))
+
+  go(iterations, 0)
+
+def depth_checks(max_depth_value: Int) -> List[DepthCheck]:
+  row_count = max_depth_value.sub(min_depth).div(2).add(1)
+
+  def go(rem: Int, depth: Int, rev_rows: List[DepthCheck]) -> List[DepthCheck]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        rev_rows.reverse()
+      case _:
+        iterations = pow2(max_depth_value.sub(depth).add(min_depth))
+        check = total_check(iterations, depth)
+        go(rem.sub(1), depth.add(2), [DepthCheck(depth, iterations, check), *rev_rows])
+
+  go(row_count, min_depth, [])
+
+def benchmark_report(n: Int) -> BinaryTreesReport:
+  max_depth_value = max_depth(n)
+  stretch_depth = max_depth_value.add(1)
+  stretch_check = item_check(build_tree(stretch_depth))
+  long_lived_tree = build_tree(max_depth_value)
+  rows = depth_checks(max_depth_value)
+  long_lived_check = item_check(long_lived_tree)
+  BinaryTreesReport(stretch_depth, stretch_check, rows, max_depth_value, long_lived_check)
+
+def render_depth_check(row: DepthCheck) -> String:
+  DepthCheck(depth, iterations, check) = row
+  "${int_to_String(iterations)}\t trees of depth ${int_to_String(depth)}\t check: ${int_to_String(check)}"
+
+def report_lines(report: BinaryTreesReport) -> List[String]:
+  BinaryTreesReport(stretch_depth, stretch_check, rows, long_lived_depth, long_lived_check) = report
+  stretch_line = "stretch tree of depth ${int_to_String(stretch_depth)}\t check: ${int_to_String(stretch_check)}"
+  long_lived_line = "long lived tree of depth ${int_to_String(long_lived_depth)}\t check: ${int_to_String(long_lived_check)}"
+  [stretch_line, *rows.map_List(render_depth_check), long_lived_line]
+
+def render_report(n: Int) -> String:
+  render_text_output(report_lines(benchmark_report(n)))
+
+def write_output(channel, output: String) -> Prog[IOError, Unit]:
+  match channel:
+    case StdoutChannel:
+      write_utf8(stdout, output)
+    case StderrChannel:
+      write_utf8(stderr, output)
+
+def normalize_entry_args(args: List[String]) -> List[String]:
+  match args:
+    case ["bosatsu-eval", *tail]:
+      tail
+    case _:
+      args
+
+def run(args: List[String]) -> Prog[IOError, Int]:
+  match parse_benchmark_cli("binary-trees", normalize_entry_args(args)):
+    case RunInput(input):
+      _ <- write_output(StdoutChannel, render_report(input)).await()
+      pure(0)
+    case ExitCli(exit_code, channel, message):
+      _ <- write_output(channel, "${message}\n").await()
+      pure(exit_code)
+
+main: Main = Main(args -> (
+  recover(run(args), err -> (
+    err_msg = "binary-trees failed: ${error_to_String(err)}"
+    _ <- recover(write_utf8(stderr, "${err_msg}\n"), _ -> pure(Unit)).await()
+    pure(1)
+  ))
+))

@@ -1,0 +1,103 @@
+package Zafu/Benchmark/Game/FannkuchReduxTests
+
+from Zafu/Benchmark/Game/FannkuchRedux import (
+  FannkuchResult,
+  rotate_prefix_left,
+  flip_count,
+  flip_score,
+  first_permutations,
+  run_kernel,
+  render_output,
+)
+from Zafu/Collection/List import (
+  split_at,
+)
+
+def max_Int(a: Int, b: Int) -> Int:
+  match cmp_Int(a, b):
+    case LT:
+      b
+    case GT | EQ:
+      a
+
+def factorial(n: Int) -> Int:
+  def go(rem: Int, next: Int, acc: Int) -> Int:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        go(rem.sub(1), next.add(1), acc.mul(next))
+
+  go(n, 1, 1)
+
+def reverse_prefix_model(values: List[Int], first: Int) -> List[Int]:
+  (front, back) = split_at(values, first.add(1))
+  [*front.reverse(), *back]
+
+def flip_count_model(values: List[Int]) -> Int:
+  fuel0 = values.foldl_List(0, (acc, _) -> acc.add(1))
+  max_fuel = fuel0.mul(fuel0).add(1)
+
+  def go(curr: List[Int], flips: Int, fuel: Int) -> Int:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        flips
+      case _:
+        match curr:
+          case []:
+            flips
+          case [0, *_]:
+            flips
+          case [first, *_]:
+            go(reverse_prefix_model(curr, first), flips.add(1), fuel.sub(1))
+
+  go(values, 0, max_fuel)
+
+def model_kernel(n: Int) -> FannkuchResult:
+  permutations = first_permutations(n, factorial(n))
+
+  def go(rem: List[List[Int]], index: Int, checksum: Int, max_flips: Int) -> FannkuchResult:
+    loop rem:
+      case []:
+        FannkuchResult(checksum, max_flips)
+      case [perm, *tail]:
+        flips = flip_count_model(perm)
+        next_checksum = if mod_Int(index, 2).eq_Int(0):
+          checksum.add(flips)
+        else:
+          checksum.sub(flips)
+        next_max_flips = max_Int(max_flips, flips)
+        go(tail, index.add(1), next_checksum, next_max_flips)
+
+  go(permutations, 0, 0, 0)
+
+def same_result(actual: FannkuchResult, expected: FannkuchResult) -> Bool:
+  FannkuchResult(actual_checksum, actual_max_flips) = actual
+  FannkuchResult(expected_checksum, expected_max_flips) = expected
+  and(actual_checksum.eq_Int(expected_checksum), actual_max_flips.eq_Int(expected_max_flips))
+
+official_sample_output =
+  "228\nPfannkuchen(7) = 16\n"
+
+tests = TestSuite("fannkuch-redux benchmark tests", [
+  Assertion(
+    rotate_prefix_left([0, 1, 2, 3], 2) matches [1, 2, 0, 3],
+    "rotate_prefix_left rotates the chosen prefix to the left",
+  ),
+  Assertion(
+    first_permutations(3, 6) matches [
+      [0, 1, 2],
+      [1, 0, 2],
+      [1, 2, 0],
+      [2, 1, 0],
+      [2, 0, 1],
+      [0, 2, 1],
+    ],
+    "permutation generation follows the benchmarksgame order",
+  ),
+  Assertion(flip_count([3, 1, 0, 4, 2]).eq_Int(5), "flip_count matches the worked benchmark example"),
+  Assertion(flip_score([1, 0, 2]).eq_Int(1), "flip_score keeps the one-flip fast path"),
+  Assertion(same_result(run_kernel(4), model_kernel(4)), "kernel checksum and max flips match the independent model at n=4"),
+  Assertion(same_result(run_kernel(6), model_kernel(6)), "kernel checksum and max flips match the independent model at n=6"),
+  Assertion(eq_String(render_output(7), official_sample_output), "official sample output matches exactly"),
+])
