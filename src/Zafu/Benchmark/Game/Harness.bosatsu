@@ -124,7 +124,7 @@ benchmark_result_csv_header =
   "benchmark,target,input,repeat_index,elapsed_ns,exit_code,validation_passed,source_id,git_sha,timestamp_utc"
 
 def to_benchmark_run_result(record: BenchmarkRunRecord) -> BenchmarkRunResult:
-  BenchmarkRunRecord(
+  BenchmarkRunRecord {
     benchmark,
     target,
     input,
@@ -133,19 +133,10 @@ def to_benchmark_run_result(record: BenchmarkRunRecord) -> BenchmarkRunResult:
     exit_code,
     validation_passed,
     source_id,
-    _,
-    _,
-    _,
     git_sha,
-    _,
-    _,
-    _,
-    _,
-    _,
     timestamp_utc,
-    _,
-    _,
-  ) = record
+    ...
+  } = record
 
   BenchmarkRunResult(
     benchmark,
@@ -189,8 +180,8 @@ def path_basename(token: String) -> String:
 
 def looks_like_argv0(command_name: String, token: String) -> Bool:
   or(
-    cmp_String(token, command_name) matches EQ,
-    and(contains_path_separator(token), cmp_String(path_basename(token), command_name) matches EQ),
+    eq_String(token, command_name),
+    and(contains_path_separator(token), eq_String(path_basename(token), command_name)),
   )
 
 # Only strip argv0 when it names the active benchmark executable. Invalid
@@ -224,21 +215,17 @@ def parse_benchmark_cli(command_name: String, args: List[String]) -> BenchmarkCl
       ExitCli(2, StderrChannel, render(doc, 80))
 
 def bool_to_csv(value: Bool) -> String:
-  if value:
-    "true"
-  else:
-    "false"
+  "true" if value else "false"
 
 def needs_csv_quotes(value: String) -> Bool:
   def loop_chars(rem: List[Char]) -> Bool:
     loop rem:
       case []:
         False
-      case [head, *tail]:
-        if head matches .',' | .'\"' | .'\n' | .'\r':
-          True
-        else:
-          loop_chars(tail)
+      case [.',' | .'\"' | .'\n' | .'\r', *_]:
+        True
+      case [_, *tail]:
+        loop_chars(tail)
 
   loop_chars(string_to_Char_List(value))
 
@@ -329,11 +316,7 @@ def normalize_line_endings(value: String) -> String:
   loop_chars(string_to_Char_List(value), [])
 
 def ends_with_newline(value: String) -> Bool:
-  match string_to_Char_List(value).reverse():
-    case [.'\n', *_]:
-      True
-    case _:
-      False
+  string_to_Char_List(value).reverse() matches [.'\n', *_]
 
 def normalize_text_fixture(value: String) -> String:
   normalized = normalize_line_endings(value)
@@ -349,16 +332,6 @@ def normalize_text_fixture(value: String) -> String:
 # shared suite validators.
 def normalize_actual_text_output(value: String) -> String:
   value
-
-def count_items[a](items: List[a]) -> Int:
-  def loop_items(rem: List[a], acc: Int) -> Int:
-    loop rem:
-      case []:
-        acc
-      case [_, *tail]:
-        loop_items(tail, acc.add(1))
-
-  loop_items(items, 0)
 
 def split_lines(value: String) -> List[String]:
   def loop_chars(rem: List[Char], rev_current: List[String], rev_lines: List[String]) -> List[String]:
@@ -390,21 +363,15 @@ def prepare_text_validation_inputs(label: String, expected_fixture: String, actu
 def chars_eq(left: Char, right: Char) -> Bool:
   char_to_Int(left).eq_Int(char_to_Int(right))
 
-def strings_eq(left: String, right: String) -> Bool:
-  cmp_String(left, right) matches EQ
-
 def first_difference_offset(expected: String, actual: String) -> Option[Int]:
   def loop_chars(index: Int, left: List[Char], right: List[Char]) -> Option[Int]:
     loop (left, right):
       case ([], []):
         None
-      case ([], _) | (_, []):
+      case ([left_head, *left_tail], [right_head, *right_tail]) if chars_eq(left_head, right_head):
+        loop_chars(index.add(1), left_tail, right_tail)
+      case _:
         Some(index)
-      case ([left_head, *left_tail], [right_head, *right_tail]):
-        if chars_eq(left_head, right_head):
-          loop_chars(index.add(1), left_tail, right_tail)
-        else:
-          Some(index)
 
   loop_chars(0, string_to_Char_List(expected), string_to_Char_List(actual))
 
@@ -422,7 +389,7 @@ def validate_exact_text_output(label: String, expected_fixture: String, actual_o
     case Err(message):
       Err(message)
     case Ok((expected, actual)):
-      if strings_eq(expected, actual):
+      if eq_String(expected, actual):
         Ok(Unit)
       else:
         Err(render_validation_error(label, expected, actual))
@@ -447,17 +414,7 @@ def min_Int(a: Int, b: Int) -> Int:
       b
 
 def all_ascii_digits(chars: List[Char]) -> Bool:
-  def loop_digits(rem: List[Char]) -> Bool:
-    loop rem:
-      case []:
-        True
-      case [head, *tail]:
-        if is_ascii_digit(head):
-          loop_digits(tail)
-        else:
-          False
-
-  loop_digits(chars)
+  not(chars matches [*_, d, *_] if not(is_ascii_digit(d)))
 
 def has_fixed_9_fractional_digits(value: String) -> Bool:
   def unsigned_decimal(chars: List[Char]) -> Bool:
@@ -466,7 +423,7 @@ def has_fixed_9_fractional_digits(value: String) -> Bool:
         case []:
           False
         case [.'.', *fraction]:
-          and(saw_digit, and(count_items(fraction).eq_Int(9), all_ascii_digits(fraction)))
+          and(saw_digit, and(length_List(fraction).eq_Int(9), all_ascii_digits(fraction)))
         case [head, *tail]:
           if is_ascii_digit(head):
             loop_integral(tail, True)
@@ -516,9 +473,9 @@ def validate_float_lines_loop(
     case ([], []):
       Ok(Unit)
     case ([], _):
-      Err(render_line_count_error(label, line_index, line_index.add(count_items(actual_lines))))
+      Err(render_line_count_error(label, line_index, line_index.add(length_List(actual_lines))))
     case (_, []):
-      Err(render_line_count_error(label, line_index.add(count_items(expected_lines)), line_index))
+      Err(render_line_count_error(label, line_index.add(length_List(expected_lines)), line_index))
     case ([expected_head, *expected_tail], [actual_head, *actual_tail]):
       match validate_float_line_output(label, abs_tolerance, line_index, expected_head, actual_head):
         case Err(message):
