@@ -83,16 +83,14 @@ def rotate_prefix_left_array(values: Array[Int], last_idx: Int) -> Array[Int]:
       values
     else:
       head = get_or_Array(values, 0, _ -> 0)
-
-      def go(rem: Int, curr: Array[Int], idx: Int) -> Array[Int]:
-        loop rem:
-          case _ if cmp_Int(rem, 0) matches LT | EQ:
-            set_or_self_Array(curr, effective_last, head)
-          case _:
-            next_value = get_or_Array(values, idx.add(1), _ -> head)
-            go(rem.sub(1), set_or_self_Array(curr, idx, next_value), idx.add(1))
-
-      go(effective_last, values, 0)
+      tabulate_Array(size, idx -> (
+        if cmp_Int(idx, effective_last) matches LT:
+          get_or_Array(values, idx.add(1), _ -> head)
+        elif idx.eq_Int(effective_last):
+          head
+        else:
+          get_or_Array(values, idx, _ -> head)
+      ))
 
 def reverse_prefix_array(values: Array[Int], last_idx: Int) -> Array[Int]:
   size = size_Array(values)
@@ -103,19 +101,14 @@ def reverse_prefix_array(values: Array[Int], last_idx: Int) -> Array[Int]:
     if cmp_Int(effective_last, 0) matches LT | EQ:
       values
     else:
-      swap_count = effective_last.add(1).div(2)
-
-      def go(rem: Int, curr: Array[Int], left: Int, right: Int) -> Array[Int]:
-        loop rem:
-          case _ if cmp_Int(rem, 0) matches LT | EQ:
-            curr
-          case _:
-            left_value = get_or_Array(curr, left, _ -> 0)
-            right_value = get_or_Array(curr, right, _ -> 0)
-            swapped = set_or_self_Array(set_or_self_Array(curr, left, right_value), right, left_value)
-            go(rem.sub(1), swapped, left.add(1), right.sub(1))
-
-      go(swap_count, values, 0, effective_last)
+      # Arrays are immutable here, so a prefix reversal still needs one
+      # replacement array. Keep it to a single tabulation over the source.
+      tabulate_Array(size, idx -> (
+        if cmp_Int(idx, effective_last) matches GT:
+          get_or_Array(values, idx, _ -> 0)
+        else:
+          get_or_Array(values, effective_last.sub(idx), _ -> 0)
+      ))
 
 def flip_count_array(values: Array[Int]) -> Int:
   n_size = size_Array(values)
