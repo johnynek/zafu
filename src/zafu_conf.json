@@ -15,6 +15,7 @@
     "Zafu/Abstract/Semigroup",
     "Zafu/Abstract/Traverse",
     "Zafu/Benchmark/Game/Harness",
+    "Zafu/Benchmark/Game/Mandelbrot",
     "Zafu/Benchmark/Vector",
     "Zafu/Collection/Chain",
     "Zafu/Collection/Deque",

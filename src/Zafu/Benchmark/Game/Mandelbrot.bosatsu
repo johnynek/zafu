@@ -1,0 +1,199 @@
+package Zafu/Benchmark/Game/Mandelbrot
+
+from Bosatsu/IO/Core import (
+  flush,
+  stderr,
+  stdout,
+  write_bytes,
+  write_utf8,
+)
+
+from Bosatsu/IO/Bytes import (
+  Bytes,
+  from_List_Int,
+  utf8_bytes_from_String,
+)
+
+from Bosatsu/IO/Error import (
+  IOError,
+  BrokenPipe,
+  error_to_String,
+)
+
+from Bosatsu/Num/Float64 import (
+  addf,
+  cmp_Float64,
+  divf,
+  int_to_Float64,
+  mulf,
+  subf,
+)
+
+from Bosatsu/Prog import (
+  Main,
+  Prog,
+  await,
+  pure,
+  recover,
+)
+
+from Zafu/Benchmark/Game/Harness import (
+  ExitCli,
+  RunInput,
+  StderrChannel,
+  StdoutChannel,
+  OutputChannel,
+  parse_benchmark_cli,
+  render_binary_output,
+)
+
+export (
+  header_bytes,
+  pack_row_bits,
+  pixel_in_set,
+  row_pixels,
+  render_row_bytes,
+  render_output,
+  main,
+)
+
+exposes (
+  Bosatsu/IO/Bytes,
+  Bosatsu/Prog,
+)
+
+max_iterations = 50
+escape_radius_squared = 4.0
+
+def operator <<(a, b): a.shift_left_Int(b)
+def operator |(a, b): a.or_Int(b)
+
+def nonnegative(value: Int) -> Int:
+  0 if cmp_Int(value, 0) matches LT else value
+
+def mk_steps(count: Int) -> List[Int]:
+  def go(rem: Int, acc: List[Int]) -> List[Int]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        go(rem.sub(1), [rem, *acc])
+
+  go(count, [])
+
+def coordinate(size: Int, index: Int, offset: Float64) -> Float64:
+  scaled_index = mulf(2.0, int_to_Float64(index))
+  subf(divf(scaled_index, int_to_Float64(size)), offset)
+
+def pixel_in_set_with_ci(size: Int, x: Int, ci: Float64) -> Bool:
+  cr = coordinate(size, x, 1.5)
+
+  def go(iteration_steps: List[Int], zr: Float64, zi: Float64, tr: Float64, ti: Float64) -> Bool:
+    loop iteration_steps:
+      case [_, *tail] if cmp_Float64(addf(tr, ti), escape_radius_squared) matches LT | EQ:
+        next_zi = addf(mulf(mulf(2.0, zr), zi), ci)
+        next_zr = addf(subf(tr, ti), cr)
+        next_tr = mulf(next_zr, next_zr)
+        next_ti = mulf(next_zi, next_zi)
+        go(tail, next_zr, next_zi, next_tr, next_ti)
+      case _:
+        cmp_Float64(addf(tr, ti), escape_radius_squared) matches LT | EQ
+
+  go(mk_steps(max_iterations), 0.0, 0.0, 0.0, 0.0)
+
+def pixel_in_set(size: Int, x: Int, y: Int) -> Bool:
+  pixel_in_set_with_ci(size, x, coordinate(size, y, 1.0))
+
+def row_pixels(size: Int, row_index: Int) -> List[Bool]:
+  ci = coordinate(size, row_index, 1.0)
+  row_steps = mk_steps(nonnegative(size))
+
+  def go(steps: List[Int], x: Int, rev_pixels: List[Bool]) -> List[Bool]:
+    loop steps:
+      case [_, *tail]:
+        go(tail, x.add(1), [pixel_in_set_with_ci(size, x, ci), *rev_pixels])
+      case _:
+        rev_pixels.reverse()
+
+  go(row_steps, 0, [])
+
+def pack_row_bits(bits: List[Bool]) -> Bytes:
+  def go(rem: List[Bool], bit_count: Int, byte_acc: Int, rev_bytes: List[Int]) -> Bytes:
+    loop rem:
+      case []:
+        padded_rev = if bit_count.eq_Int(0):
+          rev_bytes
+        else:
+          [(byte_acc << (8.sub(bit_count))), *rev_bytes]
+        from_List_Int(padded_rev.reverse())
+      case [bit, *tail]:
+        shifted = byte_acc << 1
+        next_acc = shifted | 1 if bit else shifted
+        next_count = bit_count.add(1)
+        if next_count.eq_Int(8):
+          go(tail, 0, 0, [next_acc, *rev_bytes])
+        else:
+          go(tail, next_count, next_acc, rev_bytes)
+
+  go(bits, 0, 0, [])
+
+def render_row_bytes(size: Int, row_index: Int) -> Bytes:
+  pack_row_bits(row_pixels(size, row_index))
+
+def render_rows(size: Int) -> List[Bytes]:
+  row_steps = mk_steps(nonnegative(size))
+
+  def go(steps: List[Int], row_index: Int, rev_rows: List[Bytes]) -> List[Bytes]:
+    loop steps:
+      case [_, *tail]:
+        go(tail, row_index.add(1), [render_row_bytes(size, row_index), *rev_rows])
+      case _:
+        rev_rows.reverse()
+
+  go(row_steps, 0, [])
+
+def header_bytes(size: Int) -> Bytes:
+  utf8_bytes_from_String("P4\n${int_to_String(size)} ${int_to_String(size)}\n")
+
+def render_output(size: Int) -> Bytes:
+  render_binary_output([header_bytes(size), *render_rows(size)])
+
+def write_channel_line(channel: OutputChannel, message: String) -> Prog[IOError, Unit]:
+  match channel:
+    case StdoutChannel:
+      write_utf8(stdout, "${message}\n")
+    case StderrChannel:
+      write_utf8(stderr, "${message}\n")
+
+def write_rows_loop(size: Int, row_steps: List[Int], row_index: Int) -> Prog[IOError, Unit]:
+  recur row_steps:
+    case [_, *tail]:
+      _ <- write_bytes(stdout, render_row_bytes(size, row_index)).await()
+      write_rows_loop(size, tail, row_index.add(1))
+    case _:
+      pure(Unit)
+
+def write_rows(size: Int) -> Prog[IOError, Unit]:
+  write_rows_loop(size, mk_steps(nonnegative(size)), 0)
+
+def run(args: List[String]) -> Prog[IOError, Int]:
+  match parse_benchmark_cli("mandelbrot", args):
+    case ExitCli(exit_code, channel, message):
+      _ <- write_channel_line(channel, message).await()
+      pure(exit_code)
+    case RunInput(size):
+      _ <- write_bytes(stdout, header_bytes(size)).await()
+      _ <- write_rows(size).await()
+      _ <- flush(stdout).await()
+      pure(0)
+
+main: Main = Main(args -> (
+  recover(run(args), err -> (
+    match err:
+      case BrokenPipe(_):
+        pure(1)
+      case _:
+        _ <- recover(write_utf8(stderr, "mandelbrot failed: ${error_to_String(err)}\n"), _ -> pure(Unit)).await()
+        pure(1)
+  ))
+))

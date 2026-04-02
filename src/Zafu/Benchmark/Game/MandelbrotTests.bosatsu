@@ -1,0 +1,51 @@
+package Zafu/Benchmark/Game/MandelbrotTests
+
+from Bosatsu/IO/Bytes import (
+  from_List_Int,
+  utf8_bytes_from_String,
+)
+
+from Zafu/Control/Result import (
+  Ok,
+)
+
+from Zafu/Benchmark/Game/Harness import (
+  validate_exact_bytes_output,
+)
+
+from Zafu/Benchmark/Game/Mandelbrot import (
+  header_bytes,
+  pack_row_bits,
+  render_output,
+)
+
+from Zafu/Benchmark/Game/MandelbrotFixtureN200 import (
+  official_output_n200,
+)
+
+tests = TestSuite("Mandelbrot benchmark tests", [
+  Assertion(
+    validate_exact_bytes_output(
+      "mandelbrot header",
+      utf8_bytes_from_String("P4\n5 5\n"),
+      header_bytes(5),
+    ) matches Ok(_),
+    "header formatting matches the portable bitmap contract",
+  ),
+  Assertion(
+    validate_exact_bytes_output(
+      "mandelbrot row packing",
+      from_List_Int([170, 128]),
+      pack_row_bits([True, False, True, False, True, False, True, False, True, False]),
+    ) matches Ok(_),
+    "row packing emits big-endian bitmap bytes and zero-pads the final byte",
+  ),
+  Assertion(
+    validate_exact_bytes_output(
+      "mandelbrot",
+      official_output_n200,
+      render_output(200),
+    ) matches Ok(_),
+    "rendered n=200 output matches the official validation fixture",
+  ),
+])

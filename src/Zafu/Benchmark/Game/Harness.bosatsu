@@ -178,10 +178,16 @@ def path_basename(token: String) -> String:
 
   loop_chars(string_to_Char_List(token).reverse(), [])
 
+def matches_command_name(command_name: String, token: String) -> Bool:
+  eq_String(token, command_name)
+
 def looks_like_argv0(command_name: String, token: String) -> Bool:
   or(
-    eq_String(token, command_name),
-    and(contains_path_separator(token), eq_String(path_basename(token), command_name)),
+    matches_command_name(command_name, token),
+    or(
+      matches_command_name("bosatsu-eval", token),
+      and(contains_path_separator(token), or(matches_command_name(command_name, path_basename(token)), matches_command_name("bosatsu-eval", path_basename(token)))),
+    ),
   )
 
 # Only strip argv0 when it names the active benchmark executable. Invalid
