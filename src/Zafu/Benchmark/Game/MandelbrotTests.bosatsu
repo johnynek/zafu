@@ -13,10 +13,11 @@ from Zafu/Benchmark/Game/Harness import (
   validate_exact_bytes_output,
 )
 
-from Zafu/Benchmark/Game/Mandelbrot import (
+from Zafu/Benchmark/Game/Mandelbrot/Internal import (
   header_bytes,
   pack_row_bits,
   render_output,
+  should_bridge_binary_stdout,
 )
 
 from Zafu/Benchmark/Game/MandelbrotFixtureN200 import (
@@ -48,4 +49,7 @@ tests = TestSuite("Mandelbrot benchmark tests", [
     ) matches Ok(_),
     "rendered n=200 output matches the official validation fixture",
   ),
+  Assertion(should_bridge_binary_stdout(["bosatsu-eval", "200"]), "stdout bridge activates for the bosatsu eval argv0 contract"),
+  Assertion(should_bridge_binary_stdout(["/tmp/bosatsu-eval", "200"]), "stdout bridge activates for a bosatsu eval path argv0"),
+  Assertion(should_bridge_binary_stdout(["200"]) matches False, "stdout bridge stays off for direct executable argv"),
 ])
