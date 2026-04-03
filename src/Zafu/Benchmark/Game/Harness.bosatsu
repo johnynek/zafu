@@ -15,7 +15,11 @@ from Bosatsu/IO/Bytes import (
 
 from Bosatsu/Num/Float64 import (
   abs,
+  float64_bits_to_Int,
+  float64_to_Int,
   float64_to_String,
+  is_infinite,
+  is_nan,
   string_to_Float64,
   subf,
 )
@@ -60,6 +64,7 @@ export (
   parse_benchmark_cli,
   render_csv_row,
   render_benchmark_result_csv_row,
+  render_fixed_9,
   render_text_output,
   render_binary_output,
   normalize_text_fixture,
@@ -174,9 +179,14 @@ def looks_like_argv0(command_name: String, token: String) -> Bool:
   base = path_basename(token)
   or(eq_String(base, command_name), is_bosatsu_eval_argv0(token))
 
+def looks_like_eval_driver_argv0(token: String) -> Bool:
+  is_bosatsu_eval_argv0(token)
+
 # Only strip argv0 when it names the active benchmark executable. Invalid
 # direct argv should stay intact so the shared CLI path rejects the supplied
-# token instead of silently dropping it.
+# token instead of silently dropping it. `bosatsu eval --run` injects its own
+# driver name, so keep that one special-case strip to preserve the repo's
+# documented benchmark entrypoint contract.
 def normalize_cli_args(command_name: String, args: List[String]) -> List[String]:
   match args:
     case []:
@@ -184,7 +194,7 @@ def normalize_cli_args(command_name: String, args: List[String]) -> List[String]
     case [head, *tail]:
       if keep_leading_cli_token(head):
         args
-      elif looks_like_argv0(command_name, head):
+      elif or(looks_like_argv0(command_name, head), looks_like_eval_driver_argv0(head)):
         tail
       else:
         args
@@ -287,6 +297,48 @@ def render_text_output(lines: List[String]) -> String:
         loop_lines(tail, ["\n", line, *rev_parts])
 
   loop_lines(lines, [])
+
+fixed_9_scale_int = 1000000000
+fixed_9_scale_float = 1000000000.0
+float64_sign_bit = 9223372036854775808
+
+def has_negative_sign(value: Float64) -> Bool:
+  bits = float64_bits_to_Int(value)
+  cmp_Int(bits, float64_sign_bit) matches GT | EQ
+
+def zero_pad_left(width: Int, digits: String) -> String:
+  missing = width.sub(length_String(digits))
+
+  def prepend_zeros(rem: Int, rev_zeros: List[String]) -> String:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        concat_String([*rev_zeros.reverse(), digits])
+      case _:
+        prepend_zeros(rem.sub(1), ["0", *rev_zeros])
+
+  if cmp_Int(missing, 0) matches GT:
+    prepend_zeros(missing, [])
+  else:
+    digits
+
+def render_fixed_9(value: Float64) -> String:
+  if or(is_nan(value), is_infinite(value)):
+    float64_to_String(value)
+  else:
+    sign = "-" if has_negative_sign(value) else ""
+    # `float64_to_Int` already rounds finite values to nearest (ties-to-even),
+    # so adding 0.5 here would double-round exact half-step cases.
+    scaled = abs(value).mulf(fixed_9_scale_float)
+    rounded_abs = match float64_to_Int(scaled):
+      case Some(rounded):
+        rounded
+      case None:
+        0
+
+    integral = rounded_abs.div(fixed_9_scale_int)
+    fractional = mod_Int(rounded_abs, fixed_9_scale_int)
+    fractional_digits = zero_pad_left(9, int_to_String(fractional))
+    "${sign}${int_to_String(integral)}.${fractional_digits}"
 
 def render_binary_output(chunks: List[Bytes]) -> Bytes:
   concat_all_Bytes(chunks)

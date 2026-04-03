@@ -1,0 +1,350 @@
+package Zafu/Benchmark/Game/NBody
+
+from Bosatsu/Prog import (
+  Main,
+  Prog,
+  await,
+  pure,
+  recover,
+)
+from Bosatsu/IO/Core import (
+  stderr,
+  stdout,
+  write_utf8,
+)
+from Bosatsu/IO/Error import (
+  IOError,
+  error_to_String,
+)
+from Bosatsu/Num/Float64 import (
+  addf,
+  abs,
+  divf,
+  mulf,
+  sqrt,
+  subf,
+)
+from Zafu/Control/Result import (
+  Ok,
+)
+from Zafu/Benchmark/Game/Harness import (
+  OutputChannel,
+  RunInput,
+  ExitCli,
+  StdoutChannel,
+  StderrChannel,
+  parse_benchmark_cli,
+  render_fixed_9,
+  render_text_output,
+  validate_float_lines_output,
+)
+
+# Export only the runnable benchmark entrypoint; tests exercise the kernel via
+# same-package helpers so the published API stays intentionally thin.
+export (
+  main,
+)
+
+exposes Bosatsu/Prog
+
+struct Body(
+  x: Float64,
+  y: Float64,
+  z: Float64,
+  vx: Float64,
+  vy: Float64,
+  vz: Float64,
+  mass: Float64,
+)
+
+struct NBodySystem(
+  sun: Body,
+  jupiter: Body,
+  saturn: Body,
+  uranus: Body,
+  neptune: Body,
+)
+
+pi = 3.141592653589793
+solar_mass = mulf(4.0, mulf(pi, pi))
+days_per_year = 365.24
+time_step = 0.01
+
+def body_momentum(body: Body) -> (Float64, Float64, Float64):
+  Body { vx, vy, vz, mass, ... } = body
+  (
+    mulf(vx, mass),
+    mulf(vy, mass),
+    mulf(vz, mass),
+  )
+
+def total_momentum(system: NBodySystem) -> (Float64, Float64, Float64):
+  NBodySystem(sun, jupiter, saturn, uranus, neptune) = system
+  (sun_px, sun_py, sun_pz) = body_momentum(sun)
+  (jupiter_px, jupiter_py, jupiter_pz) = body_momentum(jupiter)
+  (saturn_px, saturn_py, saturn_pz) = body_momentum(saturn)
+  (uranus_px, uranus_py, uranus_pz) = body_momentum(uranus)
+  (neptune_px, neptune_py, neptune_pz) = body_momentum(neptune)
+
+  (
+    addf(addf(addf(addf(sun_px, jupiter_px), saturn_px), uranus_px), neptune_px),
+    addf(addf(addf(addf(sun_py, jupiter_py), saturn_py), uranus_py), neptune_py),
+    addf(addf(addf(addf(sun_pz, jupiter_pz), saturn_pz), uranus_pz), neptune_pz),
+  )
+
+def offset_momentum(system: NBodySystem) -> NBodySystem:
+  NBodySystem(sun, jupiter, saturn, uranus, neptune) = system
+  (px, py, pz) = total_momentum(system)
+
+  adjusted_sun = Body {
+    vx: divf(subf(0.0, px), solar_mass),
+    vy: divf(subf(0.0, py), solar_mass),
+    vz: divf(subf(0.0, pz), solar_mass),
+    ..sun
+  }
+
+  NBodySystem(adjusted_sun, jupiter, saturn, uranus, neptune)
+
+def initial_system() -> NBodySystem:
+  offset_momentum(
+    NBodySystem(
+      Body(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, solar_mass),
+      Body(
+        4.84143144246472090e+00,
+        -1.16032004402742839e+00,
+        -1.03622044471123109e-01,
+        mulf(1.66007664274403694e-03, days_per_year),
+        mulf(7.69901118419740425e-03, days_per_year),
+        mulf(-6.90460016972063023e-05, days_per_year),
+        mulf(9.54791938424326609e-04, solar_mass),
+      ),
+      Body(
+        8.34336671824457987e+00,
+        4.12479856412430479e+00,
+        -4.03523417114321381e-01,
+        mulf(-2.76742510726862411e-03, days_per_year),
+        mulf(4.99852801234917238e-03, days_per_year),
+        mulf(2.30417297573763929e-05, days_per_year),
+        mulf(2.85885980666130812e-04, solar_mass),
+      ),
+      Body(
+        1.28943695621391310e+01,
+        -1.51111514016986312e+01,
+        -2.23307578892655734e-01,
+        mulf(2.96460137564761618e-03, days_per_year),
+        mulf(2.37847173959480950e-03, days_per_year),
+        mulf(-2.96589568540237556e-05, days_per_year),
+        mulf(4.36624404335156298e-05, solar_mass),
+      ),
+      Body(
+        1.53796971148509165e+01,
+        -2.59193146099879641e+01,
+        1.79258772950371181e-01,
+        mulf(2.68067772490389322e-03, days_per_year),
+        mulf(1.62824170038242295e-03, days_per_year),
+        mulf(-9.51592254519715870e-05, days_per_year),
+        mulf(5.15138902046611451e-05, solar_mass),
+      ),
+    ),
+  )
+
+def advance_pair(left: Body, right: Body, dt: Float64) -> (Body, Body):
+  Body {
+    x: left_x,
+    y: left_y,
+    z: left_z,
+    vx: left_vx,
+    vy: left_vy,
+    vz: left_vz,
+    mass: left_mass,
+  } = left
+  Body {
+    x: right_x,
+    y: right_y,
+    z: right_z,
+    vx: right_vx,
+    vy: right_vy,
+    vz: right_vz,
+    mass: right_mass,
+  } = right
+
+  dx = subf(left_x, right_x)
+  dy = subf(left_y, right_y)
+  dz = subf(left_z, right_z)
+
+  distance_sq = addf(mulf(dx, dx), addf(mulf(dy, dy), mulf(dz, dz)))
+  distance = sqrt(distance_sq)
+  mag = divf(dt, mulf(distance_sq, distance))
+
+  left_delta = mulf(right_mass, mag)
+  right_delta = mulf(left_mass, mag)
+
+  next_left = Body {
+    vx: subf(left_vx, mulf(dx, left_delta)),
+    vy: subf(left_vy, mulf(dy, left_delta)),
+    vz: subf(left_vz, mulf(dz, left_delta)),
+    ..left
+  }
+  next_right = Body {
+    vx: addf(right_vx, mulf(dx, right_delta)),
+    vy: addf(right_vy, mulf(dy, right_delta)),
+    vz: addf(right_vz, mulf(dz, right_delta)),
+    ..right
+  }
+
+  (next_left, next_right)
+
+def advance_body(body: Body, dt: Float64) -> Body:
+  Body { x, y, z, vx, vy, vz, ... } = body
+  Body {
+    x: addf(x, mulf(dt, vx)),
+    y: addf(y, mulf(dt, vy)),
+    z: addf(z, mulf(dt, vz)),
+    ..body
+  }
+
+def advance_system(system: NBodySystem, dt: Float64) -> NBodySystem:
+  NBodySystem(sun0, jupiter0, saturn0, uranus0, neptune0) = system
+
+  (sun1, jupiter1) = advance_pair(sun0, jupiter0, dt)
+  (sun2, saturn1) = advance_pair(sun1, saturn0, dt)
+  (sun3, uranus1) = advance_pair(sun2, uranus0, dt)
+  (sun4, neptune1) = advance_pair(sun3, neptune0, dt)
+  (jupiter2, saturn2) = advance_pair(jupiter1, saturn1, dt)
+  (jupiter3, uranus2) = advance_pair(jupiter2, uranus1, dt)
+  (jupiter4, neptune2) = advance_pair(jupiter3, neptune1, dt)
+  (saturn3, uranus3) = advance_pair(saturn2, uranus2, dt)
+  (saturn4, neptune3) = advance_pair(saturn3, neptune2, dt)
+  (uranus4, neptune4) = advance_pair(uranus3, neptune3, dt)
+
+  NBodySystem(
+    advance_body(sun4, dt),
+    advance_body(jupiter4, dt),
+    advance_body(saturn4, dt),
+    advance_body(uranus4, dt),
+    advance_body(neptune4, dt),
+  )
+
+def advance_steps(system: NBodySystem, steps: Int) -> NBodySystem:
+  def go(rem: Int, current: NBodySystem) -> NBodySystem:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        current
+      case _:
+        go(rem.sub(1), advance_system(current, time_step))
+
+  go(steps, system)
+
+def kinetic_energy(body: Body) -> Float64:
+  Body { vx, vy, vz, mass, ... } = body
+  speed_sq = addf(mulf(vx, vx), addf(mulf(vy, vy), mulf(vz, vz)))
+  mulf(0.5, mulf(mass, speed_sq))
+
+def potential_energy_pair(left: Body, right: Body) -> Float64:
+  Body { x: left_x, y: left_y, z: left_z, mass: left_mass, ... } = left
+  Body { x: right_x, y: right_y, z: right_z, mass: right_mass, ... } = right
+
+  dx = subf(left_x, right_x)
+  dy = subf(left_y, right_y)
+  dz = subf(left_z, right_z)
+  distance = sqrt(addf(mulf(dx, dx), addf(mulf(dy, dy), mulf(dz, dz))))
+  divf(subf(0.0, mulf(left_mass, right_mass)), distance)
+
+def energy(system: NBodySystem) -> Float64:
+  NBodySystem(sun, jupiter, saturn, uranus, neptune) = system
+  kinetic = addf(
+    addf(kinetic_energy(sun), kinetic_energy(jupiter)),
+    addf(kinetic_energy(saturn), addf(kinetic_energy(uranus), kinetic_energy(neptune))),
+  )
+  potential = addf(
+    addf(
+      addf(potential_energy_pair(sun, jupiter), potential_energy_pair(sun, saturn)),
+      addf(potential_energy_pair(sun, uranus), potential_energy_pair(sun, neptune)),
+    ),
+    addf(
+      addf(potential_energy_pair(jupiter, saturn), potential_energy_pair(jupiter, uranus)),
+      addf(
+        potential_energy_pair(jupiter, neptune),
+        addf(potential_energy_pair(saturn, uranus), addf(potential_energy_pair(saturn, neptune), potential_energy_pair(uranus, neptune))),
+      ),
+    ),
+  )
+
+  addf(kinetic, potential)
+
+def render_nbody_output(steps: Int) -> String:
+  start_system = initial_system()
+  end_system = advance_steps(start_system, steps)
+
+  render_text_output([
+    render_fixed_9(energy(start_system)),
+    render_fixed_9(energy(end_system)),
+  ])
+
+def write_cli_exit(exit_code: Int, channel: OutputChannel, message: String) -> Prog[IOError, Int]:
+  match channel:
+    case StdoutChannel:
+      _ <- write_utf8(stdout, "${message}\n").await()
+      pure(exit_code)
+    case StderrChannel:
+      _ <- write_utf8(stderr, "${message}\n").await()
+      pure(exit_code)
+
+def run(args: List[String]) -> Prog[IOError, Int]:
+  match parse_benchmark_cli("n-body", args):
+    case RunInput(steps):
+      _ <- write_utf8(stdout, render_nbody_output(steps)).await()
+      pure(0)
+    case ExitCli(exit_code, channel, message):
+      write_cli_exit(exit_code, channel, message)
+
+main: Main = Main(args -> (
+  recover(run(args), err -> (
+    io_err = "n-body benchmark failed: ${error_to_String(err)}"
+    _ <- recover(write_utf8(stderr, "${io_err}\n"), _ -> pure(Unit)).await()
+    pure(1)
+  ))
+))
+
+nbody_sample_fixture = "-0.169075164\n-0.169087605\n"
+momentum_tolerance = 0.0000000001
+
+def within_tolerance(actual: Float64, expected: Float64, tolerance: Float64) -> Bool:
+  cmp_Float64(abs(subf(actual, expected)), tolerance) matches LT | EQ
+
+def momentum_within(actual: (Float64, Float64, Float64), expected: (Float64, Float64, Float64), tolerance: Float64) -> Bool:
+  (actual_x, actual_y, actual_z) = actual
+  (expected_x, expected_y, expected_z) = expected
+
+  and(
+    within_tolerance(actual_x, expected_x, tolerance),
+    and(
+      within_tolerance(actual_y, expected_y, tolerance),
+      within_tolerance(actual_z, expected_z, tolerance),
+    ),
+  )
+
+def single_step_preserves_momentum() -> Bool:
+  system0 = initial_system()
+  momentum0 = total_momentum(system0)
+  momentum1 = total_momentum(advance_system(system0, time_step))
+  momentum_within(momentum1, momentum0, momentum_tolerance)
+
+tests = TestSuite("n-body benchmark", [
+  Assertion(
+    render_nbody_output(0) matches "-0.169075164\n-0.169075164\n",
+    "zero steps preserves the initial formatted energy",
+  ),
+  Assertion(
+    validate_float_lines_output("n-body", 0.00000001, nbody_sample_fixture, render_nbody_output(1000)) matches Ok(_),
+    "official sample output validates within tolerance",
+  ),
+  Assertion(
+    momentum_within(total_momentum(initial_system()), (0.0, 0.0, 0.0), momentum_tolerance),
+    "initial system offsets solar momentum",
+  ),
+  Assertion(
+    single_step_preserves_momentum(),
+    "single-step advance preserves total momentum",
+  ),
+])
