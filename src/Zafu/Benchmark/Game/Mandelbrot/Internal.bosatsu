@@ -174,8 +174,4 @@ def render_output(size: Int) -> Bytes:
   render_binary_output([header_bytes(size), *render_rows(size)])
 
 def should_bridge_binary_stdout(args: List[String]) -> Bool:
-  match args:
-    case [head, *_]:
-      is_bosatsu_eval_argv0(head)
-    case _:
-      False
+  args matches [head, *_] if is_bosatsu_eval_argv0(head)

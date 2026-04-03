@@ -59,11 +59,13 @@ exposes (
 struct RowWriteState(handle: Handle, size: Int, remaining_rows: Int, row_index: Int)
 
 def write_channel_line(channel: OutputChannel, message: String) -> Prog[IOError, Unit]:
-  match channel:
+  out = match channel:
     case StdoutChannel:
-      write_utf8(stdout, "${message}\n")
+      stdout
     case StderrChannel:
-      write_utf8(stderr, "${message}\n")
+      stderr
+
+  write_utf8(out, "${message}\n")
 
 def write_rows(handle: Handle, size: Int) -> Prog[IOError, Unit]:
   go = recursive(self -> (state -> (

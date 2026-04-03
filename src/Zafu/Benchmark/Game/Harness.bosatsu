@@ -168,7 +168,7 @@ def path_basename(token: String) -> String:
   loop_chars(string_to_Char_List(token).reverse(), [])
 
 def is_bosatsu_eval_argv0(token: String) -> Bool:
-  eq_String(path_basename(token), "bosatsu-eval")
+  path_basename(token) matches "bosatsu-eval"
 
 def looks_like_argv0(command_name: String, token: String) -> Bool:
   base = path_basename(token)
