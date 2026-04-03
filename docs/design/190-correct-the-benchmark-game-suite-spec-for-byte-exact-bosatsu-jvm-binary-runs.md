@@ -44,7 +44,7 @@ The implementation should keep `docs/design/166-benchmarksgame-suite.md` structu
 
 The main change belongs in `## Single-Machine Comparison Protocol`, specifically the `Command contract by target` portion. Replace the single `bosatsu_jvm` bullet with an explicit two-path contract keyed by output mode:
 - Text benchmarks: `n-body`, `spectral-norm`, `binary-trees`, and `fannkuch-redux` may continue to use the Bosatsu eval path, but the corrected doc should define it as an explicit JVM jar invocation rather than `./bosatsu`. The normative command template should resolve the Bosatsu version from `.bosatsu_version` and use `.bosatsuc/cli/<version>/bosatsu.jar`, for example `java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --repo_root . --main Zafu/Benchmark/Game/<Package>::main --run <N>`.
-- Binary benchmarks: `mandelbrot` must not inherit the text-oriented `eval --run` path as its byte-exact contract. The corrected doc should require a JVM byte runner built against the same Bosatsu jar and should show both the helper build step and the helper run step explicitly. The command template should use stable ephemeral output paths under `.bosatsu_bench/game/<slug>/jvm/` and should run the same Bosatsu `main` entrypoint with the same `<N>` argument, but with raw stdout redirected directly to a temporary file.
+- Binary benchmarks: `mandelbrot` must not inherit the text-oriented `eval --run` path as its byte-exact contract. The corrected doc should require a JVM byte runner built against the same Bosatsu jar and should show both the helper build step and the helper run step explicitly. The command template should use standardized temporary output paths under `.bosatsu_bench/game/<slug>/jvm/` and should run the same Bosatsu `main` entrypoint with the same `<N>` argument, but with raw stdout redirected directly to a temporary file.
 
 The doc should also add one explicit caveat that `mandelbrot` is the only phase-1 benchmark that uses the binary Bosatsu JVM path. The other four benchmarks remain on the text path unless a later suite revision explicitly changes that contract.
 
@@ -61,7 +61,7 @@ A minimal supporting note can appear either in the `mandelbrot` row or in the pr
 ## Implementation Plan
 1. Edit only `docs/design/166-benchmarksgame-suite.md`, concentrating changes in `## Single-Machine Comparison Protocol` and adding only the smallest supporting clarification elsewhere that is needed to keep `mandelbrot`'s JVM caveat easy to find.
 2. Replace the current one-line `bosatsu_jvm` command contract with a small per-benchmark or per-output-mode matrix that separates the four text benchmarks from the byte-exact `mandelbrot` path.
-3. Change the Bosatsu JVM text path to an explicit jar-based command template rooted in `.bosatsu_version` and `.bosatsuc/cli/<version>/bosatsu.jar`, so the suite contract names an actual JVM invocation rather than a platform-dependent wrapper.
+3. Change the Bosatsu JVM text path to an explicit jar-based command template rooted in `.bosatsu_version` and `.bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar`, so the suite contract names an actual JVM invocation rather than a platform-dependent wrapper.
 4. Add the binary-path contract for `mandelbrot`, including the exact expectations that the corrected doc must spell out: helper build step, helper run step, raw stdout redirection target, and exact-byte validation workflow.
 5. Preserve every other reviewed part of the suite contract verbatim unless a wording tweak is required to keep the Bosatsu JVM split readable.
 6. Perform a final diff review focused on contract preservation: benchmark membership, URLs, validation rules, repository layout, warmup count, repeat count, metadata fields, and all non-Bosatsu-JVM command shapes must remain materially unchanged.
@@ -75,7 +75,7 @@ A minimal supporting note can appear either in the `mandelbrot` row or in the pr
 
 ## Risks
 1. The corrected doc could still be ambiguous if it says `mandelbrot` needs a special path but does not show a concrete command template. Mitigation: require the doc edit to record explicit build and run command shapes, not just prose.
-2. The doc could accidentally keep `./bosatsu` as the Bosatsu JVM command, which would continue to blur the platform distinction. Mitigation: explicitly pin the JVM artifact path through `.bosatsu_version` and `.bosatsuc/cli/<version>/bosatsu.jar`.
+2. The doc could accidentally keep `./bosatsu` as the Bosatsu JVM command, which would continue to blur the platform distinction. Mitigation: explicitly pin the JVM artifact path through `.bosatsu_version` and `.bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar`.
 3. The correction could overreach and churn unrelated parts of the suite contract. Mitigation: constrain edits to the Bosatsu JVM command matrix, the related output-handling language, and the smallest possible supporting note.
 4. The helper details for the byte runner could drift from downstream implementation if the contract reaches into internal implementation choices. Mitigation: pin the observable command contract, output path convention, and capture semantics, but avoid unnecessary detail about the helper's internal source layout.
 
