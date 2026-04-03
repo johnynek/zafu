@@ -17,6 +17,7 @@ from Zafu/Benchmark/Game/Harness import (
   StdoutChannel,
   StderrChannel,
   benchmark_result_csv_header,
+  is_bosatsu_eval_argv0,
   normalize_cli_args,
   parse_benchmark_cli,
   to_benchmark_run_result,
@@ -38,6 +39,9 @@ tests = TestSuite("Benchmark game harness tests", [
   Assertion(benchmark_result_csv_header matches "benchmark,target,input,repeat_index,elapsed_ns,exit_code,validation_passed,source_id,git_sha,timestamp_utc", "csv header stays stable"),
   Assertion(normalize_cli_args("binary-trees", ["binary-trees", "21"]) matches ["21"], "normalize strips command names"),
   Assertion(normalize_cli_args("n-body", ["bosatsu-eval", "1000"]) matches ["1000"], "normalize strips bosatsu eval argv0"),
+  Assertion(normalize_cli_args("mandelbrot", ["bosatsu-eval", "200"]) matches ["200"], "normalize strips bosatsu eval argv0 for other benchmarks"),
+  Assertion(is_bosatsu_eval_argv0("/tmp/bosatsu-eval"), "bosatsu eval argv0 detection uses the path basename"),
+  Assertion(is_bosatsu_eval_argv0("/tmp/not-an-int") matches False, "bosatsu eval argv0 detection rejects unrelated path basenames"),
   Assertion(normalize_cli_args("binary-trees", ["21"]) matches ["21"], "normalize keeps direct integer argv"),
   Assertion(normalize_cli_args("binary-trees", ["oops", "21"]) matches ["oops", "21"], "normalize keeps invalid direct argv intact"),
   Assertion(
@@ -51,6 +55,10 @@ tests = TestSuite("Benchmark game harness tests", [
   Assertion(
     parse_benchmark_cli("n-body", ["bosatsu-eval", "1000"]) matches RunInput(1000),
     "cli parsing accepts bosatsu eval argv",
+  ),
+  Assertion(
+    parse_benchmark_cli("mandelbrot", ["bosatsu-eval", "200"]) matches RunInput(200),
+    "cli parsing accepts the bosatsu eval argv0 contract",
   ),
   Assertion(
     parse_benchmark_cli("binary-trees", ["oops", "21"]) matches ExitCli(2, StderrChannel, _),
