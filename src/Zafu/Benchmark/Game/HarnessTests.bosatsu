@@ -117,7 +117,7 @@ tests = TestSuite("Benchmark game harness tests", [
           "./bosatsu build --main_pack Zafu/Benchmark/Game/NBody",
           "./.bosatsu_bench/game/n-body/n-body 50000000",
           "abc123",
-          "0.0.62",
+          "0.0.64",
           "21.0.2",
           "15.0.0",
           "macOS",

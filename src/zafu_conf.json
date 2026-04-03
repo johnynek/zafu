@@ -52,12 +52,12 @@
   ],
   "public_deps": {
     "core_alpha": {
-      "version": "6.0.5",
+      "version": "7.0.1",
       "hashes": [
-        "blake3:c2ce54e411c94b8097ba7dd26606285cc67728ad83d9f9b2045bcc7e85ce039b"
+        "blake3:a6b1ec711d8411013f6859556acf28e8f41072f7a1f162c74b9f0f4c3d6cccfe"
       ],
       "uris": [
-        "https://github.com/johnynek/bosatsu/releases/download/v0.0.62/core_alpha-v6.0.5.bosatsu_lib"
+        "https://github.com/johnynek/bosatsu/releases/download/v0.0.64/core_alpha-v7.0.1.bosatsu_lib"
       ]
     }
   }
