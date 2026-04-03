@@ -191,8 +191,8 @@ def looks_like_argv0(command_name: String, token: String) -> Bool:
 
 def looks_like_eval_driver_argv0(token: String) -> Bool:
   or(
-    eq_String(token, "bosatsu-eval"),
-    and(contains_path_separator(token), eq_String(path_basename(token), "bosatsu-eval")),
+    token matches "bosatsu-eval",
+    and(contains_path_separator(token), path_basename(token) matches "bosatsu-eval"),
   )
 
 # Only strip argv0 when it names the active benchmark executable. Invalid

@@ -18,6 +18,7 @@ from Bosatsu/IO/Error import (
 )
 from Bosatsu/Collection/Array import (
   Array,
+  foldl_Array,
   from_List_Array,
   get_or_Array,
   size_Array,
@@ -63,33 +64,18 @@ def eval_A(i: Int, j: Int) -> Float64:
   denominator = ij.mul(ij.add(1)).div(2).add(i).add(1)
   divf(1.0, int_to_Float64(denominator))
 
+def sum_indexed_products(values: Array[Float64], fn: Int -> Float64) -> Float64:
+  (_, sum) = foldl_Array(values, (0, 0.0), ((col_index, acc), item) -> (
+    next_acc = addf(acc, mulf(fn(col_index), item))
+    (col_index.add(1), next_acc)
+  ))
+  sum
+
 def sum_A_row(row_index: Int, values: Array[Float64]) -> Float64:
-  total = size_Array(values)
-
-  def go(rem: Int, col_index: Int, acc: Float64) -> Float64:
-    loop rem:
-      case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc
-      case _:
-        item = get_or_Array(values, col_index, _ -> 0.0)
-        next_acc = addf(acc, mulf(eval_A(row_index, col_index), item))
-        go(rem.sub(1), col_index.add(1), next_acc)
-
-  go(total, 0, 0.0)
+  sum_indexed_products(values, col_index -> eval_A(row_index, col_index))
 
 def sum_At_row(row_index: Int, values: Array[Float64]) -> Float64:
-  total = size_Array(values)
-
-  def go(rem: Int, col_index: Int, acc: Float64) -> Float64:
-    loop rem:
-      case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc
-      case _:
-        item = get_or_Array(values, col_index, _ -> 0.0)
-        next_acc = addf(acc, mulf(eval_A(col_index, row_index), item))
-        go(rem.sub(1), col_index.add(1), next_acc)
-
-  go(total, 0, 0.0)
+  sum_indexed_products(values, col_index -> eval_A(col_index, row_index))
 
 def eval_A_times_u(values: Array[Float64]) -> Array[Float64]:
   size = size_Array(values)
@@ -117,19 +103,15 @@ def power_iterations(values: Array[Float64], rounds: Int) -> (Array[Float64], Ar
   go(rounds, values, values)
 
 def dot(left: Array[Float64], right: Array[Float64]) -> Float64:
-  total = size_Array(left)
+  (_, sum) = foldl_Array(left, (0, 0.0), ((index, acc), left_item) -> (
+    right_item = get_or_Array(right, index, _ -> 0.0)
+    next_acc = addf(acc, mulf(left_item, right_item))
+    (index.add(1), next_acc)
+  ))
+  sum
 
-  def go(rem: Int, index: Int, acc: Float64) -> Float64:
-    loop rem:
-      case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc
-      case _:
-        left_item = get_or_Array(left, index, _ -> 0.0)
-        right_item = get_or_Array(right, index, _ -> 0.0)
-        next_acc = addf(acc, mulf(left_item, right_item))
-        go(rem.sub(1), index.add(1), next_acc)
-
-  go(total, 0, 0.0)
+def square_sum(values: Array[Float64]) -> Float64:
+  foldl_Array(values, 0.0, (sum, value) -> addf(sum, mulf(value, value)))
 
 def spectral_norm(size: Int) -> Float64:
   if cmp_Int(size, 0) matches LT | EQ:
@@ -137,7 +119,7 @@ def spectral_norm(size: Int) -> Float64:
   else:
     initial = tabulate_Array(size, _ -> 1.0)
     (u, v) = power_iterations(initial, power_iterations_count)
-    sqrt(divf(dot(u, v), dot(v, v)))
+    sqrt(divf(dot(u, v), square_sum(v)))
 
 def render_spectral_norm_output(size: Int) -> String:
   render_text_output([render_fixed_9(spectral_norm(size))])
