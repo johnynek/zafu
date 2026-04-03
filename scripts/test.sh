@@ -14,6 +14,13 @@ ulimit -S -s "${STACK_HARD_LIMIT}" 2>/dev/null || \
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# The Linux native-image CLI is stack-sensitive on the merged benchmark suite.
+# Prefer the JVM artifact there when Java is available so the same wrapper path
+# works for check/test/build/publish/doc without duplicating command logic.
+if [[ "$(uname -s)" == "Linux" ]] && [[ "$(tr -d '[:space:]' < "$REPO_ROOT/.bosatsu_platform")" == "native" ]] && command -v java >/dev/null 2>&1; then
+  export BOSATSU_PLATFORM_OVERRIDE=java
+fi
+
 ./bosatsu --fetch > /dev/null
 ./bosatsu fetch
 ./bosatsu check

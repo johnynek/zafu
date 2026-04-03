@@ -39,9 +39,21 @@ platform_file="${repo_root}/.bosatsu_platform"
 
 version="$(tr -d '[:space:]' < "$version_file")"
 platform="$(tr -d '[:space:]' < "$platform_file")"
+platform_override="${BOSATSU_PLATFORM_OVERRIDE:-}"
 
 [ -n "$version" ] || fail "empty ${version_file}"
 [ -n "$platform" ] || fail "empty ${platform_file} (expected: java, node, or native)"
+
+if [ -n "$platform_override" ]; then
+  case "$platform_override" in
+    java|node|native)
+      platform="$platform_override"
+      ;;
+    *)
+      fail "unknown BOSATSU_PLATFORM_OVERRIDE: ${platform_override} (expected java, node, or native)"
+      ;;
+  esac
+fi
 
 fetch=0
 artifact_src=""
