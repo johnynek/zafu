@@ -3,9 +3,10 @@ set -euo pipefail
 
 # The native Bosatsu CLI can exhaust smaller default stacks on the growing
 # benchmark suite in CI, especially on Linux native-image builds. Raise the
-# soft limit aggressively when the host allows it, but keep smaller fallbacks
+# soft limit to the host hard limit when possible, but keep smaller fallbacks
 # for environments that reject the larger values.
-ulimit -S -s 65532 2>/dev/null || \
+STACK_HARD_LIMIT="$(ulimit -H -s 2>/dev/null || printf '')"
+ulimit -S -s "${STACK_HARD_LIMIT}" 2>/dev/null || \
   ulimit -S -s 32768 2>/dev/null || \
   ulimit -S -s 16384 2>/dev/null || \
   true
