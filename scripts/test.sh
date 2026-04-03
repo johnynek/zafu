@@ -1,25 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The native Bosatsu CLI can exhaust smaller default stacks on the growing
-# benchmark suite in CI, especially on Linux native-image builds. Raise the
-# soft limit to the host hard limit when possible, but keep smaller fallbacks
-# for environments that reject the larger values.
-STACK_HARD_LIMIT="$(ulimit -H -s 2>/dev/null || printf '')"
-ulimit -S -s "${STACK_HARD_LIMIT}" 2>/dev/null || \
-  ulimit -S -s 32768 2>/dev/null || \
-  ulimit -S -s 16384 2>/dev/null || \
-  true
+# The native Bosatsu CLI can exhaust smaller default stacks on generated
+# fixture-heavy modules in CI. Raise the soft limit when the host allows it.
+ulimit -S -s 16384 2>/dev/null || true
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
-
-# The Linux native-image CLI is stack-sensitive on the merged benchmark suite.
-# Prefer the JVM artifact there when Java is available so the same wrapper path
-# works for check/test/build/publish/doc without duplicating command logic.
-if [[ "$(uname -s)" == "Linux" ]] && [[ "$(tr -d '[:space:]' < "$REPO_ROOT/.bosatsu_platform")" == "native" ]] && command -v java >/dev/null 2>&1; then
-  export BOSATSU_PLATFORM_OVERRIDE=java
-fi
 
 ./bosatsu --fetch > /dev/null
 ./bosatsu fetch
