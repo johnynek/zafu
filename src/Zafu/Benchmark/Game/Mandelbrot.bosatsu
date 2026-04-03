@@ -1,0 +1,137 @@
+package Zafu/Benchmark/Game/Mandelbrot
+
+from Bosatsu/IO/Core import (
+  Handle,
+  Inherit,
+  Pipe,
+  SpawnResult,
+  StdioConfig,
+  close,
+  flush,
+  stderr,
+  spawn,
+  stdout,
+  wait,
+  write_bytes,
+  write_utf8,
+)
+
+from Bosatsu/IO/Error import (
+  IOError,
+  BrokenPipe,
+  error_to_String,
+)
+
+from Bosatsu/Prog import (
+  Main,
+  Prog,
+  await,
+  pure,
+  raise_error,
+  recursive,
+  recover,
+)
+
+from Zafu/Benchmark/Game/Harness import (
+  ExitCli,
+  RunInput,
+  StderrChannel,
+  StdoutChannel,
+  OutputChannel,
+  parse_benchmark_cli,
+)
+
+from Zafu/Benchmark/Game/Mandelbrot/Internal import (
+  header_bytes,
+  nonnegative,
+  render_row_bytes,
+  should_bridge_binary_stdout,
+)
+
+export (
+  main,
+)
+
+exposes (
+  Bosatsu/Prog,
+)
+
+struct RowWriteState(handle: Handle, size: Int, remaining_rows: Int, row_index: Int)
+
+def write_channel_line(channel: OutputChannel, message: String) -> Prog[IOError, Unit]:
+  out = match channel:
+    case StdoutChannel:
+      stdout
+    case StderrChannel:
+      stderr
+
+  write_utf8(out, "${message}\n")
+
+def write_rows(handle: Handle, size: Int) -> Prog[IOError, Unit]:
+  go = recursive(self -> (state -> (
+    RowWriteState(handle0, size0, remaining_rows, row_index) = state
+    if cmp_Int(remaining_rows, 0) matches LT | EQ:
+      pure(Unit)
+    else:
+      _ <- write_bytes(handle0, render_row_bytes(size0, row_index)).await()
+      self(RowWriteState(handle0, size0, remaining_rows.sub(1), row_index.add(1)))
+  )))
+
+  go(RowWriteState(handle, size, nonnegative(size), 0))
+
+def write_bitmap(handle: Handle, size: Int) -> Prog[IOError, Unit]:
+  _ <- write_bytes(handle, header_bytes(size)).await()
+  write_rows(handle, size)
+
+def close_ignore_error[e](handle: Handle) -> Prog[e, Unit]:
+  _ <- recover(close(handle), _ -> pure(Unit)).await()
+  pure(Unit)
+
+# `bosatsu eval --run` currently routes stdout through a UTF-8 text path.
+# Stream the PBM bytes into a child that inherits stdout so the JVM runner
+# stays byte-exact while direct executables keep writing row-by-row themselves.
+def write_via_stdout_bridge(size: Int) -> Prog[IOError, Int]:
+  child <- spawn("cat", [], StdioConfig(Pipe, Inherit, Inherit)).await()
+  SpawnResult(proc, stdin_opt, _, _) = child
+
+  match stdin_opt:
+    case Some(handle):
+      status <- recover((
+        _ <- write_bitmap(handle, size).await()
+        _ <- close(handle).await()
+        wait(proc)
+      ), err -> (
+        _ <- close_ignore_error(handle).await()
+        raise_error(err)
+      )).await()
+      pure(0 if status.eq_Int(0) else 1)
+    case None:
+      _ <- write_utf8(stderr, "mandelbrot failed: cat stdin pipe unavailable\n").await()
+      pure(1)
+
+def run(args: List[String]) -> Prog[IOError, Int]:
+  match parse_benchmark_cli("mandelbrot", args):
+    case ExitCli(exit_code, channel, message):
+      _ <- write_channel_line(channel, message).await()
+      pure(exit_code)
+    case RunInput(size):
+      if cmp_Int(size, 0) matches LT:
+        _ <- write_channel_line(StderrChannel, "mandelbrot requires N >= 0").await()
+        pure(2)
+      elif should_bridge_binary_stdout(args):
+        write_via_stdout_bridge(size)
+      else:
+        _ <- write_bitmap(stdout, size).await()
+        _ <- flush(stdout).await()
+        pure(0)
+
+main: Main = Main(args -> (
+  recover(run(args), err -> (
+    match err:
+      case BrokenPipe(_):
+        pure(1)
+      case _:
+        _ <- recover(write_utf8(stderr, "mandelbrot failed: ${error_to_String(err)}\n"), _ -> pure(Unit)).await()
+        pure(1)
+  ))
+))

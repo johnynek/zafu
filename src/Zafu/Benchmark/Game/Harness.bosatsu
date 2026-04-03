@@ -56,6 +56,7 @@ export (
   to_benchmark_run_result,
   benchmark_result_csv_header,
   normalize_cli_args,
+  is_bosatsu_eval_argv0,
   parse_benchmark_cli,
   render_csv_row,
   render_benchmark_result_csv_row,
@@ -154,18 +155,6 @@ def to_benchmark_run_result(record: BenchmarkRunRecord) -> BenchmarkRunResult:
 def keep_leading_cli_token(token: String) -> Bool:
   or(token matches "-${_}", string_to_Int(token) matches Some(_))
 
-def contains_path_separator(token: String) -> Bool:
-  def loop_chars(rem: List[Char]) -> Bool:
-    loop rem:
-      case []:
-        False
-      case [.'/', *_]:
-        True
-      case [_, *tail]:
-        loop_chars(tail)
-
-  loop_chars(string_to_Char_List(token))
-
 def path_basename(token: String) -> String:
   def loop_chars(rem: List[Char], rev_parts: List[String]) -> String:
     loop rem:
@@ -178,11 +167,12 @@ def path_basename(token: String) -> String:
 
   loop_chars(string_to_Char_List(token).reverse(), [])
 
+def is_bosatsu_eval_argv0(token: String) -> Bool:
+  path_basename(token) matches "bosatsu-eval"
+
 def looks_like_argv0(command_name: String, token: String) -> Bool:
-  or(
-    eq_String(token, command_name),
-    and(contains_path_separator(token), eq_String(path_basename(token), command_name)),
-  )
+  base = path_basename(token)
+  or(eq_String(base, command_name), is_bosatsu_eval_argv0(token))
 
 # Only strip argv0 when it names the active benchmark executable. Invalid
 # direct argv should stay intact so the shared CLI path rejects the supplied

@@ -1,0 +1,177 @@
+package Zafu/Benchmark/Game/Mandelbrot/Internal
+
+from Bosatsu/IO/Bytes import (
+  Bytes,
+  from_List_Int,
+  utf8_bytes_from_String,
+)
+
+from Bosatsu/Num/Float64 import (
+  addf,
+  cmp_Float64,
+  divf,
+  int_to_Float64,
+  mulf,
+  subf,
+)
+
+from Zafu/Benchmark/Game/Harness import (
+  is_bosatsu_eval_argv0,
+  render_binary_output,
+)
+
+export (
+  header_bytes,
+  nonnegative,
+  pack_row_bits,
+  pixel_in_set,
+  row_pixels,
+  render_row_bytes,
+  render_output,
+  should_bridge_binary_stdout,
+)
+
+exposes Bosatsu/IO/Bytes
+
+max_iterations = 50
+escape_radius_squared = 4.0
+
+def operator <<(a, b): a.shift_left_Int(b)
+def operator |(a, b): a.or_Int(b)
+
+def nonnegative(value: Int) -> Int:
+  0 if cmp_Int(value, 0) matches LT else value
+
+def coordinate(size_float: Float64, index: Int, offset: Float64) -> Float64:
+  scaled_index = mulf(2.0, int_to_Float64(index))
+  subf(divf(scaled_index, size_float), offset)
+
+# Points in the main cardioid or period-2 bulb are guaranteed members, so we
+# can skip the escape loop there without changing the PBM output.
+def is_guaranteed_in_set(cr: Float64, ci: Float64) -> Bool:
+  ci_squared = mulf(ci, ci)
+  bulb_real = addf(cr, 1.0)
+  bulb_distance = addf(mulf(bulb_real, bulb_real), ci_squared)
+  bulb_distance_ok = cmp_Float64(bulb_distance, 0.0625) matches LT | EQ
+
+  cardioid_real = subf(cr, 0.25)
+  q = addf(mulf(cardioid_real, cardioid_real), ci_squared)
+  cardioid_term = mulf(q, addf(q, cardioid_real))
+  cardioid_limit = mulf(0.25, ci_squared)
+  cardioid_ok = cmp_Float64(cardioid_term, cardioid_limit) matches LT | EQ
+
+  or(bulb_distance_ok, cardioid_ok)
+
+def pixel_in_set_coordinates(cr: Float64, ci: Float64) -> Bool:
+  if is_guaranteed_in_set(cr, ci):
+    True
+  else:
+
+    def go(remaining_iterations: Int, zr: Float64, zi: Float64, tr: Float64, ti: Float64) -> Bool:
+      loop remaining_iterations:
+        case _ if cmp_Float64(addf(tr, ti), escape_radius_squared) matches GT:
+          False
+        case _ if cmp_Int(remaining_iterations, 0) matches LT | EQ:
+          True
+        case _:
+          next_zi = addf(mulf(mulf(2.0, zr), zi), ci)
+          next_zr = addf(subf(tr, ti), cr)
+          next_tr = mulf(next_zr, next_zr)
+          next_ti = mulf(next_zi, next_zi)
+          go(remaining_iterations.sub(1), next_zr, next_zi, next_tr, next_ti)
+
+    go(max_iterations, 0.0, 0.0, 0.0, 0.0)
+
+def pixel_in_set(size: Int, x: Int, y: Int) -> Bool:
+  safe_size = nonnegative(size)
+  if safe_size.eq_Int(0):
+    False
+  else:
+    size_float = int_to_Float64(size)
+    pixel_in_set_coordinates(coordinate(size_float, x, 1.5), coordinate(size_float, y, 1.0))
+
+def row_pixels(size: Int, row_index: Int) -> List[Bool]:
+  safe_size = nonnegative(size)
+  if safe_size.eq_Int(0):
+    []
+  else:
+    size_float = int_to_Float64(size)
+    ci = coordinate(size_float, row_index, 1.0)
+
+    def go(remaining_pixels: Int, x: Int, rev_pixels: List[Bool]) -> List[Bool]:
+      loop remaining_pixels:
+        case _ if cmp_Int(remaining_pixels, 0) matches LT | EQ:
+          rev_pixels.reverse()
+        case _:
+          go(remaining_pixels.sub(1), x.add(1), [pixel_in_set_coordinates(coordinate(size_float, x, 1.5), ci), *rev_pixels])
+
+    go(safe_size, 0, [])
+
+def pack_row_bits(bits: List[Bool]) -> Bytes:
+  def go(rem: List[Bool], bit_count: Int, byte_acc: Int, rev_bytes: List[Int]) -> Bytes:
+    loop rem:
+      case []:
+        padded_rev = if bit_count.eq_Int(0):
+          rev_bytes
+        else:
+          [(byte_acc << (8.sub(bit_count))), *rev_bytes]
+        from_List_Int(padded_rev.reverse())
+      case [bit, *tail]:
+        shifted = byte_acc << 1
+        next_acc = shifted | 1 if bit else shifted
+        next_count = bit_count.add(1)
+        if next_count.eq_Int(8):
+          go(tail, 0, 0, [next_acc, *rev_bytes])
+        else:
+          go(tail, next_count, next_acc, rev_bytes)
+
+  go(bits, 0, 0, [])
+
+def render_row_bytes(size: Int, row_index: Int) -> Bytes:
+  safe_size = nonnegative(size)
+  if safe_size.eq_Int(0):
+    from_List_Int([])
+  else:
+    size_float = int_to_Float64(size)
+    ci = coordinate(size_float, row_index, 1.0)
+
+    def go(remaining_pixels: Int, x: Int, bit_count: Int, byte_acc: Int, rev_bytes: List[Int]) -> Bytes:
+      loop remaining_pixels:
+        case _ if cmp_Int(remaining_pixels, 0) matches LT | EQ:
+          padded_rev = if bit_count.eq_Int(0):
+            rev_bytes
+          else:
+            [(byte_acc << (8.sub(bit_count))), *rev_bytes]
+          from_List_Int(padded_rev.reverse())
+        case _:
+          shifted = byte_acc << 1
+          next_acc = shifted | 1 if pixel_in_set_coordinates(coordinate(size_float, x, 1.5), ci) else shifted
+          next_count = bit_count.add(1)
+          if next_count.eq_Int(8):
+            go(remaining_pixels.sub(1), x.add(1), 0, 0, [next_acc, *rev_bytes])
+          else:
+            go(remaining_pixels.sub(1), x.add(1), next_count, next_acc, rev_bytes)
+
+    go(safe_size, 0, 0, 0, [])
+
+def render_rows(size: Int) -> List[Bytes]:
+  row_count = nonnegative(size)
+
+  def go(remaining_rows: Int, row_index: Int, rev_rows: List[Bytes]) -> List[Bytes]:
+    loop remaining_rows:
+      case _ if cmp_Int(remaining_rows, 0) matches LT | EQ:
+        rev_rows.reverse()
+      case _:
+        go(remaining_rows.sub(1), row_index.add(1), [render_row_bytes(size, row_index), *rev_rows])
+
+  go(row_count, 0, [])
+
+def header_bytes(size: Int) -> Bytes:
+  safe_size = nonnegative(size)
+  utf8_bytes_from_String("P4\n${int_to_String(safe_size)} ${int_to_String(safe_size)}\n")
+
+def render_output(size: Int) -> Bytes:
+  render_binary_output([header_bytes(size), *render_rows(size)])
+
+def should_bridge_binary_stdout(args: List[String]) -> Bool:
+  args matches [head, *_] if is_bosatsu_eval_argv0(head)

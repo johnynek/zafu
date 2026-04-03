@@ -1,0 +1,112 @@
+package Zafu/Benchmark/Game/MandelbrotTests
+
+from Bosatsu/IO/Bytes import (
+  Bytes,
+  from_List_Int,
+  utf8_bytes_from_String,
+)
+
+from Bosatsu/IO/Core import (
+  Read,
+  close,
+  open_file,
+  read_all_bytes,
+  string_to_Path,
+)
+
+from Bosatsu/IO/Error import (
+  error_to_String,
+)
+
+from Bosatsu/Prog import (
+  ProgTest,
+  await,
+  pure,
+  recover,
+)
+
+from Zafu/Control/Result import (
+  Ok,
+)
+
+from Zafu/Benchmark/Game/Harness import (
+  validate_exact_bytes_output,
+)
+
+from Zafu/Benchmark/Game/Mandelbrot/Internal import (
+  header_bytes,
+  pack_row_bits,
+  render_output,
+  should_bridge_binary_stdout,
+)
+
+fixture_path_text = "fixtures/benchmarksgame/mandelbrot/mandelbrot-output-n200.pbm"
+fixture_read_chunk_size = 65536
+
+def fixture_validation_assertion(official_output_n200: Bytes):
+  Assertion(
+    validate_exact_bytes_output(
+      "mandelbrot",
+      official_output_n200,
+      render_output(200),
+    ) matches Ok(_),
+    "rendered n=200 output matches the official validation fixture",
+  )
+
+def fixture_read_failure(message: String):
+  Assertion(False, message)
+
+def test_suite(fixture_assertion):
+  TestSuite("Mandelbrot benchmark tests", [
+    Assertion(
+      validate_exact_bytes_output(
+        "mandelbrot header",
+        utf8_bytes_from_String("P4\n5 5\n"),
+        header_bytes(5),
+      ) matches Ok(_),
+      "header formatting matches the portable bitmap contract",
+    ),
+    Assertion(
+      validate_exact_bytes_output(
+        "mandelbrot negative header normalization",
+        utf8_bytes_from_String("P4\n0 0\n"),
+        header_bytes(-1),
+      ) matches Ok(_),
+      "negative sizes normalize to an empty portable bitmap header in the pure renderer",
+    ),
+    Assertion(
+      validate_exact_bytes_output(
+        "mandelbrot row packing",
+        from_List_Int([170, 128]),
+        pack_row_bits([True, False, True, False, True, False, True, False, True, False]),
+      ) matches Ok(_),
+      "row packing emits big-endian bitmap bytes and zero-pads the final byte",
+    ),
+    fixture_assertion,
+    Assertion(should_bridge_binary_stdout(["bosatsu-eval", "200"]), "stdout bridge activates for the bosatsu eval argv0 contract"),
+    Assertion(should_bridge_binary_stdout(["/tmp/bosatsu-eval", "200"]), "stdout bridge activates for a bosatsu eval path argv0"),
+    Assertion(should_bridge_binary_stdout(["200"]) matches False, "stdout bridge stays off for direct executable argv"),
+  ])
+
+def read_fixture_assertion(path):
+  recover((
+    handle <- open_file(path, Read).await()
+    fixture_assertion <- recover((
+      official_output_n200 <- read_all_bytes(handle, fixture_read_chunk_size).await()
+      _ <- close(handle).await()
+      pure(fixture_validation_assertion(official_output_n200))
+    ), err -> (
+      _ <- recover(close(handle), _ -> pure(Unit)).await()
+      pure(fixture_read_failure("failed reading ${fixture_path_text}: ${error_to_String(err)}"))
+    )).await()
+    pure(fixture_assertion)
+  ), err -> pure(fixture_read_failure("failed opening ${fixture_path_text}: ${error_to_String(err)}")))
+
+tests = ProgTest(_ -> (
+  match string_to_Path(fixture_path_text):
+    case Some(path):
+      fixture_assertion <- read_fixture_assertion(path).await()
+      pure(test_suite(fixture_assertion))
+    case None:
+      pure(test_suite(fixture_read_failure("invalid fixture path: ${fixture_path_text}")))
+))
