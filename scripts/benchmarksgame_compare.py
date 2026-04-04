@@ -756,7 +756,9 @@ def execute_command_capture(
             output_bytes = temp_path.read_bytes()
         finally:
             temp_path.unlink(missing_ok=True)
-        command_string = render_run_command(spec, target, input_value, bosatsu_version, str(temp_path))
+        # Keep provenance replayable by recording the stable contract placeholder
+        # instead of a deleted host-specific temp filename.
+        command_string = render_run_command(spec, target, input_value, bosatsu_version, TEMP_PBM_PLACEHOLDER)
     else:
         start = time.perf_counter_ns()
         completed = subprocess.run(

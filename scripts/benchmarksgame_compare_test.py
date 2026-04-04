@@ -3,7 +3,9 @@ import csv
 import importlib.util
 import io
 import json
+import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -17,6 +19,7 @@ MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+WRAPPER_PATH = REPO_ROOT / "scripts/benchmarksgame_compare.sh"
 
 
 class BenchmarksgameCompareTests(unittest.TestCase):
@@ -90,6 +93,68 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         self.assertEqual([rotation[0] for rotation in rotations], targets)
         for rotation in rotations:
             self.assertCountEqual(rotation, targets)
+
+    def test_wrapper_requires_python_3_10_or_better(self) -> None:
+        cases = [
+            (
+                "falls_back_to_compatible_python",
+                {"python3": (1, 23), "python": (0, 0)},
+                0,
+                "python",
+                None,
+            ),
+            (
+                "fails_when_no_compatible_python_exists",
+                {"python3": (1, 23), "python": (1, 24)},
+                1,
+                None,
+                "Python 3.10+ is required",
+            ),
+        ]
+        for name, interpreters, expected_code, expected_log, expected_stderr in cases:
+            with self.subTest(name=name):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    temp_dir = pathlib.Path(tmpdir)
+                    log_path = temp_dir / "wrapper.log"
+                    for executable, (version_exit, exec_exit) in interpreters.items():
+                        script_path = temp_dir / executable
+                        script_path.write_text(
+                            "\n".join(
+                                [
+                                    "#!/usr/bin/env bash",
+                                    "set -euo pipefail",
+                                    'if [ "${1-}" = "-c" ]; then',
+                                    f"  exit {version_exit}",
+                                    "fi",
+                                    f'printf "%s\\n" "{executable}" >> "{log_path}"',
+                                    f"exit {exec_exit}",
+                                    "",
+                                ]
+                            ),
+                            encoding="utf-8",
+                        )
+                        script_path.chmod(0o755)
+
+                    env = os.environ.copy()
+                    env["PATH"] = f"{temp_dir}{os.pathsep}{env['PATH']}"
+                    completed = subprocess.run(
+                        [str(WRAPPER_PATH), "--print-plan"],
+                        cwd=REPO_ROOT,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        env=env,
+                    )
+
+                    self.assertEqual(completed.returncode, expected_code)
+                    if expected_log is None:
+                        self.assertFalse(log_path.exists())
+                    else:
+                        self.assertEqual(log_path.read_text(encoding="utf-8").splitlines(), [expected_log])
+                    if expected_stderr is None:
+                        self.assertEqual(completed.stderr, "")
+                    else:
+                        self.assertIn(expected_stderr, completed.stderr)
 
     def test_java_only_validate_skip_setup_does_not_probe_gcc(self) -> None:
         version_calls: list[tuple[str, ...]] = []
@@ -253,6 +318,21 @@ class BenchmarksgameCompareTests(unittest.TestCase):
             MODULE.normalize_validation_output(spectral, "bosatsu_jvm", fixture + b"\n"),
             fixture,
         )
+
+    def test_exact_byte_run_command_uses_placeholder_path(self) -> None:
+        mandelbrot = next(spec for spec in self.specs if spec.benchmark == "mandelbrot")
+        fixture = (REPO_ROOT / mandelbrot.validation.fixture_path).read_bytes()
+
+        def fake_run(command: list[str], cwd: pathlib.Path, stdout, stderr):
+            stdout.write(fixture)
+            return subprocess.CompletedProcess(command, 0, b"", b"")
+
+        with mock.patch.object(MODULE.subprocess, "run", side_effect=fake_run):
+            execution = MODULE.execute_command_capture(REPO_ROOT, mandelbrot, "bosatsu_jvm", mandelbrot.sample_input, self.version)
+
+        self.assertEqual(execution.output_bytes, fixture)
+        self.assertIn(MODULE.TEMP_PBM_PLACEHOLDER, execution.run_command)
+        self.assertNotIn("/tmp/", execution.run_command)
 
     def test_canonical_baseline_artifacts_exist_and_match(self) -> None:
         baseline_dir = REPO_ROOT / "docs/benchmarksgame"

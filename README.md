@@ -56,7 +56,7 @@ The benchmark prints CSV with header:
 
 ## Benchmarksgame compare harness
 
-Phase-1 cross-language comparison needs `python3` or `python`, `curl`, `java`, `javac`, and `gcc` in addition to the Bosatsu wrapper setup.
+Phase-1 cross-language comparison needs Python 3.10+, `curl`, `java`, `javac`, and `gcc` in addition to the Bosatsu wrapper setup.
 
 Use the checked-in harness wrapper to vendor-aware validate or measure the full suite:
 
