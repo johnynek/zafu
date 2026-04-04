@@ -850,7 +850,7 @@ def flush_pending_mode_bits(
 ) -> Int:
   if and(pending_regular.eq_Int(0), pending_special.eq_Int(0)):
     if op matches SetMode:
-      if set_emitted:
+      if and(set_emitted, who_mask.eq_Int(class_other)):
         current_mode
       else:
         apply_pending_mode_bits(current_mode, who_mask, who_omitted, op, umask, 0, 0)
@@ -1253,6 +1253,11 @@ tests = TestSuite("mkdir tool", [
   Assertion(normalize_path_key("x/../y") matches "y", "parent references normalize to their semantic destination"),
   Assertion(parse_octal_mode("755") matches Some(493), "octal modes parse to permission bits"),
   Assertion(parse_octal_mode("888") matches None, "invalid octal modes are rejected"),
+  Assertion(apply_symbolic_mode("u=gt", perm_mask, 18) matches Some(63), "ignored sticky after a group copy still clears user bits"),
+  Assertion(apply_symbolic_mode("g=ot", perm_mask, 18) matches Some(455), "ignored sticky after an other copy still clears group bits"),
+  Assertion(apply_symbolic_mode("g=ut", perm_mask, 18) matches Some(455), "ignored sticky after a user copy still clears group bits"),
+  Assertion(apply_symbolic_mode("u=got", perm_mask, 18) matches Some(63), "ignored sticky after multiple copies still clears user bits"),
+  Assertion(apply_symbolic_mode("u=ogt", perm_mask, 18) matches Some(63), "ignored sticky after reordered copies still clears user bits"),
   Assertion(apply_symbolic_mode("o=os", perm_mask, 18) matches Some(511), "ignored setid atoms keep copied other bits in set clauses"),
   Assertion(apply_symbolic_mode("o=gs", perm_mask, 18) matches Some(511), "ignored setid atoms after group copies keep other bits"),
   Assertion(apply_symbolic_mode("o=ut", perm_mask, 18) matches Some(511), "ignored sticky atoms after user copies keep other bits"),

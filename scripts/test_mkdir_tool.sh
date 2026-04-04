@@ -56,6 +56,15 @@ run_case() {
   )
 }
 
+mode_of() {
+  local path="$1"
+  if stat -f '%Lp' "$path" >/dev/null 2>&1; then
+    stat -f '%Lp' "$path"
+  else
+    stat -c '%a' "$path"
+  fi
+}
+
 compare_symbolic_mode_case() {
   local mode="$1"
   local case_dir="$WORKDIR/symbolic_$(printf '%s' "$mode" | od -An -tx1 | tr -d ' \n')"
@@ -65,7 +74,7 @@ compare_symbolic_mode_case() {
     cd "$case_dir/system"
     umask 022
     mkdir -m "$mode" d
-    stat -f '%p' d >mode
+    mode_of d >mode
     chmod -R u+rwx d >/dev/null 2>&1 || true
   )
 
@@ -74,7 +83,7 @@ compare_symbolic_mode_case() {
     umask 022
     "$EXE_PATH" -m "$mode" d >stdout 2>stderr
     printf '%s' "$?" >exit_code
-    stat -f '%p' d >mode
+    mode_of d >mode
     chmod -R u+rwx d >/dev/null 2>&1 || true
   )
 
@@ -231,6 +240,11 @@ for mode in \
   'a=t' \
   'ugo=t' \
   'u=tu' \
+  'u=gt' \
+  'g=ot' \
+  'g=ut' \
+  'u=got' \
+  'u=ogt' \
   'o=os' \
   'o=gs' \
   'o=ut' \
