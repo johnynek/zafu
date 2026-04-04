@@ -683,13 +683,13 @@ def copy_source_bits(current_mode: Int, source_class: Int, target_mask: Int) -> 
       select_class_bits(target_mask, user_exec_bit, group_exec_bit, other_exec_bit)
   read_part | write_part | exec_part
 
-def mode_bits_for_atom(current_mode: Int, who_mask: Int, atom: ModeAtom) -> (Int, Int):
+def mode_bits_for_atom(who_mask: Int, atom: ModeAtom) -> (Int, Int):
   match atom:
     case ReadMode:
       (select_class_bits(who_mask, user_read_bit, group_read_bit, other_read_bit), 0)
     case WriteMode:
       (select_class_bits(who_mask, user_write_bit, group_write_bit, other_write_bit), 0)
-    case ExecuteMode | ConditionalExecuteMode:
+    case ExecuteMode:
       (select_class_bits(who_mask, user_exec_bit, group_exec_bit, other_exec_bit), 0)
     case SetIdMode:
       (0, select_class_bits(who_mask, setuid_bit, setgid_bit, 0))
@@ -700,12 +700,16 @@ def mode_bits_for_atom(current_mode: Int, who_mask: Int, atom: ModeAtom) -> (Int
         else:
           0
       (0, sticky_bits)
-    case CopyUserMode:
-      (copy_source_bits(current_mode, class_user, who_mask), 0)
-    case CopyGroupMode:
-      (copy_source_bits(current_mode, class_group, who_mask), 0)
-    case CopyOtherMode:
-      (copy_source_bits(current_mode, class_other, who_mask), 0)
+    case ConditionalExecuteMode | CopyUserMode | CopyGroupMode | CopyOtherMode:
+      (0, 0)
+
+def apply_conditional_execute_mode(mode_state: Int, who_mask: Int, who_omitted: Bool, umask: Int) -> Int:
+  execute_bits =
+    if who_omitted:
+      select_class_bits(who_mask, user_exec_bit, group_exec_bit, other_exec_bit) & (perm_mask ^ umask)
+    else:
+      select_class_bits(who_mask, user_exec_bit, group_exec_bit, other_exec_bit)
+  mode_state | execute_bits
 
 def apply_pending_mode_bits(
   current_mode: Int,
@@ -769,8 +773,8 @@ def apply_copy_mode_atom(
 
 def apply_mode_clause(current_mode: Int, umask: Int, clause: ModeClause) -> Int:
   ModeClause { who_mask, who_omitted, op, atoms } = clause
-  def step(state: (Int, Int, Int, Bool), atom: ModeAtom) -> (Int, Int, Int, Bool):
-    (mode_state, pending_regular, pending_special, set_emitted) = state
+  def step(state: (Int, Int, Int, Bool, Bool), atom: ModeAtom) -> (Int, Int, Int, Bool, Bool):
+    (mode_state, pending_regular, pending_special, pending_conditional_execute, set_emitted) = state
     match atom:
       case CopyUserMode | CopyGroupMode | CopyOtherMode:
         flushed_mode =
@@ -778,28 +782,49 @@ def apply_mode_clause(current_mode: Int, umask: Int, clause: ModeClause) -> Int:
             mode_state
           else:
             apply_pending_mode_bits(mode_state, who_mask, who_omitted, op, umask, pending_regular, pending_special)
-        next_mode = apply_copy_mode_atom(flushed_mode, who_mask, who_omitted, op, umask, atom)
+        mode_before_copy =
+          if pending_conditional_execute:
+            if op matches AddMode:
+              apply_conditional_execute_mode(flushed_mode, who_mask, who_omitted, umask)
+            else:
+              flushed_mode
+          else:
+            flushed_mode
+        next_mode = apply_copy_mode_atom(mode_before_copy, who_mask, who_omitted, op, umask, atom)
         next_set_emitted =
           if op matches SetMode:
             True
           else:
             set_emitted
-        (next_mode, 0, 0, next_set_emitted)
+        next_pending_conditional_execute =
+          if op matches AddMode:
+            False
+          else:
+            pending_conditional_execute
+        (next_mode, 0, 0, next_pending_conditional_execute, next_set_emitted)
+      case ConditionalExecuteMode:
+        (mode_state, pending_regular, pending_special, True, set_emitted)
       case _:
-        (regular_bits, special_bits) = mode_bits_for_atom(current_mode, who_mask, atom)
-        (mode_state, pending_regular | regular_bits, pending_special | special_bits, set_emitted)
+        (regular_bits, special_bits) = mode_bits_for_atom(who_mask, atom)
+        (mode_state, pending_regular | regular_bits, pending_special | special_bits, pending_conditional_execute, set_emitted)
 
-  (mode_state, pending_regular, pending_special, set_emitted) = atoms.foldl_List((current_mode, 0, 0, False), step)
-  if and(pending_regular.eq_Int(0), pending_special.eq_Int(0)):
-    if op matches SetMode:
-      if set_emitted matches False:
-        apply_pending_mode_bits(mode_state, who_mask, who_omitted, op, umask, 0, 0)
+  (mode_state, pending_regular, pending_special, pending_conditional_execute, set_emitted) =
+    atoms.foldl_List((current_mode, 0, 0, False, False), step)
+  mode_after_explicit =
+    if and(pending_regular.eq_Int(0), pending_special.eq_Int(0)):
+      if op matches SetMode:
+        if set_emitted matches False:
+          apply_pending_mode_bits(mode_state, who_mask, who_omitted, op, umask, 0, 0)
+        else:
+          mode_state
       else:
         mode_state
     else:
-      mode_state
+      apply_pending_mode_bits(mode_state, who_mask, who_omitted, op, umask, pending_regular, pending_special)
+  if pending_conditional_execute:
+    apply_conditional_execute_mode(mode_after_explicit, who_mask, who_omitted, umask)
   else:
-    apply_pending_mode_bits(mode_state, who_mask, who_omitted, op, umask, pending_regular, pending_special)
+    mode_after_explicit
 
 def probe_default_mode() -> Prog[IOError, Int]:
   temp_dir <- create_temp_dir(None, mode_probe_prefix).await()
@@ -1072,6 +1097,13 @@ tests = TestSuite("mkdir tool", [
   ),
   Assertion(parse_octal_mode("755") matches Some(493), "octal modes parse to permission bits"),
   Assertion(parse_octal_mode("888") matches None, "invalid octal modes are rejected"),
+  Assertion(apply_symbolic_mode("-X", perm_mask, 18) matches Some(511), "conditional execute never removes bits for mkdir"),
+  Assertion(apply_symbolic_mode("+X", perm_mask, 18) matches Some(511), "conditional execute adds execute bits for mkdir"),
+  Assertion(apply_symbolic_mode("=X", perm_mask, 18) matches Some(73), "set mode clears first and then adds conditional execute"),
+  Assertion(apply_symbolic_mode("=uX", perm_mask, 18) matches Some(511), "copy atoms and conditional execute stay in the same set clause"),
+  Assertion(apply_symbolic_mode("=uoX", perm_mask, 18) matches Some(511), "multiple copy atoms still keep later conditional execute in order"),
+  Assertion(apply_symbolic_mode("-wX", perm_mask, 18) matches Some(383), "conditional execute remains additive after removals"),
+  Assertion(apply_symbolic_mode("-gXx", perm_mask, 18) matches Some(91), "conditional execute keeps BSD ordering with mixed explicit atoms"),
   Assertion(apply_symbolic_mode("u=or", perm_mask, 18) matches Some(319), "copy atoms before explicit atoms stay ordered"),
   Assertion(apply_symbolic_mode("u=os", perm_mask, 18) matches Some(2111), "copy atoms before setid atoms stay ordered"),
   Assertion(apply_symbolic_mode("u=so", perm_mask, 18) matches Some(2559), "copy atoms after setid atoms stay ordered"),

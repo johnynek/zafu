@@ -58,7 +58,7 @@ run_case() {
 
 compare_symbolic_mode_case() {
   local mode="$1"
-  local case_dir="$WORKDIR/symbolic_$(printf '%s' "$mode" | tr '=,+-' '____')"
+  local case_dir="$WORKDIR/symbolic_$(printf '%s' "$mode" | od -An -tx1 | tr -d ' \n')"
   mkdir -p "$case_dir/system" "$case_dir/zafu"
 
   (
@@ -123,6 +123,13 @@ assert_eq "verbose continue stderr" "mkdir: file: Not a directory" "$(cat "$WORK
 assert_dir_exists "verbose continue should create later operand" "$WORKDIR/verbose_continue/ok"
 
 for mode in \
+  '-X' \
+  '+X' \
+  '=X' \
+  '=uX' \
+  '=uoX' \
+  '-wX' \
+  '-gXx' \
   'u=or' \
   'u=ro' \
   'u=os' \
