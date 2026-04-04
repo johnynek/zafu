@@ -1,6 +1,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 import pathlib
 import sys
 import tempfile
@@ -64,6 +65,7 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         self.assertEqual(
             jvm_plan["setup_commands"],
             [
+                f"mkdir -p .bosatsuc/cli/{self.version}",
                 f"curl -fL https://github.com/johnynek/bosatsu/releases/download/v{self.version}/bosatsu.jar -o .bosatsuc/cli/{self.version}/bosatsu.jar",
                 f"java -jar .bosatsuc/cli/{self.version}/bosatsu.jar fetch",
             ],
@@ -176,6 +178,50 @@ class BenchmarksgameCompareTests(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(MODULE.main(), 0)
 
+        self.assertEqual(version_calls, [("gcc", "--version")])
+
+    def test_bosatsu_c_only_validate_records_gcc_version(self) -> None:
+        version_calls: list[tuple[str, ...]] = []
+
+        def fake_run_version(command: list[str]) -> str:
+            version_calls.append(tuple(command))
+            if command[0] == "gcc":
+                return "gcc (GCC) 14.2.0"
+            raise AssertionError(f"unexpected version probe: {command}")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = pathlib.Path(tmpdir) / "bosatsu-c-only.json"
+            argv = [
+                "benchmarksgame_compare.py",
+                "--benchmarks",
+                "n-body",
+                "--targets",
+                "bosatsu_c",
+                "--validate-only",
+                "--skip-setup",
+                "--output-json",
+                str(out_path),
+            ]
+            with mock.patch.object(sys, "argv", argv), \
+                mock.patch.object(MODULE.shutil, "which", side_effect=lambda command: f"/usr/bin/{command}"), \
+                mock.patch.object(MODULE, "build_targets", return_value={}), \
+                mock.patch.object(
+                    MODULE,
+                    "run_sample_validations",
+                    return_value=[
+                        MODULE.ValidationRow("n-body", "bosatsu_c", 1000, 0, True, None, None),
+                    ],
+                ), \
+                mock.patch.object(MODULE, "run_version_command", side_effect=fake_run_version), \
+                mock.patch.object(MODULE, "run_text_command", return_value="fd94ebd2"), \
+                mock.patch.object(MODULE.platform, "platform", return_value="test-os"), \
+                mock.patch.object(MODULE, "read_cpu_model", return_value="test-cpu"), \
+                contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(MODULE.main(), 0)
+
+            artifact = json.loads(out_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(artifact["run_metadata"]["gcc_version"], "gcc (GCC) 14.2.0")
         self.assertEqual(version_calls, [("gcc", "--version")])
 
     def test_bosatsu_jvm_text_validation_trims_eval_trailer_newline(self) -> None:

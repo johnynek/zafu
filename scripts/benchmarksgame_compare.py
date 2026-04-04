@@ -512,11 +512,13 @@ def bosatsu_jar_rel_path(version: str) -> str:
 
 def bosatsu_setup_commands(version: str, targets: Sequence[str]) -> list[str]:
     jar_rel = bosatsu_jar_rel_path(version)
+    jar_dir = str(pathlib.PurePosixPath(jar_rel).parent)
     jar_url = f"https://github.com/johnynek/bosatsu/releases/download/v{version}/bosatsu.jar"
     commands: list[str] = []
     if "bosatsu_jvm" in targets:
         commands.extend(
             [
+                shlex.join(["mkdir", "-p", jar_dir]),
                 shlex.join(["curl", "-fL", jar_url, "-o", jar_rel]),
                 shlex.join(["java", "-jar", jar_rel, "fetch"]),
             ]
@@ -974,7 +976,7 @@ def read_toolchain_info(repo_root: pathlib.Path, bosatsu_version: str, targets: 
     if "bosatsu_jvm" in targets or "java" in targets:
         java_version = first_nonempty_line(run_version_command(["java", "-version"]))
     gcc_version = "unavailable"
-    if "c" in targets:
+    if "bosatsu_c" in targets or "c" in targets:
         gcc_version = first_nonempty_line(run_version_command(["gcc", "--version"]))
     os_name = platform.platform()
     cpu_model = read_cpu_model()
