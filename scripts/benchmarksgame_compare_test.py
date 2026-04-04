@@ -186,6 +186,23 @@ class BenchmarksgameCompareTests(unittest.TestCase):
             fixture,
         )
 
+    def test_nbody_validation_rejects_surplus_blank_lines(self) -> None:
+        nbody = next(spec for spec in self.specs if spec.benchmark == "n-body")
+        fixture = (REPO_ROOT / nbody.validation.fixture_path).read_bytes()
+        with self.assertRaisesRegex(MODULE.HarnessError, "expected 2 lines, got 3"):
+            MODULE.validate_sample_output(REPO_ROOT, nbody, "java", fixture + b"\n")
+
+    def test_nbody_validation_reports_blank_decimal_lines_as_harness_errors(self) -> None:
+        nbody = next(spec for spec in self.specs if spec.benchmark == "n-body")
+        malformed_cases = [
+            ("blank_first_line", b"\n-0.169087605\n", "line 1: actual output must use exactly 9 fractional digits"),
+            ("blank_second_line", b"-0.169075164\n\n", "line 2: actual output must use exactly 9 fractional digits"),
+        ]
+        for name, actual, message in malformed_cases:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(MODULE.HarnessError, message):
+                    MODULE.validate_sample_output(REPO_ROOT, nbody, "java", actual)
+
     def test_csv_projection_stays_stable(self) -> None:
         record = MODULE.RunRecord(
             benchmark="n-body",

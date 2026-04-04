@@ -852,10 +852,14 @@ def validate_float_lines(label: str, expected_text: str, actual_text: str, abs_t
 def split_lines(value: str) -> list[str]:
     if value == "":
         return []
-    return value.rstrip("\n").split("\n")
+    # Keep explicit blank lines so float-line validation can reject them,
+    # while still treating a single trailing terminator as line punctuation.
+    return value.splitlines()
 
 
 def has_fixed_9_fractional_digits(value: str) -> bool:
+    if value == "":
+        return False
     sign = value[0] == "-"
     digits = value[1:] if sign else value
     whole, dot, fractional = digits.partition(".")
