@@ -6,6 +6,7 @@ from Bosatsu/Char import (
 )
 
 from Bosatsu/IO/Core import (
+  Dir,
   Path,
   PosixMode,
   FileStat,
@@ -244,6 +245,13 @@ def attempt[e, a, err](prog: Prog[e, a]) -> Prog[err, Result[e, a]]:
     pure(Ok(value))
   ), raised -> pure(Err(raised)))
 
+def io_error_context(err: IOError) -> String:
+  match err:
+    case NotFound(context) | AccessDenied(context) | AlreadyExists(context) | NotDirectory(context) | IsDirectory(context) | NotEmpty(context) | TooManyOpenFiles(context) | ReadOnlyFileSystem(context) | CrossDeviceLink(context) | NoSpace(context) | QuotaExceeded(context) | NameTooLong(context) | InvalidArgument(context) | InvalidUtf8(context) | BadFileDescriptor(context) | Interrupted(context) | WouldBlock(context) | TimedOut(context) | BrokenPipe(context) | Unsupported(context):
+      context
+    case Other(context, _, _):
+      context
+
 def io_error_reason(err: IOError) -> String:
   match err:
     case NotFound(_):
@@ -305,8 +313,65 @@ def emit_usage() -> Prog[IOError, Unit]:
 def emit_target_reason[e](raw_name: String, reason: String) -> Prog[e, Unit]:
   emit_stderr_line("mkdir: ${raw_name}: ${reason}")
 
-def emit_target_io_error[e](raw_name: String, err: IOError) -> Prog[e, Unit]:
-  emit_target_reason(raw_name, io_error_reason(err))
+def io_error_target_name(raw_name: String, err: IOError) -> String:
+  match io_error_context(err):
+    case "":
+      raw_name
+    case context:
+      context
+
+def has_generic_mkdir_context(err: IOError) -> Bool:
+  match io_error_context(err):
+    case "creating directory" | "creating directory with mode":
+      True
+    case _:
+      False
+
+def first_problem_path(path: Path) -> Prog[IOError, Option[Path]]:
+  go = recursive(self -> (
+    current -> (
+      match path_parent(current):
+        case Some(parent):
+          parent_problem <- self(parent).await()
+          match parent_problem:
+            case Some(problem):
+              pure(Some(problem))
+            case None:
+              stat_result <- stat(current).await()
+              match stat_result:
+                case Some(FileStat { kind: Dir, ... }):
+                  pure(None)
+                case Some(_):
+                  pure(Some(current))
+                case None:
+                  pure(Some(current))
+        case None:
+          stat_result <- stat(current).await()
+          match stat_result:
+            case Some(FileStat { kind: Dir, ... }):
+              pure(None)
+            case Some(_):
+              pure(Some(current))
+            case None:
+              pure(Some(current))
+    )
+  ))
+  go(path)
+
+def resolve_target_io_error_name(raw_name: String, path: Path, err: IOError) -> Prog[IOError, String]:
+  if has_generic_mkdir_context(err):
+    problem_path <- recover(first_problem_path(path), _ -> pure(None)).await()
+    match problem_path:
+      case Some(problem):
+        pure(path_to_String(problem))
+      case None:
+        pure(raw_name)
+  else:
+    pure(io_error_target_name(raw_name, err))
+
+def emit_target_io_error(raw_name: String, path: Path, err: IOError) -> Prog[IOError, Unit]:
+  target_name <- resolve_target_io_error_name(raw_name, path, err).await()
+  emit_target_reason(target_name, io_error_reason(err))
 
 def unknown_option_char(token: String) -> String:
   match token:
@@ -764,13 +829,13 @@ def emit_created_paths(paths: List[Path]) -> Prog[IOError, Unit]:
 
 def planned_created_paths(path: Path, verbose: Bool) -> Prog[IOError, List[Path]]:
   if verbose:
-    collect_missing_paths(path)
+    recover(collect_missing_paths(path), _ -> pure([]))
   else:
     pure([])
 
 def emit_created_so_far(verbose: Bool, planned_created: List[Path]) -> Prog[IOError, Unit]:
   if verbose:
-    created_so_far <- existing_paths(planned_created).await()
+    created_so_far <- recover(existing_paths(planned_created), _ -> pure([])).await()
     emit_created_paths(created_so_far)
   else:
     pure(Unit)
@@ -800,7 +865,7 @@ def run_target(target: Target, options: CliOptions, mode_plan: ModePlan) -> Prog
           pure(False)
         case Err(err):
           _ <- emit_created_so_far(verbose, planned_created).await()
-          _ <- emit_target_io_error(raw_name, err).await()
+          _ <- emit_target_io_error(raw_name, path, err).await()
           pure(True)
 
 def run_targets(targets: List[Target], options: CliOptions, mode_plan: ModePlan) -> Prog[IOError, Bool]:
@@ -921,6 +986,19 @@ tests = TestSuite("mkdir tool", [
   ),
   Assertion(prepare_cli_args(["--help"]) matches Err(IllegalOption("-")), "long options are rejected like BSD mkdir"),
   Assertion(unknown_option_char("--help") matches "-", "double-dash unknown options report the second dash"),
+  Assertion(
+    io_error_target_name("bar/baz", NotFound("bar")) matches "bar",
+    "target errors prefer the failing path reported by the kernel",
+  ),
+  Assertion(
+    io_error_target_name("file/subdir", NotDirectory("file")) matches "file",
+    "target errors use the failing component for not-a-directory cases",
+  ),
+  Assertion(has_generic_mkdir_context(NotFound("creating directory")), "mkdir context fallback detects generic mkdir errors"),
+  Assertion(
+    has_generic_mkdir_context(NotFound("bar")) matches False,
+    "path-aware io errors skip the stat fallback",
+  ),
   Assertion(parse_octal_mode("755") matches Some(493), "octal modes parse to permission bits"),
   Assertion(parse_octal_mode("888") matches None, "invalid octal modes are rejected"),
   Assertion(apply_symbolic_mode("g-w", perm_mask, 0) matches Some(495), "symbolic subtraction updates permission bits"),

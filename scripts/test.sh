@@ -8,6 +8,7 @@ cd "$REPO_ROOT"
 ./bosatsu fetch
 ./bosatsu check
 ./bosatsu test
+scripts/test_mkdir_tool.sh
 
 OUTDIR="${OUTDIR:-"$REPO_ROOT/.bosatsu_lib_publish_dry_run"}"
 URI_BASE="${URI_BASE:-https://example.invalid/}"
