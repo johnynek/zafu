@@ -7,8 +7,8 @@
 ## Metadata
 
 - Roadmap issue: `#166`
-- Graph version: `5`
-- Node count: `11`
+- Graph version: `6`
+- Node count: `12`
 
 ## Dependency Overview
 
@@ -21,8 +21,9 @@
 7. `numeric_kernels_v4` (`small_job`): `bench_common_v4` (`implemented`), `suite_contract_artifact_v3` (`planned`)
 8. `structural_kernels_v4` (`small_job`): `bench_common_v4` (`implemented`), `suite_contract_artifact_v3` (`planned`)
 9. `suite_contract_artifact_v4` (`reference_doc`): `suite_contract_artifact_v3` (`planned`)
-10. `compare_harness_v5` (`small_job`): `bench_common_v4` (`implemented`), `bitmap_output_v4` (`implemented`), `numeric_kernels_v4` (`implemented`), `structural_kernels_v4` (`implemented`), `suite_contract_artifact_v4` (`planned`)
-11. `docs_baseline_v5` (`small_job`): `compare_harness_v5` (`implemented`), `suite_contract_artifact_v4` (`planned`)
+10. `suite_contract_artifact_v5` (`reference_doc`): `suite_contract_artifact_v3` (`planned`), `suite_contract_artifact_v4` (`planned`)
+11. `compare_harness_v6` (`small_job`): `bench_common_v4` (`implemented`), `bitmap_output_v4` (`implemented`), `numeric_kernels_v4` (`implemented`), `structural_kernels_v4` (`implemented`), `suite_contract_artifact_v5` (`planned`)
+12. `docs_baseline_v6` (`small_job`): `compare_harness_v6` (`implemented`), `suite_contract_artifact_v5` (`planned`)
 
 ## Nodes
 
@@ -239,18 +240,44 @@ Correct `docs/design/166-benchmarksgame-suite.md` so downstream workers no longe
 - Downstream workers can determine the exact `bosatsu_jvm` build and run commands for `mandelbrot` from the corrected doc alone, without guessing around stdout encoding behavior.
 - The change stays doc-only and materially preserves the rest of the approved suite contract.
 
-### `compare_harness_v5`
+### `suite_contract_artifact_v5`
+
+- Kind: `reference_doc`
+- Title: Apply the byte-exact Bosatsu JVM suite-spec correction on main
+- Depends on: `suite_contract_artifact_v3` (`planned`), `suite_contract_artifact_v4` (`planned`)
+
+#### Body
+
+Apply the merged byte-exact Bosatsu JVM correction to `docs/design/166-benchmarksgame-suite.md` on the default branch so downstream implementation nodes can consume the corrected contract file directly.
+
+## Direct Inputs
+- `suite_contract_artifact_v3` (`planned`): the merged current suite spec artifact at `docs/design/166-benchmarksgame-suite.md`.
+- `suite_contract_artifact_v4` (`planned`): the merged correction design doc at `docs/design/190-correct-the-benchmark-game-suite-spec-for-byte-exact-bosatsu-jvm-binary-runs.md`.
+
+## Scope
+- Edit `docs/design/166-benchmarksgame-suite.md` by applying the merged issue #190 correction so the Bosatsu JVM contract explicitly separates the four text benchmarks from the byte-exact `mandelbrot` path.
+- Replace the current single `bosatsu_jvm` command template with the corrected per-output-mode contract, including the explicit JVM jar invocation for text benchmarks and the explicit byte-exact build and run path for `mandelbrot`.
+- Update the related output-handling language so the byte-exact stdout capture, temporary-file convention, and validation expectations are unambiguous for `mandelbrot`.
+- Preserve the approved phase-1 benchmark list, pinned Java and C sources, repository layout conventions, validation rules, warmup and repeat policy, metadata schema, and every non-Bosatsu-JVM target contract.
+- Keep this issue doc-only: do not touch `src/`, `fixtures/`, `vendor/`, `scripts/`, `README.md`, or benchmark result artifacts.
+
+## Acceptance Criteria
+- `docs/design/166-benchmarksgame-suite.md` on the default branch reflects the merged issue #190 correction and no longer presents `bosatsu_jvm` as a single command template for all five benchmarks.
+- The corrected doc gives downstream workers enough information to determine the exact text-benchmark JVM command and the exact byte-exact `mandelbrot` JVM path from the artifact alone.
+- The change stays doc-only and materially preserves the rest of the approved suite contract.
+
+### `compare_harness_v6`
 
 - Kind: `small_job`
 - Title: Vendor Java and C baselines and add the corrected comparison runner
-- Depends on: `bench_common_v4` (`implemented`), `bitmap_output_v4` (`implemented`), `numeric_kernels_v4` (`implemented`), `structural_kernels_v4` (`implemented`), `suite_contract_artifact_v4` (`planned`)
+- Depends on: `bench_common_v4` (`implemented`), `bitmap_output_v4` (`implemented`), `numeric_kernels_v4` (`implemented`), `structural_kernels_v4` (`implemented`), `suite_contract_artifact_v5` (`planned`)
 
 #### Body
 
 Vendor the comparison baselines and make local cross-language runs reproducible with the corrected Bosatsu JVM command matrix.
 
 ## Direct Inputs
-- `suite_contract_artifact_v4` (`planned`): the merged corrected suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
+- `suite_contract_artifact_v5` (`planned`): the merged corrected suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
 - `bench_common_v4` (`implemented`): the shipped benchmark-game result schema and shared helpers.
 - `numeric_kernels_v4` (`implemented`): the shipped Bosatsu `n-body` and `spectral-norm` programs.
 - `structural_kernels_v4` (`implemented`): the shipped Bosatsu `binary-trees` and `fannkuch-redux` programs.
@@ -269,19 +296,19 @@ Vendor the comparison baselines and make local cross-language runs reproducible 
 - Reference program provenance is explicit and reproducible.
 - Result normalization and command-matrix logic are tested, and the repo test suite remains green.
 
-### `docs_baseline_v5`
+### `docs_baseline_v6`
 
 - Kind: `small_job`
 - Title: Document the corrected benchmark workflow and capture a first baseline
-- Depends on: `compare_harness_v5` (`implemented`), `suite_contract_artifact_v4` (`planned`)
+- Depends on: `compare_harness_v6` (`implemented`), `suite_contract_artifact_v5` (`planned`)
 
 #### Body
 
 Document the workflow and check in a first reproducible local baseline using the corrected Bosatsu JVM benchmark contract.
 
 ## Direct Inputs
-- `suite_contract_artifact_v4` (`planned`): the merged corrected suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
-- `compare_harness_v5` (`implemented`): the shipped comparison runner, vendored baselines, normalized results format, and corrected Bosatsu JVM command matrix.
+- `suite_contract_artifact_v5` (`planned`): the merged corrected suite spec doc at `docs/design/166-benchmarksgame-suite.md`.
+- `compare_harness_v6` (`implemented`): the shipped comparison runner, vendored baselines, normalized results format, and corrected Bosatsu JVM command matrix.
 
 ## Scope
 - Update `README.md` with how to fetch prerequisites, build the Bosatsu benchmark-game programs, run the comparison harness, and interpret the emitted results without over-claiming benchmarksgame significance.
