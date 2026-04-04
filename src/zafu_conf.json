@@ -39,19 +39,20 @@
     "Zafu/Text/Parse/Rfc5234",
     "Zafu/Text/Pretty",
     "Zafu/Tool/Cat",
-    "Zafu/Tool/JsonFormat"
+    "Zafu/Tool/JsonFormat",
+    "Zafu/Tool/Mkdir"
   ],
   "all_packages": [
     ".*"
   ],
   "public_deps": {
     "core_alpha": {
-      "version": "6.0.4",
+      "version": "7.0.1",
       "hashes": [
-        "blake3:1f61e574e57ce5913e2a4f11db9c88a99b57edd341fb00a988c458be9b69d9f6"
+        "blake3:a6b1ec711d8411013f6859556acf28e8f41072f7a1f162c74b9f0f4c3d6cccfe"
       ],
       "uris": [
-        "https://github.com/johnynek/bosatsu/releases/download/v0.0.61/core_alpha-v6.0.4.bosatsu_lib"
+        "https://github.com/johnynek/bosatsu/releases/download/v0.0.64/core_alpha-v7.0.1.bosatsu_lib"
       ]
     }
   }
