@@ -54,6 +54,19 @@ The benchmark prints CSV with header:
 
 `ops_per_us` is most useful for comparing runs of the same `case` across different sizes.
 
+## Benchmarksgame compare harness
+
+Phase-1 cross-language comparison needs `python3` or `python`, `curl`, `java`, `javac`, and `gcc` in addition to the Bosatsu wrapper setup.
+
+Use the checked-in harness wrapper to vendor-aware validate or measure the full suite:
+
+```bash
+scripts/benchmarksgame_compare.sh --validate-only
+scripts/benchmarksgame_compare.sh --output-json /tmp/baseline-local.json --output-csv /tmp/baseline-local.csv
+```
+
+The harness reads `vendor/benchmarksgame/manifest.json`, fetches the explicit JVM CLI jar under `.bosatsuc/cli/$BOSATSU_VERSION/bosatsu.jar`, and uses the repo-accurate `java -jar ... eval --main Zafu/Benchmark/Game/*::main --run` commands for `bosatsu_jvm`.
+
 ## CI, docs, and release
 
 - CI (`.github/workflows/ci.yml`) runs check/test/dry-run publish and validates docs generation plus markdown-to-HTML conversion with Pandoc on pull requests.

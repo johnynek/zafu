@@ -1,0 +1,215 @@
+{
+  "generated_at": "2026-04-04",
+  "suite_contract": "docs/design/166-benchmarksgame-suite.md",
+  "java_launch_caveat": "Run the vendored benchmarksgame graalvmaot source on the local HotSpot JVM with javac/java only; do not substitute native-image.",
+  "c_launch_caveat": "Compile the exact vendored C source locally with gcc -O3 -fomit-frame-pointer -march=native and the listed libraries only. The local harness also prepends vendor/benchmarksgame/c/compat so binarytrees keeps its exact malloc.h include while remaining runnable on macOS.",
+  "benchmarks": [
+    {
+      "benchmark": "n-body",
+      "slug": "n-body",
+      "bosatsu": {
+        "package": "Zafu/Benchmark/Game/NBody",
+        "main": "Zafu/Benchmark/Game/NBody::main"
+      },
+      "sample_input": 1000,
+      "performance_input": 50000000,
+      "validation": {
+        "kind": "float_lines",
+        "fixture_path": "fixtures/benchmarksgame/nbody/nbody-output.txt",
+        "abs_tolerance": 1e-08
+      },
+      "java": {
+        "source_id": "nbody-graalvmaot-4",
+        "source_url": "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/nbody-graalvmaot-4.html",
+        "source_path": "vendor/benchmarksgame/java/nbody-graalvmaot-4/nbody.java",
+        "main_class": "nbody",
+        "thread_model": "single-threaded",
+        "pinned_at": "Mon, 17 Feb 2025 03:17:38 GMT",
+        "local_compile_flags": [],
+        "local_run_flags": [],
+        "launch_caveat": "HotSpot JVM run of the vendored graalvmaot source; do not use native-image or extra JVM flags."
+      },
+      "c": {
+        "source_id": "nbody-gcc-6",
+        "source_url": "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/nbody-gcc-6.html",
+        "source_path": "vendor/benchmarksgame/c/nbody-gcc-6/nbody.gcc-6.c",
+        "thread_model": "single-threaded",
+        "pinned_at": "Mon, 27 Jan 2025 04:29:12 GMT",
+        "local_compile_flags": [
+          "-O3",
+          "-fomit-frame-pointer",
+          "-march=native",
+          "-Ivendor/benchmarksgame/c/compat"
+        ],
+        "local_libraries": [
+          "-lm"
+        ],
+        "launch_caveat": "No OpenMP, pthreads, or custom allocator. The compat include path is harmless for this source and keeps the full C matrix portable across macOS and Linux."
+      }
+    },
+    {
+      "benchmark": "spectral-norm",
+      "slug": "spectral-norm",
+      "bosatsu": {
+        "package": "Zafu/Benchmark/Game/SpectralNorm",
+        "main": "Zafu/Benchmark/Game/SpectralNorm::main"
+      },
+      "sample_input": 100,
+      "performance_input": 5500,
+      "validation": {
+        "kind": "exact_text",
+        "fixture_path": "fixtures/benchmarksgame/spectralnorm/spectralnorm-output.txt"
+      },
+      "java": {
+        "source_id": "spectralnorm-graalvmaot-8",
+        "source_url": "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/spectralnorm-graalvmaot-8.html",
+        "source_path": "vendor/benchmarksgame/java/spectralnorm-graalvmaot-8/spectralnorm.java",
+        "main_class": "spectralnorm",
+        "thread_model": "single-threaded",
+        "pinned_at": "Mon, 17 Feb 2025 08:46:57 GMT",
+        "local_compile_flags": [],
+        "local_run_flags": [],
+        "launch_caveat": "HotSpot JVM run of the vendored graalvmaot source; do not use native-image or extra JVM flags."
+      },
+      "c": {
+        "source_id": "spectralnorm-gcc-8",
+        "source_url": "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/spectralnorm-gcc-8.html",
+        "source_path": "vendor/benchmarksgame/c/spectralnorm-gcc-8/spectralnorm.gcc-8.c",
+        "thread_model": "single-threaded",
+        "pinned_at": "Mon, 27 Jan 2025 05:50:15 GMT",
+        "local_compile_flags": [
+          "-O3",
+          "-fomit-frame-pointer",
+          "-march=native",
+          "-Ivendor/benchmarksgame/c/compat"
+        ],
+        "local_libraries": [
+          "-lm"
+        ],
+        "launch_caveat": "No OpenMP, pthreads, or custom allocator. The compat include path is harmless for this source and keeps the full C matrix portable across macOS and Linux."
+      }
+    },
+    {
+      "benchmark": "binary-trees",
+      "slug": "binary-trees",
+      "bosatsu": {
+        "package": "Zafu/Benchmark/Game/BinaryTrees",
+        "main": "Zafu/Benchmark/Game/BinaryTrees::main"
+      },
+      "sample_input": 10,
+      "performance_input": 21,
+      "validation": {
+        "kind": "exact_text",
+        "fixture_path": "fixtures/benchmarksgame/binarytrees/binarytrees-output.txt"
+      },
+      "java": {
+        "source_id": "binarytrees-graalvmaot-3",
+        "source_url": "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/binarytrees-graalvmaot-3.html",
+        "source_path": "vendor/benchmarksgame/java/binarytrees-graalvmaot-3/binarytrees.java",
+        "main_class": "binarytrees",
+        "thread_model": "single-threaded",
+        "pinned_at": "Mon, 17 Feb 2025 00:46:23 GMT",
+        "local_compile_flags": [],
+        "local_run_flags": [],
+        "launch_caveat": "HotSpot JVM run of the vendored graalvmaot source; do not use native-image or extra JVM flags."
+      },
+      "c": {
+        "source_id": "binarytrees-gcc-1",
+        "source_url": "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/binarytrees-gcc-1.html",
+        "source_path": "vendor/benchmarksgame/c/binarytrees-gcc-1/binarytrees.gcc-1.c",
+        "thread_model": "single-threaded",
+        "pinned_at": "Mon, 27 Jan 2025 00:50:52 GMT",
+        "local_compile_flags": [
+          "-O3",
+          "-fomit-frame-pointer",
+          "-march=native",
+          "-Ivendor/benchmarksgame/c/compat"
+        ],
+        "local_libraries": [
+          "-lm"
+        ],
+        "launch_caveat": "The exact vendored source still includes <malloc.h>; the local harness adds vendor/benchmarksgame/c/compat first on the include path so it compiles unchanged on macOS as well as Linux."
+      }
+    },
+    {
+      "benchmark": "fannkuch-redux",
+      "slug": "fannkuch-redux",
+      "bosatsu": {
+        "package": "Zafu/Benchmark/Game/FannkuchRedux",
+        "main": "Zafu/Benchmark/Game/FannkuchRedux::main"
+      },
+      "sample_input": 7,
+      "performance_input": 12,
+      "validation": {
+        "kind": "exact_text",
+        "fixture_path": "fixtures/benchmarksgame/fannkuchredux/fannkuchredux-output.txt"
+      },
+      "java": {
+        "source_id": "fannkuchredux-graalvmaot-2",
+        "source_url": "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/fannkuchredux-graalvmaot-2.html",
+        "source_path": "vendor/benchmarksgame/java/fannkuchredux-graalvmaot-2/fannkuchredux.java",
+        "main_class": "fannkuchredux",
+        "thread_model": "single-threaded",
+        "pinned_at": "Mon, 17 Feb 2025 01:16:36 GMT",
+        "local_compile_flags": [],
+        "local_run_flags": [],
+        "launch_caveat": "HotSpot JVM run of the vendored graalvmaot source; do not use native-image or extra JVM flags."
+      },
+      "c": {
+        "source_id": "fannkuchredux-gcc-3",
+        "source_url": "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/fannkuchredux-gcc-3.html",
+        "source_path": "vendor/benchmarksgame/c/fannkuchredux-gcc-3/fannkuchredux.gcc-3.c",
+        "thread_model": "single-threaded",
+        "pinned_at": "Mon, 27 Jan 2025 01:00:52 GMT",
+        "local_compile_flags": [
+          "-O3",
+          "-fomit-frame-pointer",
+          "-march=native",
+          "-Ivendor/benchmarksgame/c/compat"
+        ],
+        "local_libraries": [],
+        "launch_caveat": "No OpenMP, pthreads, or custom allocator. The compat include path is harmless for this source and keeps the full C matrix portable across macOS and Linux."
+      }
+    },
+    {
+      "benchmark": "mandelbrot",
+      "slug": "mandelbrot",
+      "bosatsu": {
+        "package": "Zafu/Benchmark/Game/Mandelbrot",
+        "main": "Zafu/Benchmark/Game/Mandelbrot::main"
+      },
+      "sample_input": 200,
+      "performance_input": 16000,
+      "validation": {
+        "kind": "exact_bytes",
+        "fixture_path": "fixtures/benchmarksgame/mandelbrot/mandelbrot-output-n200.pbm"
+      },
+      "java": {
+        "source_id": "mandelbrot-graalvmaot-8",
+        "source_url": "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/mandelbrot-graalvmaot-8.html",
+        "source_path": "vendor/benchmarksgame/java/mandelbrot-graalvmaot-8/mandelbrot.java",
+        "main_class": "mandelbrot",
+        "thread_model": "single-threaded",
+        "pinned_at": "Mon, 17 Feb 2025 02:34:45 GMT",
+        "local_compile_flags": [],
+        "local_run_flags": [],
+        "launch_caveat": "Capture stdout bytes directly to a temporary PBM file; do not decode or normalize the binary output."
+      },
+      "c": {
+        "source_id": "mandelbrot-gcc-8",
+        "source_url": "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/mandelbrot-gcc-8.html",
+        "source_path": "vendor/benchmarksgame/c/mandelbrot-gcc-8/mandelbrot.gcc-8.c",
+        "thread_model": "single-threaded",
+        "pinned_at": "Mon, 27 Jan 2025 04:14:46 GMT",
+        "local_compile_flags": [
+          "-O3",
+          "-fomit-frame-pointer",
+          "-march=native",
+          "-Ivendor/benchmarksgame/c/compat"
+        ],
+        "local_libraries": [],
+        "launch_caveat": "Capture stdout bytes directly to a temporary PBM file; do not decode or normalize the binary output."
+      }
+    }
+  ]
+}
