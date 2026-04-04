@@ -103,6 +103,18 @@ compare_symbolic_mode_case() {
   assert_eq "symbolic mode diff ($mode)" "$(cat "$case_dir/system/mode")" "$(cat "$case_dir/zafu/mode")"
 }
 
+assert_symbolic_mode_case() {
+  local case_name="$1"
+  local mode="$2"
+  local expected_mode="$3"
+
+  run_case "$case_name" -m "$mode" d
+  assert_eq "$case_name exit code" "0" "$(cat "$WORKDIR/$case_name/exit_code")"
+  assert_eq "$case_name stdout" "" "$(cat "$WORKDIR/$case_name/stdout")"
+  assert_eq "$case_name stderr" "" "$(cat "$WORKDIR/$case_name/stderr")"
+  assert_eq "$case_name mode" "$expected_mode" "$(mode_of "$WORKDIR/$case_name/d")"
+}
+
 compare_case_against_system() {
   local case_name="$1"
   shift
@@ -349,57 +361,66 @@ assert_eq "verbose parent ref stderr" "" "$(cat "$WORKDIR/verbose_parent_ref/std
 assert_dir_exists "verbose parent ref should create x" "$WORKDIR/verbose_parent_ref/x"
 assert_dir_exists "verbose parent ref should create y" "$WORKDIR/verbose_parent_ref/y"
 
-for mode in \
-  '+' \
-  '--' \
-  'u+' \
-  'a-' \
-  'u++x' \
-  'u+s+t' \
-  '+t' \
-  'a+t' \
-  'ugo+t' \
-  'u+t' \
-  '=t' \
-  'a=t' \
-  'ugo=t' \
-  'u=tu' \
-  'u=gt' \
-  'g=ot' \
-  'g=ut' \
-  'u=got' \
-  'u=ogt' \
-  'o=os' \
-  'o=gs' \
-  'o=ut' \
-  'o=uXs' \
-  '-X' \
-  '+X' \
-  '=X' \
-  '=uX' \
-  '=uoX' \
-  '-wX' \
-  '-gXx' \
-  'u=or' \
-  'u=ro' \
-  'u=os' \
-  'u=so' \
-  'u=gr' \
-  'u=rg' \
-  'u=ow' \
-  'u=wo' \
-  'u=orx' \
-  'u=rog'
-do
-  compare_symbolic_mode_case "$mode"
-done
-
-for prefix in s t st ts; do
-  for copy in o u g; do
-    for suffix in '' s t st oo; do
-      compare_symbolic_mode_case "o=${prefix}${copy}${suffix}"
+case "$(uname -s)" in
+  Darwin)
+    for mode in \
+      '+' \
+      '--' \
+      'u+' \
+      'a-' \
+      'u++x' \
+      'u+s+t' \
+      '+t' \
+      'a+t' \
+      'ugo+t' \
+      'u+t' \
+      '=t' \
+      'a=t' \
+      'ugo=t' \
+      'u=tu' \
+      'u=gt' \
+      'g=ot' \
+      'g=ut' \
+      'u=got' \
+      'u=ogt' \
+      'o=os' \
+      'o=gs' \
+      'o=ut' \
+      'o=uXs' \
+      '-X' \
+      '+X' \
+      '=X' \
+      '=uX' \
+      '=uoX' \
+      '-wX' \
+      '-gXx' \
+      'u=or' \
+      'u=ro' \
+      'u=os' \
+      'u=so' \
+      'u=gr' \
+      'u=rg' \
+      'u=ow' \
+      'u=wo' \
+      'u=orx' \
+      'u=rog'
+    do
+      compare_symbolic_mode_case "$mode"
     done
-  done
-done
 
-compare_symbolic_mode_case 'o=sost,g='
+    for prefix in s t st ts; do
+      for copy in o u g; do
+        for suffix in '' s t st oo; do
+          compare_symbolic_mode_case "o=${prefix}${copy}${suffix}"
+        done
+      done
+    done
+
+    compare_symbolic_mode_case 'o=sost,g='
+    ;;
+  *)
+    assert_symbolic_mode_case "symbolic_plus_t" '+t' "1777"
+    assert_symbolic_mode_case "symbolic_u_s_t" 'u+s+t' "4777"
+    assert_symbolic_mode_case "symbolic_copy_then_clear" 'o=sost,g=' "707"
+    ;;
+esac
