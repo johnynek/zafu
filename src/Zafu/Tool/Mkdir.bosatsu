@@ -6,7 +6,6 @@ from Bosatsu/Char import (
 )
 
 from Bosatsu/IO/Core import (
-  Dir,
   Path,
   PosixMode,
   FileStat,
@@ -58,7 +57,6 @@ from Bosatsu/Prog import (
   pure,
   raise_error,
   recover,
-  recursive,
 )
 
 from Zafu/Collection/NonEmptyChain import (
@@ -78,6 +76,14 @@ from Zafu/Control/Result import (
 from Zafu/Text/Pretty import (
   render_String as render,
   text,
+)
+
+from Zafu/Abstract/Eq import (
+  eq as eq_Eq,
+)
+
+from Zafu/Abstract/Instances/Predef import (
+  eq_String,
 )
 
 from Zafu/Cli/Args import (
@@ -329,35 +335,7 @@ def has_generic_mkdir_context(err: IOError) -> Bool:
       False
 
 def first_problem_path(path: Path) -> Prog[IOError, Option[Path]]:
-  go = recursive(self -> (
-    current -> (
-      match path_parent(current):
-        case Some(parent):
-          parent_problem <- self(parent).await()
-          match parent_problem:
-            case Some(problem):
-              pure(Some(problem))
-            case None:
-              stat_result <- stat(current).await()
-              match stat_result:
-                case Some(FileStat { kind: Dir, ... }):
-                  pure(None)
-                case Some(_):
-                  pure(Some(current))
-                case None:
-                  pure(Some(current))
-        case None:
-          stat_result <- stat(current).await()
-          match stat_result:
-            case Some(FileStat { kind: Dir, ... }):
-              pure(None)
-            case Some(_):
-              pure(Some(current))
-            case None:
-              pure(Some(current))
-    )
-  ))
-  go(path)
+  pure(path_parent(path))
 
 def resolve_target_io_error_name(raw_name: String, path: Path, err: IOError) -> Prog[IOError, String]:
   if has_generic_mkdir_context(err):
@@ -383,6 +361,132 @@ def unknown_option_char(token: String) -> String:
 
 def chars_to_String(chars: List[Char]) -> String:
   concat_String(["$.{ch}" for ch in chars])
+
+def contains_string(items: List[String], item: String) -> Bool:
+  def go(rem: List[String]) -> Bool:
+    loop rem:
+      case []:
+        False
+      case [head, *tail]:
+        if eq_Eq(eq_String, head, item):
+          True
+        else:
+          go(tail)
+
+  go(items)
+
+def raw_prefix_candidates(raw_name: String) -> List[String]:
+  chars = string_to_Char_List(raw_name)
+  def go(rem: List[Char], prefix_rev: List[Char], segment_rev: List[Char], rev_prefixes: List[String]) -> List[String]:
+    loop rem:
+      case []:
+        if segment_rev matches []:
+          rev_prefixes.reverse()
+        else:
+          [chars_to_String(prefix_rev.reverse()), *rev_prefixes].reverse()
+      case [.'/', *tail]:
+        next_prefix_rev = [.'/', *prefix_rev]
+        match segment_rev:
+          case []:
+            go(tail, next_prefix_rev, [], rev_prefixes)
+          case _:
+            prefix = chars_to_String(prefix_rev.reverse())
+            go(tail, next_prefix_rev, [], [prefix, *rev_prefixes])
+      case [head, *tail]:
+        go(tail, [head, *prefix_rev], [head, *segment_rev], rev_prefixes)
+
+  go(chars, [], [], [])
+
+def normalize_path_components(absolute: Bool, rev_components: List[String], component: String) -> List[String]:
+  match component:
+    case "" | ".":
+      rev_components
+    case "..":
+      match rev_components:
+        case []:
+          if absolute:
+            []
+          else:
+            [".."]
+        case ["..", *_]:
+          if absolute:
+            rev_components
+          else:
+            ["..", *rev_components]
+        case [_, *tail]:
+          tail
+    case _:
+      [component, *rev_components]
+
+def join_with_slash(parts: List[String]) -> String:
+  def go(rem: List[String], current: String) -> String:
+    loop rem:
+      case []:
+        current
+      case [head, *tail]:
+        next =
+          if current matches "":
+            head
+          else:
+            "${current}/${head}"
+        go(tail, next)
+
+  go(parts, "")
+
+def normalize_path_key(raw_name: String) -> String:
+  chars = string_to_Char_List(raw_name)
+  def go(rem: List[Char], absolute: Bool, segment_rev: List[Char], rev_components: List[String]) -> String:
+    loop rem:
+      case []:
+        final_components =
+          match segment_rev:
+            case []:
+              rev_components
+            case _:
+              normalize_path_components(absolute, rev_components, chars_to_String(segment_rev.reverse()))
+        rendered = join_with_slash(final_components.reverse())
+        if rendered matches "":
+          if absolute:
+            "/"
+          else:
+            "."
+        else:
+          if absolute:
+            "/${rendered}"
+          else:
+            rendered
+      case [.'/', *tail]:
+        next_absolute =
+          if and(absolute matches False, and(segment_rev matches [], rev_components matches [])):
+            True
+          else:
+            absolute
+        next_components =
+          match segment_rev:
+            case []:
+              rev_components
+            case _:
+              normalize_path_components(next_absolute, rev_components, chars_to_String(segment_rev.reverse()))
+        go(tail, next_absolute, [], next_components)
+      case [head, *tail]:
+        go(tail, absolute, [head, *segment_rev], rev_components)
+
+  go(chars, False, [], [])
+
+def path_exists_from_key(path_key: String) -> Prog[IOError, Bool]:
+  if path_key matches ".":
+    pure(True)
+  else:
+    match string_to_Path(path_key):
+      case Some(path):
+        stat_result <- stat(path).await()
+        match stat_result:
+          case Some(_):
+            pure(True)
+          case None:
+            pure(False)
+      case None:
+        pure(False)
 
 def expand_short_token_rev(token: String) -> Result[String, List[String]]:
   match string_to_Char_List(token):
@@ -873,58 +977,60 @@ def resolve_mode(raw_mode: Option[String]) -> Prog[IOError, Result[String, ModeP
     case None:
       pure(Ok(DefaultMode))
 
-def collect_missing_paths(path: Path) -> Prog[IOError, List[Path]]:
-  go = recursive(self -> (
-    state -> (
-      (current, missing_from_root) = state
-      stat_result <- stat(current).await()
-      match stat_result:
-        case Some(_):
-          pure(missing_from_root)
-        case None:
-          next_missing = [current, *missing_from_root]
-          match path_parent(current):
-            case Some(parent):
-              self((parent, next_missing))
-            case None:
-              pure(next_missing)
-    )
-  ))
-  go((path, []))
+def planned_created_paths(raw_name: String, verbose: Bool) -> Prog[IOError, List[String]]:
+  if verbose:
+    candidates = raw_prefix_candidates(raw_name)
+    def go(rem: List[String], rev_created: List[String], seen_keys: List[String]) -> Prog[IOError, List[String]]:
+      recur rem:
+        case []:
+          pure(rev_created.reverse())
+        case [head, *tail]:
+          key = normalize_path_key(head)
+          if contains_string(seen_keys, key):
+            go(tail, rev_created, seen_keys)
+          else:
+            exists <- path_exists_from_key(key).await()
+            next_seen_keys = [key, *seen_keys]
+            if exists:
+              go(tail, rev_created, next_seen_keys)
+            else:
+              go(tail, [head, *rev_created], next_seen_keys)
 
-def existing_paths(paths: List[Path]) -> Prog[IOError, List[Path]]:
-  def go(rem: List[Path], rev_existing: List[Path]) -> Prog[IOError, List[Path]]:
+    recover(go(candidates, [], []), _ -> pure([]))
+  else:
+    pure([])
+
+def existing_paths(paths: List[String]) -> Prog[IOError, List[String]]:
+  def go(rem: List[String], rev_existing: List[String]) -> Prog[IOError, List[String]]:
     recur rem:
       case []:
         pure(rev_existing.reverse())
       case [head, *tail]:
-        stat_result <- stat(head).await()
-        match stat_result:
-          case Some(_):
-            go(tail, [head, *rev_existing])
+        match string_to_Path(head):
+          case Some(path):
+            stat_result <- stat(path).await()
+            match stat_result:
+              case Some(_):
+                go(tail, [head, *rev_existing])
+              case None:
+                go(tail, rev_existing)
           case None:
             go(tail, rev_existing)
 
   go(paths, [])
 
-def emit_created_paths(paths: List[Path]) -> Prog[IOError, Unit]:
-  def go(rem: List[Path]) -> Prog[IOError, Unit]:
+def emit_created_paths(paths: List[String]) -> Prog[IOError, Unit]:
+  def go(rem: List[String]) -> Prog[IOError, Unit]:
     recur rem:
       case []:
         pure(Unit)
       case [head, *tail]:
-        _ <- emit_stdout_line(path_to_String(head)).await()
+        _ <- emit_stdout_line(head).await()
         go(tail)
 
   go(paths)
 
-def planned_created_paths(path: Path, verbose: Bool) -> Prog[IOError, List[Path]]:
-  if verbose:
-    recover(collect_missing_paths(path), _ -> pure([]))
-  else:
-    pure([])
-
-def emit_created_so_far(verbose: Bool, planned_created: List[Path]) -> Prog[IOError, Unit]:
+def emit_created_so_far(verbose: Bool, planned_created: List[String]) -> Prog[IOError, Unit]:
   if verbose:
     created_so_far <- recover(existing_paths(planned_created), _ -> pure([])).await()
     emit_created_paths(created_so_far)
@@ -942,13 +1048,18 @@ def run_target(target: Target, options: CliOptions, mode_plan: ModePlan) -> Prog
   CliOptions { parents, verbose, ... } = options
   match target:
     case EmptyTarget(raw_name):
-      _ <- emit_target_reason(raw_name, "No such file or directory").await()
+      display_name =
+        if parents:
+          raw_name
+        else:
+          "."
+      _ <- emit_target_reason(display_name, "No such file or directory").await()
       pure(True)
     case InvalidTarget(raw_name):
       _ <- emit_target_reason(raw_name, "Invalid argument").await()
       pure(True)
     case ValidTarget(raw_name, path):
-      planned_created <- planned_created_paths(path, verbose).await()
+      planned_created <- planned_created_paths(raw_name, verbose).await()
       create_result <- create_target(path, parents, mode_plan).attempt().await()
       match create_result:
         case Ok(_):
@@ -1091,6 +1202,12 @@ tests = TestSuite("mkdir tool", [
     has_generic_mkdir_context(NotFound("bar")) matches False,
     "path-aware io errors skip the stat fallback",
   ),
+  Assertion(raw_prefix_candidates("a//b") matches ["a", "a//b"], "verbose candidates preserve repeated separators on emitted prefixes"),
+  Assertion(raw_prefix_candidates("x/.") matches ["x", "x/."], "verbose candidates keep dot segments until normalization"),
+  Assertion(raw_prefix_candidates("x/../y") matches ["x", "x/..", "x/../y"], "verbose candidates keep parent segments in order"),
+  Assertion(normalize_path_key("x/.") matches "x", "dot segments normalize to the created directory"),
+  Assertion(normalize_path_key("x/..") matches ".", "parent segments normalize against created prefixes"),
+  Assertion(normalize_path_key("x/../y") matches "y", "parent references normalize to their semantic destination"),
   Assertion(parse_octal_mode("755") matches Some(493), "octal modes parse to permission bits"),
   Assertion(parse_octal_mode("888") matches None, "invalid octal modes are rejected"),
   Assertion(apply_symbolic_mode("+", perm_mask, 18) matches Some(511), "empty add clauses are accepted as no-ops"),
