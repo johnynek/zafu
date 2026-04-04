@@ -339,12 +339,16 @@ def first_problem_path(path: Path) -> Prog[IOError, Option[Path]]:
 
 def resolve_target_io_error_name(raw_name: String, path: Path, err: IOError) -> Prog[IOError, String]:
   if has_generic_mkdir_context(err):
-    problem_path <- recover(first_problem_path(path), _ -> pure(None)).await()
-    match problem_path:
-      case Some(problem):
-        pure(path_to_String(problem))
-      case None:
+    match err:
+      case AlreadyExists(_):
         pure(raw_name)
+      case _:
+        problem_path <- recover(first_problem_path(path), _ -> pure(None)).await()
+        match problem_path:
+          case Some(problem):
+            pure(path_to_String(problem))
+          case None:
+            pure(raw_name)
   else:
     pure(io_error_target_name(raw_name, err))
 
@@ -834,6 +838,27 @@ def apply_pending_mode_bits(
     case SetMode:
       (current_mode & (mode_mask ^ target_mask)) | bits_to_apply
 
+def flush_pending_mode_bits(
+  current_mode: Int,
+  who_mask: Int,
+  who_omitted: Bool,
+  op: ModeOp,
+  umask: Int,
+  pending_regular: Int,
+  pending_special: Int,
+  set_emitted: Bool,
+) -> Int:
+  if and(pending_regular.eq_Int(0), pending_special.eq_Int(0)):
+    if op matches SetMode:
+      if set_emitted:
+        current_mode
+      else:
+        apply_pending_mode_bits(current_mode, who_mask, who_omitted, op, umask, 0, 0)
+    else:
+      current_mode
+  else:
+    apply_pending_mode_bits(current_mode, who_mask, who_omitted, op, umask, pending_regular, pending_special)
+
 def apply_copy_mode_atom(
   current_mode: Int,
   who_mask: Int,
@@ -878,7 +903,16 @@ def apply_mode_clause(current_mode: Int, umask: Int, clause: ModeClause) -> Int:
       case CopyUserMode | CopyGroupMode | CopyOtherMode:
         flushed_mode =
           if pending_explicit:
-            apply_pending_mode_bits(mode_state, who_mask, who_omitted, op, umask, pending_regular, pending_special)
+            flush_pending_mode_bits(
+              mode_state,
+              who_mask,
+              who_omitted,
+              op,
+              umask,
+              pending_regular,
+              pending_special,
+              set_emitted,
+            )
           else:
             mode_state
         mode_before_copy =
@@ -911,7 +945,16 @@ def apply_mode_clause(current_mode: Int, umask: Int, clause: ModeClause) -> Int:
     atoms.foldl_List((current_mode, 0, 0, False, False, False), step)
   mode_after_explicit =
     if pending_explicit:
-      apply_pending_mode_bits(mode_state, who_mask, who_omitted, op, umask, pending_regular, pending_special)
+      flush_pending_mode_bits(
+        mode_state,
+        who_mask,
+        who_omitted,
+        op,
+        umask,
+        pending_regular,
+        pending_special,
+        set_emitted,
+      )
     else:
       if op matches SetMode:
         if set_emitted matches False:
@@ -1210,6 +1253,10 @@ tests = TestSuite("mkdir tool", [
   Assertion(normalize_path_key("x/../y") matches "y", "parent references normalize to their semantic destination"),
   Assertion(parse_octal_mode("755") matches Some(493), "octal modes parse to permission bits"),
   Assertion(parse_octal_mode("888") matches None, "invalid octal modes are rejected"),
+  Assertion(apply_symbolic_mode("o=os", perm_mask, 18) matches Some(511), "ignored setid atoms keep copied other bits in set clauses"),
+  Assertion(apply_symbolic_mode("o=gs", perm_mask, 18) matches Some(511), "ignored setid atoms after group copies keep other bits"),
+  Assertion(apply_symbolic_mode("o=ut", perm_mask, 18) matches Some(511), "ignored sticky atoms after user copies keep other bits"),
+  Assertion(apply_symbolic_mode("o=uXs", perm_mask, 18) matches Some(511), "conditional execute and ignored specials keep copied other bits"),
   Assertion(apply_symbolic_mode("+", perm_mask, 18) matches Some(511), "empty add clauses are accepted as no-ops"),
   Assertion(apply_symbolic_mode("u+", perm_mask, 18) matches Some(511), "empty add clauses with explicit who stay no-ops"),
   Assertion(apply_symbolic_mode("a-", perm_mask, 18) matches Some(511), "empty remove clauses are accepted as no-ops"),

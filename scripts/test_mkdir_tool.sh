@@ -128,6 +128,33 @@ assert_eq "nested not a directory stdout" "" "$(cat "$WORKDIR/nested_not_directo
 assert_eq "nested not a directory stderr" "mkdir: a/b: Not a directory" "$(cat "$WORKDIR/nested_not_directory/stderr")"
 assert_dir_missing "nested not a directory should not create child" "$WORKDIR/nested_not_directory/a/b/c"
 
+mkdir -p "$WORKDIR/nested_existing_dir/a/b"
+(
+  cd "$WORKDIR/nested_existing_dir"
+  "$EXE_PATH" a/b >stdout 2>stderr
+  printf '%s' "$?" >exit_code
+) || (
+  cd "$WORKDIR/nested_existing_dir"
+  printf '%s' "$?" >exit_code
+)
+assert_eq "nested existing dir exit code" "1" "$(cat "$WORKDIR/nested_existing_dir/exit_code")"
+assert_eq "nested existing dir stdout" "" "$(cat "$WORKDIR/nested_existing_dir/stdout")"
+assert_eq "nested existing dir stderr" "mkdir: a/b: File exists" "$(cat "$WORKDIR/nested_existing_dir/stderr")"
+
+mkdir -p "$WORKDIR/nested_existing_file/a"
+: > "$WORKDIR/nested_existing_file/a/b"
+(
+  cd "$WORKDIR/nested_existing_file"
+  "$EXE_PATH" -pv a/b >stdout 2>stderr
+  printf '%s' "$?" >exit_code
+) || (
+  cd "$WORKDIR/nested_existing_file"
+  printf '%s' "$?" >exit_code
+)
+assert_eq "nested existing file pv exit code" "1" "$(cat "$WORKDIR/nested_existing_file/exit_code")"
+assert_eq "nested existing file pv stdout" "" "$(cat "$WORKDIR/nested_existing_file/stdout")"
+assert_eq "nested existing file pv stderr" "mkdir: a/b: File exists" "$(cat "$WORKDIR/nested_existing_file/stderr")"
+
 mkdir -p "$WORKDIR/verbose_continue"
 : > "$WORKDIR/verbose_continue/file"
 (
@@ -204,6 +231,10 @@ for mode in \
   'a=t' \
   'ugo=t' \
   'u=tu' \
+  'o=os' \
+  'o=gs' \
+  'o=ut' \
+  'o=uXs' \
   '-X' \
   '+X' \
   '=X' \
