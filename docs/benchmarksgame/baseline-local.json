@@ -1,0 +1,29 @@
+{
+  "run_metadata": {
+    "format_version": 1,
+    "generated_at_utc": "2026-04-04T21:55:46Z",
+    "git_sha": "49b5a738d9c3daaf9d8db556f580bffe3e1b9a01",
+    "bosatsu_version": "0.0.64",
+    "java_version": "openjdk version \"25.0.2\" 2026-01-20",
+    "gcc_version": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
+    "os": "macOS-26.3-arm64-arm-64bit",
+    "cpu_model": "arm",
+    "selected_benchmarks": [
+      "n-body",
+      "spectral-norm",
+      "binary-trees",
+      "fannkuch-redux",
+      "mandelbrot"
+    ],
+    "selected_targets": [
+      "bosatsu_jvm",
+      "bosatsu_c",
+      "java",
+      "c"
+    ],
+    "validation_only": true,
+    "measured_repeats": 5,
+    "validation_results": []
+  },
+  "results": []
+}

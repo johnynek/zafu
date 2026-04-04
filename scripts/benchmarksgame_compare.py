@@ -573,7 +573,7 @@ def ensure_prerequisites(targets: Sequence[str], skip_setup: bool) -> None:
         required.add("java")
     if "java" in targets:
         required.add("javac")
-    if "c" in targets:
+    if "bosatsu_c" in targets or "c" in targets:
         required.add("gcc")
     for command in sorted(required):
         if shutil.which(command) is None:

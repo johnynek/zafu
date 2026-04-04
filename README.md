@@ -62,7 +62,7 @@ Use the checked-in harness wrapper to vendor-aware validate or measure the full 
 
 ```bash
 scripts/benchmarksgame_compare.sh --validate-only
-scripts/benchmarksgame_compare.sh --output-json /tmp/baseline-local.json --output-csv /tmp/baseline-local.csv
+scripts/benchmarksgame_compare.sh --output-json docs/benchmarksgame/baseline-local.json --output-csv docs/benchmarksgame/baseline-local.csv
 ```
 
 The harness reads `vendor/benchmarksgame/manifest.json`, fetches the explicit JVM CLI jar under `.bosatsuc/cli/$BOSATSU_VERSION/bosatsu.jar`, and uses the repo-accurate `java -jar ... eval --main Zafu/Benchmark/Game/*::main --run` commands for `bosatsu_jvm`.

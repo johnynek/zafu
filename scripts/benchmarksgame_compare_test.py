@@ -1,4 +1,5 @@
 import contextlib
+import csv
 import importlib.util
 import io
 import json
@@ -224,6 +225,27 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         self.assertEqual(artifact["run_metadata"]["gcc_version"], "gcc (GCC) 14.2.0")
         self.assertEqual(version_calls, [("gcc", "--version")])
 
+    def test_bosatsu_c_only_validate_requires_gcc_up_front(self) -> None:
+        argv = [
+            "benchmarksgame_compare.py",
+            "--benchmarks",
+            "n-body",
+            "--targets",
+            "bosatsu_c",
+            "--validate-only",
+            "--skip-setup",
+        ]
+        with mock.patch.object(sys, "argv", argv), \
+            mock.patch.object(
+                MODULE.shutil,
+                "which",
+                side_effect=lambda command: None if command == "gcc" else f"/usr/bin/{command}",
+            ), \
+            mock.patch.object(MODULE, "run_version_command", side_effect=AssertionError("version probe should not run")), \
+            contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(MODULE.HarnessError, "required command not found on PATH: gcc"):
+                MODULE.main()
+
     def test_bosatsu_jvm_text_validation_trims_eval_trailer_newline(self) -> None:
         spectral = next(spec for spec in self.specs if spec.benchmark == "spectral-norm")
         fixture = (REPO_ROOT / spectral.validation.fixture_path).read_bytes()
@@ -231,6 +253,30 @@ class BenchmarksgameCompareTests(unittest.TestCase):
             MODULE.normalize_validation_output(spectral, "bosatsu_jvm", fixture + b"\n"),
             fixture,
         )
+
+    def test_canonical_baseline_artifacts_exist_and_match(self) -> None:
+        baseline_dir = REPO_ROOT / "docs/benchmarksgame"
+        json_path = baseline_dir / "baseline-local.json"
+        csv_path = baseline_dir / "baseline-local.csv"
+        self.assertTrue(json_path.is_file(), f"missing canonical baseline artifact: {json_path}")
+        self.assertTrue(csv_path.is_file(), f"missing canonical baseline artifact: {csv_path}")
+
+        artifact = json.loads(json_path.read_text(encoding="utf-8"))
+        self.assertIn("run_metadata", artifact)
+        self.assertIn("results", artifact)
+
+        with csv_path.open(newline="", encoding="utf-8") as handle:
+            reader = csv.reader(handle)
+            header = next(reader)
+            rows = list(reader)
+
+        self.assertEqual(header, MODULE.CSV_COLUMNS)
+        self.assertEqual(len(rows), len(artifact["results"]))
+
+    def test_readme_uses_canonical_baseline_artifact_paths(self) -> None:
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("docs/benchmarksgame/baseline-local.json", readme)
+        self.assertIn("docs/benchmarksgame/baseline-local.csv", readme)
 
     def test_nbody_validation_rejects_surplus_blank_lines(self) -> None:
         nbody = next(spec for spec in self.specs if spec.benchmark == "n-body")
