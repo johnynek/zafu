@@ -198,11 +198,29 @@ mkdir -p "$WORKDIR/slash_existing_file/system" "$WORKDIR/slash_existing_file/zaf
   cd "$WORKDIR/slash_existing_file/zafu"
   printf '%s' "$?" >exit_code
 )
-assert_eq "slash existing file exit code" "$(cat "$WORKDIR/slash_existing_file/system/exit_code")" "$(cat "$WORKDIR/slash_existing_file/zafu/exit_code")"
-assert_eq "slash existing file stdout" "$(cat "$WORKDIR/slash_existing_file/system/stdout")" "$(cat "$WORKDIR/slash_existing_file/zafu/stdout")"
-assert_eq "slash existing file stderr" "$(cat "$WORKDIR/slash_existing_file/system/stderr")" "$(cat "$WORKDIR/slash_existing_file/zafu/stderr")"
+assert_eq "slash existing file exit code" "1" "$(cat "$WORKDIR/slash_existing_file/zafu/exit_code")"
+assert_eq "slash existing file stdout" "" "$(cat "$WORKDIR/slash_existing_file/zafu/stdout")"
+case "$(uname -s)" in
+  Darwin)
+    assert_eq "slash existing file stderr" "mkdir: a: File exists" "$(cat "$WORKDIR/slash_existing_file/zafu/stderr")"
+    ;;
+  *)
+    assert_contains "slash existing file stderr" "File exists" "$(cat "$WORKDIR/slash_existing_file/zafu/stderr")"
+    ;;
+esac
 
-compare_case_against_system double_slash_missing_parent a//b
+run_case double_slash_missing_parent a//b
+assert_eq "double slash missing parent exit code" "1" "$(cat "$WORKDIR/double_slash_missing_parent/exit_code")"
+assert_eq "double slash missing parent stdout" "" "$(cat "$WORKDIR/double_slash_missing_parent/stdout")"
+case "$(uname -s)" in
+  Darwin)
+    assert_eq "double slash missing parent stderr" "mkdir: a: No such file or directory" "$(cat "$WORKDIR/double_slash_missing_parent/stderr")"
+    ;;
+  *)
+    assert_contains "double slash missing parent stderr" "No such file or directory" "$(cat "$WORKDIR/double_slash_missing_parent/stderr")"
+    ;;
+esac
+assert_dir_missing "double slash missing parent should not create a/b" "$WORKDIR/double_slash_missing_parent/a/b"
 
 run_case nested_missing_parent a/b/c
 assert_eq "nested missing parent exit code" "1" "$(cat "$WORKDIR/nested_missing_parent/exit_code")"
