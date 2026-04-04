@@ -213,12 +213,12 @@ def main() -> int:
         emit_text(render_json(plan), args.output_json)
         return 0
 
-    ensure_prerequisites(selected_targets)
+    ensure_prerequisites(selected_targets, args.skip_setup)
     if not args.skip_setup:
-        ensure_repo_setup(repo_root, bosatsu_version)
+        ensure_repo_setup(repo_root, bosatsu_version, selected_targets)
 
     build_commands = build_targets(repo_root, selected_specs, selected_targets, bosatsu_version)
-    toolchain = read_toolchain_info(repo_root, bosatsu_version)
+    toolchain = read_toolchain_info(repo_root, bosatsu_version, selected_targets)
     validation_rows = run_sample_validations(repo_root, selected_specs, selected_targets, bosatsu_version)
 
     if args.validate_only:
@@ -430,7 +430,7 @@ def expand_execution_matrix(
     repeats: int,
     bosatsu_version: str,
 ) -> dict[str, object]:
-    setup_commands = bosatsu_setup_commands(bosatsu_version)
+    setup_commands = bosatsu_setup_commands(bosatsu_version, targets)
     build_commands: list[BuildPlan] = []
     validation_runs: list[RunPlan] = []
     warmup_runs: list[RunPlan] = []
@@ -510,15 +510,25 @@ def bosatsu_jar_rel_path(version: str) -> str:
     return f".bosatsuc/cli/{version}/bosatsu.jar"
 
 
-def bosatsu_setup_commands(version: str) -> list[str]:
+def bosatsu_setup_commands(version: str, targets: Sequence[str]) -> list[str]:
     jar_rel = bosatsu_jar_rel_path(version)
     jar_url = f"https://github.com/johnynek/bosatsu/releases/download/v{version}/bosatsu.jar"
-    return [
-        shlex.join(["curl", "-fL", jar_url, "-o", jar_rel]),
-        shlex.join(["java", "-jar", jar_rel, "fetch"]),
-        shlex.join(["./bosatsu", "--fetch"]),
-        shlex.join(["./bosatsu", "fetch"]),
-    ]
+    commands: list[str] = []
+    if "bosatsu_jvm" in targets:
+        commands.extend(
+            [
+                shlex.join(["curl", "-fL", jar_url, "-o", jar_rel]),
+                shlex.join(["java", "-jar", jar_rel, "fetch"]),
+            ]
+        )
+    if "bosatsu_c" in targets:
+        commands.extend(
+            [
+                shlex.join(["./bosatsu", "--fetch"]),
+                shlex.join(["./bosatsu", "fetch"]),
+            ]
+        )
+    return commands
 
 
 def build_command_for_plan(spec: BenchmarkSpec, target: str, bosatsu_version: str) -> str | None:
@@ -553,8 +563,10 @@ def render_run_command(
     return command
 
 
-def ensure_prerequisites(targets: Sequence[str]) -> None:
-    required = {"curl"}
+def ensure_prerequisites(targets: Sequence[str], skip_setup: bool) -> None:
+    required: set[str] = set()
+    if not skip_setup and "bosatsu_jvm" in targets:
+        required.add("curl")
     if "bosatsu_jvm" in targets or "java" in targets:
         required.add("java")
     if "java" in targets:
@@ -566,18 +578,20 @@ def ensure_prerequisites(targets: Sequence[str]) -> None:
             raise HarnessError(f"required command not found on PATH: {command}")
 
 
-def ensure_repo_setup(repo_root: pathlib.Path, bosatsu_version: str) -> None:
+def ensure_repo_setup(repo_root: pathlib.Path, bosatsu_version: str, targets: Sequence[str]) -> None:
     jar_rel = bosatsu_jar_rel_path(bosatsu_version)
-    jar_path = repo_root / jar_rel
-    jar_path.parent.mkdir(parents=True, exist_ok=True)
-    if not jar_path.exists():
-        run_checked(
-            repo_root,
-            ["curl", "-fL", f"https://github.com/johnynek/bosatsu/releases/download/v{bosatsu_version}/bosatsu.jar", "-o", jar_rel],
-        )
-    run_checked(repo_root, ["java", "-jar", jar_rel, "fetch"])
-    run_checked(repo_root, ["./bosatsu", "--fetch"])
-    run_checked(repo_root, ["./bosatsu", "fetch"])
+    if "bosatsu_jvm" in targets:
+        jar_path = repo_root / jar_rel
+        jar_path.parent.mkdir(parents=True, exist_ok=True)
+        if not jar_path.exists():
+            run_checked(
+                repo_root,
+                ["curl", "-fL", f"https://github.com/johnynek/bosatsu/releases/download/v{bosatsu_version}/bosatsu.jar", "-o", jar_rel],
+            )
+        run_checked(repo_root, ["java", "-jar", jar_rel, "fetch"])
+    if "bosatsu_c" in targets:
+        run_checked(repo_root, ["./bosatsu", "--fetch"])
+        run_checked(repo_root, ["./bosatsu", "fetch"])
 
 
 def build_targets(
@@ -950,10 +964,14 @@ def run_checked(repo_root: pathlib.Path, command: Sequence[str]) -> None:
         raise HarnessError(f"command failed ({shlex.join(command)}): {stderr}")
 
 
-def read_toolchain_info(repo_root: pathlib.Path, bosatsu_version: str) -> ToolchainInfo:
+def read_toolchain_info(repo_root: pathlib.Path, bosatsu_version: str, targets: Sequence[str]) -> ToolchainInfo:
     git_sha = run_text_command(repo_root, ["git", "rev-parse", "HEAD"], default="local")
-    java_version = first_nonempty_line(run_version_command(["java", "-version"]))
-    gcc_version = first_nonempty_line(run_version_command(["gcc", "--version"]))
+    java_version = "unavailable"
+    if "bosatsu_jvm" in targets or "java" in targets:
+        java_version = first_nonempty_line(run_version_command(["java", "-version"]))
+    gcc_version = "unavailable"
+    if "c" in targets:
+        gcc_version = first_nonempty_line(run_version_command(["gcc", "--version"]))
     os_name = platform.platform()
     cpu_model = read_cpu_model()
     repo_uri = read_repo_uri(repo_root)

@@ -1,7 +1,11 @@
+import contextlib
 import importlib.util
+import io
 import pathlib
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -55,12 +59,124 @@ class BenchmarksgameCompareTests(unittest.TestCase):
             MODULE.TEMP_PBM_PLACEHOLDER,
         )
 
+    def test_subset_plan_only_includes_selected_setup_commands(self) -> None:
+        jvm_plan = MODULE.expand_execution_matrix(self.specs[:1], ["bosatsu_jvm"], 1, self.version)
+        self.assertEqual(
+            jvm_plan["setup_commands"],
+            [
+                f"curl -fL https://github.com/johnynek/bosatsu/releases/download/v{self.version}/bosatsu.jar -o .bosatsuc/cli/{self.version}/bosatsu.jar",
+                f"java -jar .bosatsuc/cli/{self.version}/bosatsu.jar fetch",
+            ],
+        )
+
+        bosatsu_c_plan = MODULE.expand_execution_matrix(self.specs[:1], ["bosatsu_c"], 1, self.version)
+        self.assertEqual(
+            bosatsu_c_plan["setup_commands"],
+            [
+                "./bosatsu --fetch",
+                "./bosatsu fetch",
+            ],
+        )
+
+        c_plan = MODULE.expand_execution_matrix(self.specs[:1], ["c"], 1, self.version)
+        self.assertEqual(c_plan["setup_commands"], [])
+
     def test_rotation_preserves_target_set(self) -> None:
         targets = ["bosatsu_jvm", "bosatsu_c", "java", "c"]
         rotations = [MODULE.rotate_targets(targets, index) for index in range(len(targets))]
         self.assertEqual([rotation[0] for rotation in rotations], targets)
         for rotation in rotations:
             self.assertCountEqual(rotation, targets)
+
+    def test_java_only_validate_skip_setup_does_not_probe_gcc(self) -> None:
+        version_calls: list[tuple[str, ...]] = []
+
+        def fake_run_version(command: list[str]) -> str:
+            version_calls.append(tuple(command))
+            if command[0] == "java":
+                return 'openjdk version "21.0.2"'
+            raise FileNotFoundError("gcc missing")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = pathlib.Path(tmpdir) / "java-only.json"
+            argv = [
+                "benchmarksgame_compare.py",
+                "--benchmarks",
+                "n-body",
+                "--targets",
+                "java",
+                "--validate-only",
+                "--skip-setup",
+                "--output-json",
+                str(out_path),
+            ]
+            with mock.patch.object(sys, "argv", argv), \
+                mock.patch.object(
+                    MODULE.shutil,
+                    "which",
+                    side_effect=lambda command: None if command == "gcc" else f"/usr/bin/{command}",
+                ), \
+                mock.patch.object(MODULE, "build_targets", return_value={}), \
+                mock.patch.object(
+                    MODULE,
+                    "run_sample_validations",
+                    return_value=[
+                        MODULE.ValidationRow("n-body", "java", 1000, 0, True, None, None),
+                    ],
+                ), \
+                mock.patch.object(MODULE, "run_version_command", side_effect=fake_run_version), \
+                mock.patch.object(MODULE, "run_text_command", return_value="dc2da6cf"), \
+                mock.patch.object(MODULE.platform, "platform", return_value="test-os"), \
+                mock.patch.object(MODULE, "read_cpu_model", return_value="test-cpu"), \
+                contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(MODULE.main(), 0)
+
+        self.assertEqual(version_calls, [("java", "-version")])
+
+    def test_c_only_validate_skips_java_setup(self) -> None:
+        version_calls: list[tuple[str, ...]] = []
+
+        def fake_run_version(command: list[str]) -> str:
+            version_calls.append(tuple(command))
+            if command[0] == "gcc":
+                return "gcc (GCC) 14.2.0"
+            raise FileNotFoundError("java missing")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = pathlib.Path(tmpdir) / "c-only.json"
+            argv = [
+                "benchmarksgame_compare.py",
+                "--benchmarks",
+                "n-body",
+                "--targets",
+                "c",
+                "--validate-only",
+                "--output-json",
+                str(out_path),
+            ]
+            with mock.patch.object(sys, "argv", argv), \
+                mock.patch.object(
+                    MODULE.shutil,
+                    "which",
+                    side_effect=lambda command: None if command in ("java", "javac") else f"/usr/bin/{command}",
+                ), \
+                mock.patch.object(MODULE, "build_targets", return_value={}), \
+                mock.patch.object(
+                    MODULE,
+                    "run_sample_validations",
+                    return_value=[
+                        MODULE.ValidationRow("n-body", "c", 1000, 0, True, None, None),
+                    ],
+                ), \
+                mock.patch.object(MODULE, "run_version_command", side_effect=fake_run_version), \
+                mock.patch.object(MODULE, "run_text_command", return_value="dc2da6cf"), \
+                mock.patch.object(MODULE.platform, "platform", return_value="test-os"), \
+                mock.patch.object(MODULE, "read_cpu_model", return_value="test-cpu"), \
+                mock.patch.object(MODULE, "run_checked", side_effect=FileNotFoundError("java missing")), \
+                contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(MODULE.main(), 0)
+
+        self.assertEqual(version_calls, [("gcc", "--version")])
 
     def test_bosatsu_jvm_text_validation_trims_eval_trailer_newline(self) -> None:
         spectral = next(spec for spec in self.specs if spec.benchmark == "spectral-norm")
