@@ -54,7 +54,9 @@ In `## Single-Machine Comparison Protocol`, replace the single wrapper-based `bo
    - `fannkuch-redux`: `java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchmark/Game/FannkuchRedux::main --run <N>`
    - `mandelbrot`: `java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchmark/Game/Mandelbrot::main --run <N> > <temporary-pbm-path>`
 
-The corrected text should be explicit that `./bosatsu --fetch` may remain a repo-local setup step to populate `.bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar`, but `./bosatsu` is not the normative `bosatsu_jvm` benchmark command because it is selected by `.bosatsu_platform`.
+The corrected text should be explicit that `./bosatsu --fetch` and `./bosatsu fetch` may remain repo-local setup steps to populate `.bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar` and the fetched library cache needed by `eval`, but `./bosatsu` is not the normative `bosatsu_jvm` benchmark command because it is selected by `.bosatsu_platform`.
+
+The explicit JVM commands should keep the same evaluator flag shape as the shipped benchmark entrypoints. The doc should not add extra include-path flags or alternate evaluator wiring that the current Bosatsu CLI does not require for this repo-local package layout.
 
 The `mandelbrot` change should stay focused on the external contract. The doc should not describe internal implementation details for how the program preserves raw bytes under `eval`; it should only pin the observable entrypoint and capture semantics that downstream workers must honor.
 
@@ -70,22 +72,24 @@ Update the `Output handling` rule so the Bosatsu JVM contract is aligned with th
 2. Replace the current wrapper-based `bosatsu_jvm` template with explicit jar-based commands rooted in `.bosatsu_version` and `.bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar`.
 3. Expand the JVM contract from a generic `<Package>` template to exact per-benchmark commands so the artifact alone names the shipped `Main` entrypoints.
 4. Preserve `mandelbrot` on the same `eval --run` JVM path as the other benchmarks, but spell out the required temporary-file capture contract and byte-exact validation workflow.
-5. Review the final doc for strict non-regression: phase-1 benchmark membership, benchmark matrix rows, validation sources, performance inputs, layout conventions, warmup and repeat policy, metadata fields, and all non-Bosatsu-JVM targets must remain materially unchanged.
-6. Keep the PR doc-only. Do not modify `src/`, `fixtures/`, `vendor/`, `scripts/`, `README.md`, or result artifacts.
+5. Add one explicit setup note that the jar-based commands assume the CLI artifact has been fetched and the repo dependencies have been inserted into the local Bosatsu cache before measured runs begin.
+6. Review the final doc for strict non-regression: phase-1 benchmark membership, benchmark matrix rows, validation sources, performance inputs, layout conventions, warmup and repeat policy, metadata fields, and all non-Bosatsu-JVM targets must remain materially unchanged.
+7. Keep the PR doc-only. Do not modify `src/`, `fixtures/`, `vendor/`, `scripts/`, `README.md`, or result artifacts.
 
 ## Acceptance Criteria
 1. `docs/design/166-benchmarksgame-suite.md` names a true JVM `bosatsu_jvm` command rooted in `.bosatsu_version` and `.bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar` instead of the platform-selected `./bosatsu` wrapper.
 2. The corrected doc enumerates the exact JVM `eval --run` entrypoints for `n-body`, `spectral-norm`, `binary-trees`, and `fannkuch-redux`.
 3. The corrected doc states that `mandelbrot` uses the same explicit JVM `eval --run` entrypoint and specifies the byte-exact temporary-file capture contract, including byte-count and SHA-256 recording and the absence of text normalization.
-4. The corrected doc remains consistent with the shipped `bitmap_output_v4` behavior and does not invent a separate helper build or run contract for `mandelbrot`.
-5. The phase-1 benchmark list, pinned Java and C sources, repository layout conventions, validation rules, warmup and repeat policy, metadata schema, and every non-Bosatsu-JVM target contract are materially preserved.
-6. The implementation stays doc-only.
+4. The corrected doc makes the real JVM prerequisites explicit by allowing setup steps that fetch the CLI artifact and Bosatsu library cache, while keeping those setup steps separate from the normative benchmark commands.
+5. The corrected doc remains consistent with the shipped `bitmap_output_v4` behavior and does not invent a separate helper build or run contract for `mandelbrot`.
+6. The phase-1 benchmark list, pinned Java and C sources, repository layout conventions, validation rules, warmup and repeat policy, metadata schema, and every non-Bosatsu-JVM target contract are materially preserved.
+7. The implementation stays doc-only.
 
 ## Risks
 1. The doc could still drift from the shipped benchmark entrypoints if it keeps a generic placeholder or adds JVM flags that the shipped commands do not use. Mitigation: enumerate the exact `Zafu/Benchmark/Game/*::main` commands and mirror the shipped `eval --run` shape.
 2. `mandelbrot` could become ambiguous again if the doc describes byte-exact capture only as prose and not as part of the run contract. Mitigation: make the temporary-file redirection and post-run byte accounting explicit in the `bosatsu_jvm` protocol.
 3. The correction could overreach into internal runtime details, such as how `mandelbrot` preserves binary stdout under `eval`. Mitigation: document only the external command and observable output semantics, not the internal implementation mechanism.
-4. Downstream workers could treat `./bosatsu` as the benchmark command out of habit. Mitigation: leave `./bosatsu --fetch` as an optional setup note if needed, but clearly state that the normative JVM benchmark command is the explicit jar invocation.
+4. Downstream workers could treat `./bosatsu` as the benchmark command out of habit or add unsupported evaluator flags while translating the wrapper call to a direct jar invocation. Mitigation: leave `./bosatsu --fetch` and `./bosatsu fetch` as optional setup notes, but clearly state that the normative JVM benchmark command is the explicit jar invocation with the same `eval --run` flag shape as the shipped entrypoint.
 
 ## Rollout Notes
 1. Merge `#196` before downstream comparison-harness or baseline-documentation work that consumes the suite contract from `main`.
