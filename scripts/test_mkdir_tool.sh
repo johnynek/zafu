@@ -122,7 +122,38 @@ assert_eq "verbose continue stdout" "ok" "$(cat "$WORKDIR/verbose_continue/stdou
 assert_eq "verbose continue stderr" "mkdir: file: Not a directory" "$(cat "$WORKDIR/verbose_continue/stderr")"
 assert_dir_exists "verbose continue should create later operand" "$WORKDIR/verbose_continue/ok"
 
+run_case p_empty -p ""
+assert_eq "p empty exit code" "1" "$(cat "$WORKDIR/p_empty/exit_code")"
+assert_eq "p empty stdout" "" "$(cat "$WORKDIR/p_empty/stdout")"
+assert_eq "p empty stderr" "mkdir: : No such file or directory" "$(cat "$WORKDIR/p_empty/stderr")"
+
+mkdir -p "$WORKDIR/verbose_empty"
+: > "$WORKDIR/verbose_empty/file"
+(
+  cd "$WORKDIR/verbose_empty"
+  "$EXE_PATH" -pv file/sub ok "" >stdout 2>stderr
+  printf '%s' "$?" >exit_code
+) || (
+  cd "$WORKDIR/verbose_empty"
+  printf '%s' "$?" >exit_code
+)
+assert_eq "verbose empty exit code" "1" "$(cat "$WORKDIR/verbose_empty/exit_code")"
+assert_eq "verbose empty stdout" "ok" "$(cat "$WORKDIR/verbose_empty/stdout")"
+assert_eq "verbose empty stderr" $'mkdir: file: Not a directory\nmkdir: : No such file or directory' "$(cat "$WORKDIR/verbose_empty/stderr")"
+assert_dir_exists "verbose empty should create ok" "$WORKDIR/verbose_empty/ok"
+
 for mode in \
+  '+' \
+  'u+' \
+  'a-' \
+  '+t' \
+  'a+t' \
+  'ugo+t' \
+  'u+t' \
+  '=t' \
+  'a=t' \
+  'ugo=t' \
+  'u=tu' \
   '-X' \
   '+X' \
   '=X' \

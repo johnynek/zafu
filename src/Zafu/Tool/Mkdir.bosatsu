@@ -125,7 +125,7 @@ struct CliOptions(
 )
 
 enum Target:
-  EmptyTarget
+  EmptyTarget(raw_name: String)
   InvalidTarget(raw_name: String)
   ValidTarget(raw_name: String, path: Path)
 
@@ -148,6 +148,7 @@ enum ModeAtom:
 struct ModeClause(
   who_mask: Int,
   who_omitted: Bool,
+  sticky_allowed: Bool,
   op: ModeOp,
   atoms: List[ModeAtom],
 )
@@ -449,7 +450,7 @@ def normalize_cli_args(args: List[String]) -> List[String]:
 def plan_target(raw_name: String) -> Target:
   match raw_name:
     case "":
-      EmptyTarget
+      EmptyTarget(raw_name)
     case _:
       match string_to_Path(raw_name):
         case Some(path):
@@ -541,24 +542,24 @@ def parse_octal_mode(raw_mode: String) -> Option[Int]:
 
     go(chars, 0)
 
-def parse_who_chars(chars: List[Char]) -> (Int, Bool, List[Char]):
-  def go(rem: List[Char], seen: Bool, who_mask: Int) -> (Int, Bool, List[Char]):
+def parse_who_chars(chars: List[Char]) -> (Int, Bool, Bool, List[Char]):
+  def go(rem: List[Char], seen: Bool, sticky_allowed: Bool, who_mask: Int) -> (Int, Bool, Bool, List[Char]):
     loop rem:
       case [.'u', *tail]:
-        go(tail, True, who_mask | class_user)
+        go(tail, True, sticky_allowed, who_mask | class_user)
       case [.'g', *tail]:
-        go(tail, True, who_mask | class_group)
+        go(tail, True, sticky_allowed, who_mask | class_group)
       case [.'o', *tail]:
-        go(tail, True, who_mask | class_other)
+        go(tail, True, sticky_allowed, who_mask | class_other)
       case [.'a', *tail]:
-        go(tail, True, all_classes)
+        go(tail, True, True, all_classes)
       case _:
         if seen:
-          (who_mask, False, rem)
+          (who_mask, False, sticky_allowed, rem)
         else:
-          (all_classes, True, rem)
+          (all_classes, True, True, rem)
 
-  go(chars, False, 0)
+  go(chars, False, False, 0)
 
 def parse_mode_op(ch: Char) -> Option[ModeOp]:
   match ch:
@@ -612,18 +613,12 @@ def parse_mode_clause_chars(chars: List[Char]) -> Option[ModeClause]:
   if chars matches []:
     None
   else:
-    (who_mask, who_omitted, after_who) = parse_who_chars(chars)
+    (who_mask, who_omitted, sticky_allowed, after_who) = parse_who_chars(chars)
     match after_who:
       case [op_char, *perm_chars]:
         match (parse_mode_op(op_char), parse_mode_atoms(perm_chars)):
           case (Some(op), Some(atoms)):
-            if atoms matches []:
-              if op matches SetMode:
-                Some(ModeClause(who_mask, who_omitted, op, atoms))
-              else:
-                None
-            else:
-              Some(ModeClause(who_mask, who_omitted, op, atoms))
+            Some(ModeClause(who_mask, who_omitted, sticky_allowed, op, atoms))
           case _:
             None
       case []:
@@ -683,7 +678,7 @@ def copy_source_bits(current_mode: Int, source_class: Int, target_mask: Int) -> 
       select_class_bits(target_mask, user_exec_bit, group_exec_bit, other_exec_bit)
   read_part | write_part | exec_part
 
-def mode_bits_for_atom(who_mask: Int, atom: ModeAtom) -> (Int, Int):
+def mode_bits_for_atom(who_mask: Int, sticky_allowed: Bool, atom: ModeAtom) -> (Int, Int):
   match atom:
     case ReadMode:
       (select_class_bits(who_mask, user_read_bit, group_read_bit, other_read_bit), 0)
@@ -695,7 +690,7 @@ def mode_bits_for_atom(who_mask: Int, atom: ModeAtom) -> (Int, Int):
       (0, select_class_bits(who_mask, setuid_bit, setgid_bit, 0))
     case StickyMode:
       sticky_bits =
-        if who_mask.eq_Int(all_classes):
+        if sticky_allowed:
           sticky_bit
         else:
           0
@@ -772,16 +767,16 @@ def apply_copy_mode_atom(
       (current_mode & (mode_mask ^ target_regular_mask)) | regular_bits_to_apply
 
 def apply_mode_clause(current_mode: Int, umask: Int, clause: ModeClause) -> Int:
-  ModeClause { who_mask, who_omitted, op, atoms } = clause
-  def step(state: (Int, Int, Int, Bool, Bool), atom: ModeAtom) -> (Int, Int, Int, Bool, Bool):
-    (mode_state, pending_regular, pending_special, pending_conditional_execute, set_emitted) = state
+  ModeClause { who_mask, who_omitted, sticky_allowed, op, atoms } = clause
+  def step(state: (Int, Int, Int, Bool, Bool, Bool), atom: ModeAtom) -> (Int, Int, Int, Bool, Bool, Bool):
+    (mode_state, pending_regular, pending_special, pending_conditional_execute, pending_explicit, set_emitted) = state
     match atom:
       case CopyUserMode | CopyGroupMode | CopyOtherMode:
         flushed_mode =
-          if and(pending_regular.eq_Int(0), pending_special.eq_Int(0)):
-            mode_state
-          else:
+          if pending_explicit:
             apply_pending_mode_bits(mode_state, who_mask, who_omitted, op, umask, pending_regular, pending_special)
+          else:
+            mode_state
         mode_before_copy =
           if pending_conditional_execute:
             if op matches AddMode:
@@ -801,17 +796,19 @@ def apply_mode_clause(current_mode: Int, umask: Int, clause: ModeClause) -> Int:
             False
           else:
             pending_conditional_execute
-        (next_mode, 0, 0, next_pending_conditional_execute, next_set_emitted)
+        (next_mode, 0, 0, next_pending_conditional_execute, False, next_set_emitted)
       case ConditionalExecuteMode:
-        (mode_state, pending_regular, pending_special, True, set_emitted)
+        (mode_state, pending_regular, pending_special, True, pending_explicit, set_emitted)
       case _:
-        (regular_bits, special_bits) = mode_bits_for_atom(who_mask, atom)
-        (mode_state, pending_regular | regular_bits, pending_special | special_bits, pending_conditional_execute, set_emitted)
+        (regular_bits, special_bits) = mode_bits_for_atom(who_mask, sticky_allowed, atom)
+        (mode_state, pending_regular | regular_bits, pending_special | special_bits, pending_conditional_execute, True, set_emitted)
 
-  (mode_state, pending_regular, pending_special, pending_conditional_execute, set_emitted) =
-    atoms.foldl_List((current_mode, 0, 0, False, False), step)
+  (mode_state, pending_regular, pending_special, pending_conditional_execute, pending_explicit, set_emitted) =
+    atoms.foldl_List((current_mode, 0, 0, False, False, False), step)
   mode_after_explicit =
-    if and(pending_regular.eq_Int(0), pending_special.eq_Int(0)):
+    if pending_explicit:
+      apply_pending_mode_bits(mode_state, who_mask, who_omitted, op, umask, pending_regular, pending_special)
+    else:
       if op matches SetMode:
         if set_emitted matches False:
           apply_pending_mode_bits(mode_state, who_mask, who_omitted, op, umask, 0, 0)
@@ -819,8 +816,6 @@ def apply_mode_clause(current_mode: Int, umask: Int, clause: ModeClause) -> Int:
           mode_state
       else:
         mode_state
-    else:
-      apply_pending_mode_bits(mode_state, who_mask, who_omitted, op, umask, pending_regular, pending_special)
   if pending_conditional_execute:
     apply_conditional_execute_mode(mode_after_explicit, who_mask, who_omitted, umask)
   else:
@@ -946,8 +941,8 @@ def create_target(path: Path, parents: Bool, mode_plan: ModePlan) -> Prog[IOErro
 def run_target(target: Target, options: CliOptions, mode_plan: ModePlan) -> Prog[IOError, Bool]:
   CliOptions { parents, verbose, ... } = options
   match target:
-    case EmptyTarget:
-      _ <- emit_target_reason(".", "No such file or directory").await()
+    case EmptyTarget(raw_name):
+      _ <- emit_target_reason(raw_name, "No such file or directory").await()
       pure(True)
     case InvalidTarget(raw_name):
       _ <- emit_target_reason(raw_name, "Invalid argument").await()
@@ -1090,6 +1085,7 @@ tests = TestSuite("mkdir tool", [
     io_error_target_name("file/subdir", NotDirectory("file")) matches "file",
     "target errors use the failing component for not-a-directory cases",
   ),
+  Assertion(plan_targets([""]) matches [EmptyTarget("")], "empty operands are planned explicitly"),
   Assertion(has_generic_mkdir_context(NotFound("creating directory")), "mkdir context fallback detects generic mkdir errors"),
   Assertion(
     has_generic_mkdir_context(NotFound("bar")) matches False,
@@ -1097,6 +1093,11 @@ tests = TestSuite("mkdir tool", [
   ),
   Assertion(parse_octal_mode("755") matches Some(493), "octal modes parse to permission bits"),
   Assertion(parse_octal_mode("888") matches None, "invalid octal modes are rejected"),
+  Assertion(apply_symbolic_mode("+", perm_mask, 18) matches Some(511), "empty add clauses are accepted as no-ops"),
+  Assertion(apply_symbolic_mode("u+", perm_mask, 18) matches Some(511), "empty add clauses with explicit who stay no-ops"),
+  Assertion(apply_symbolic_mode("a-", perm_mask, 18) matches Some(511), "empty remove clauses are accepted as no-ops"),
+  Assertion(apply_symbolic_mode("ugo+t", perm_mask, 18) matches Some(511), "explicit ugo does not enable sticky"),
+  Assertion(apply_symbolic_mode("u=tu", perm_mask, 18) matches Some(63), "zero-bit sticky atoms still clear before later copies"),
   Assertion(apply_symbolic_mode("-X", perm_mask, 18) matches Some(511), "conditional execute never removes bits for mkdir"),
   Assertion(apply_symbolic_mode("+X", perm_mask, 18) matches Some(511), "conditional execute adds execute bits for mkdir"),
   Assertion(apply_symbolic_mode("=X", perm_mask, 18) matches Some(73), "set mode clears first and then adds conditional execute"),
