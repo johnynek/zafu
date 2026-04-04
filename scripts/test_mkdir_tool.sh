@@ -23,6 +23,16 @@ assert_eq() {
   fi
 }
 
+assert_contains() {
+  local label="$1"
+  local needle="$2"
+  local haystack="$3"
+  if [[ "$haystack" != *"$needle"* ]]; then
+    printf 'mkdir tool test failed: %s\nmissing substring: <%s>\nactual:            <%s>\n' "$label" "$needle" "$haystack" >&2
+    exit 1
+  fi
+}
+
 assert_dir_exists() {
   local label="$1"
   local path="$2"
@@ -130,8 +140,18 @@ assert_eq "missing parent stdout" "" "$(cat "$WORKDIR/missing_parent/stdout")"
 assert_eq "missing parent stderr" "mkdir: bar: No such file or directory" "$(cat "$WORKDIR/missing_parent/stderr")"
 assert_dir_missing "missing parent should not create bar" "$WORKDIR/missing_parent/bar"
 
-compare_case_against_system empty_mode_arg -m "" d
-assert_dir_missing "empty mode argument should not create d" "$WORKDIR/empty_mode_arg/zafu/d"
+run_case empty_mode_arg -m "" d
+assert_eq "empty mode argument exit code" "1" "$(cat "$WORKDIR/empty_mode_arg/exit_code")"
+assert_eq "empty mode argument stdout" "" "$(cat "$WORKDIR/empty_mode_arg/stdout")"
+case "$(uname -s)" in
+  Darwin)
+    assert_eq "empty mode argument stderr" "mkdir: invalid file mode: " "$(cat "$WORKDIR/empty_mode_arg/stderr")"
+    ;;
+  *)
+    assert_contains "empty mode argument stderr" "invalid" "$(cat "$WORKDIR/empty_mode_arg/stderr")"
+    ;;
+esac
+assert_dir_missing "empty mode argument should not create d" "$WORKDIR/empty_mode_arg/d"
 
 run_case trailing_p_operand foo -p
 assert_eq "trailing -p operand exit code" "0" "$(cat "$WORKDIR/trailing_p_operand/exit_code")"
