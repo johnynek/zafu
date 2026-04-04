@@ -93,6 +93,35 @@ compare_symbolic_mode_case() {
   assert_eq "symbolic mode diff ($mode)" "$(cat "$case_dir/system/mode")" "$(cat "$case_dir/zafu/mode")"
 }
 
+compare_case_against_system() {
+  local case_name="$1"
+  shift
+  local case_dir="$WORKDIR/$case_name"
+  mkdir -p "$case_dir/system" "$case_dir/zafu"
+
+  (
+    cd "$case_dir/system"
+    command mkdir "$@" >stdout 2>stderr
+    printf '%s' "$?" >exit_code
+  ) || (
+    cd "$case_dir/system"
+    printf '%s' "$?" >exit_code
+  )
+
+  (
+    cd "$case_dir/zafu"
+    "$EXE_PATH" "$@" >stdout 2>stderr
+    printf '%s' "$?" >exit_code
+  ) || (
+    cd "$case_dir/zafu"
+    printf '%s' "$?" >exit_code
+  )
+
+  assert_eq "$case_name exit code" "$(cat "$case_dir/system/exit_code")" "$(cat "$case_dir/zafu/exit_code")"
+  assert_eq "$case_name stdout" "$(cat "$case_dir/system/stdout")" "$(cat "$case_dir/zafu/stdout")"
+  assert_eq "$case_name stderr" "$(cat "$case_dir/system/stderr")" "$(cat "$case_dir/zafu/stderr")"
+}
+
 ./bosatsu build --main_pack Zafu/Tool/Mkdir --exe_out "$EXE_PATH" >/dev/null
 
 run_case missing_parent bar/baz
@@ -100,6 +129,9 @@ assert_eq "missing parent exit code" "1" "$(cat "$WORKDIR/missing_parent/exit_co
 assert_eq "missing parent stdout" "" "$(cat "$WORKDIR/missing_parent/stdout")"
 assert_eq "missing parent stderr" "mkdir: bar: No such file or directory" "$(cat "$WORKDIR/missing_parent/stderr")"
 assert_dir_missing "missing parent should not create bar" "$WORKDIR/missing_parent/bar"
+
+compare_case_against_system empty_mode_arg -m "" d
+assert_dir_missing "empty mode argument should not create d" "$WORKDIR/empty_mode_arg/zafu/d"
 
 run_case trailing_p_operand foo -p
 assert_eq "trailing -p operand exit code" "0" "$(cat "$WORKDIR/trailing_p_operand/exit_code")"
@@ -123,6 +155,34 @@ assert_eq "trailing -- operand stderr" "" "$(cat "$WORKDIR/trailing_dashdash_ope
 assert_dir_exists "trailing -- should create foo" "$WORKDIR/trailing_dashdash_operand/foo"
 assert_dir_exists "trailing -- should create --" "$WORKDIR/trailing_dashdash_operand/--"
 assert_dir_exists "trailing -- should create bar" "$WORKDIR/trailing_dashdash_operand/bar"
+
+compare_case_against_system trailing_slash_mode -p -m 700 a/
+assert_eq "trailing slash mode diff" "$(mode_of "$WORKDIR/trailing_slash_mode/system/a")" "$(mode_of "$WORKDIR/trailing_slash_mode/zafu/a")"
+
+mkdir -p "$WORKDIR/slash_existing_file/system" "$WORKDIR/slash_existing_file/zafu"
+: > "$WORKDIR/slash_existing_file/system/a"
+: > "$WORKDIR/slash_existing_file/zafu/a"
+(
+  cd "$WORKDIR/slash_existing_file/system"
+  command mkdir -p a/ >stdout 2>stderr
+  printf '%s' "$?" >exit_code
+) || (
+  cd "$WORKDIR/slash_existing_file/system"
+  printf '%s' "$?" >exit_code
+)
+(
+  cd "$WORKDIR/slash_existing_file/zafu"
+  "$EXE_PATH" -p a/ >stdout 2>stderr
+  printf '%s' "$?" >exit_code
+) || (
+  cd "$WORKDIR/slash_existing_file/zafu"
+  printf '%s' "$?" >exit_code
+)
+assert_eq "slash existing file exit code" "$(cat "$WORKDIR/slash_existing_file/system/exit_code")" "$(cat "$WORKDIR/slash_existing_file/zafu/exit_code")"
+assert_eq "slash existing file stdout" "$(cat "$WORKDIR/slash_existing_file/system/stdout")" "$(cat "$WORKDIR/slash_existing_file/zafu/stdout")"
+assert_eq "slash existing file stderr" "$(cat "$WORKDIR/slash_existing_file/system/stderr")" "$(cat "$WORKDIR/slash_existing_file/zafu/stderr")"
+
+compare_case_against_system double_slash_missing_parent a//b
 
 run_case nested_missing_parent a/b/c
 assert_eq "nested missing parent exit code" "1" "$(cat "$WORKDIR/nested_missing_parent/exit_code")"
@@ -253,8 +313,11 @@ assert_dir_exists "verbose parent ref should create y" "$WORKDIR/verbose_parent_
 
 for mode in \
   '+' \
+  '--' \
   'u+' \
   'a-' \
+  'u++x' \
+  'u+s+t' \
   '+t' \
   'a+t' \
   'ugo+t' \
@@ -292,3 +355,13 @@ for mode in \
 do
   compare_symbolic_mode_case "$mode"
 done
+
+for prefix in s t st ts; do
+  for copy in o u g; do
+    for suffix in '' s t st oo; do
+      compare_symbolic_mode_case "o=${prefix}${copy}${suffix}"
+    done
+  done
+done
+
+compare_symbolic_mode_case 'o=sost,g='

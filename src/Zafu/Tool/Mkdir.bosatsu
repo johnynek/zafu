@@ -130,10 +130,15 @@ struct CliOptions(
   operands: List[String],
 )
 
+struct PreparedCliArgs(
+  cli_args: List[String],
+  last_mode_empty: Bool,
+)
+
 enum Target:
   EmptyTarget(raw_name: String)
   InvalidTarget(raw_name: String)
-  ValidTarget(raw_name: String, path: Path)
+  ValidTarget(raw_name: String, target_name: String, path: Path)
 
 enum ModeOp:
   AddMode
@@ -230,6 +235,12 @@ def mk_cli_options(
     operands,
   )
 
+def effective_raw_mode(last_mode_empty: Bool, raw_mode: Option[String]) -> Option[String]:
+  if last_mode_empty:
+    Some("")
+  else:
+    raw_mode
+
 mkdir_args = map2(
   map2(count_flag(.'p'), count_flag(.'v'), (p_count, v_count) -> (p_count, v_count)),
   map2(
@@ -320,10 +331,10 @@ def emit_usage() -> Prog[IOError, Unit]:
 def emit_target_reason[e](raw_name: String, reason: String) -> Prog[e, Unit]:
   emit_stderr_line("mkdir: ${raw_name}: ${reason}")
 
-def io_error_target_name(raw_name: String, err: IOError) -> String:
+def io_error_target_name(target_name: String, err: IOError) -> String:
   match io_error_context(err):
     case "":
-      raw_name
+      target_name
     case context:
       context
 
@@ -337,23 +348,23 @@ def has_generic_mkdir_context(err: IOError) -> Bool:
 def first_problem_path(path: Path) -> Prog[IOError, Option[Path]]:
   pure(path_parent(path))
 
-def resolve_target_io_error_name(raw_name: String, path: Path, err: IOError) -> Prog[IOError, String]:
+def resolve_target_io_error_name(target_name: String, path: Path, err: IOError) -> Prog[IOError, String]:
   if has_generic_mkdir_context(err):
     match err:
       case AlreadyExists(_):
-        pure(raw_name)
+        pure(target_name)
       case _:
         problem_path <- recover(first_problem_path(path), _ -> pure(None)).await()
         match problem_path:
           case Some(problem):
             pure(path_to_String(problem))
           case None:
-            pure(raw_name)
+            pure(target_name)
   else:
-    pure(io_error_target_name(raw_name, err))
+    pure(io_error_target_name(target_name, err))
 
-def emit_target_io_error(raw_name: String, path: Path, err: IOError) -> Prog[IOError, Unit]:
-  target_name <- resolve_target_io_error_name(raw_name, path, err).await()
+def emit_target_io_error(target_name: String, path: Path, err: IOError) -> Prog[IOError, Unit]:
+  target_name <- resolve_target_io_error_name(target_name, path, err).await()
   emit_target_reason(target_name, io_error_reason(err))
 
 def unknown_option_char(token: String) -> String:
@@ -378,6 +389,9 @@ def contains_string(items: List[String], item: String) -> Bool:
           go(tail)
 
   go(items)
+
+def prepend_reversed[a](items: List[a], rev_acc: List[a]) -> List[a]:
+  items.foldl_List(rev_acc, (acc, item) -> [item, *acc])
 
 def raw_prefix_candidates(raw_name: String) -> List[String]:
   chars = string_to_Char_List(raw_name)
@@ -477,6 +491,37 @@ def normalize_path_key(raw_name: String) -> String:
 
   go(chars, False, [], [])
 
+def trim_trailing_separators(rev_chars: List[Char]) -> List[Char]:
+  loop rev_chars:
+    case [.'/', *tail] if not(tail matches []):
+      trim_trailing_separators(tail)
+    case _:
+      rev_chars
+
+def normalize_target_name(raw_name: String) -> String:
+  chars = string_to_Char_List(raw_name)
+  def go(rem: List[Char], rev_chars: List[Char], last_was_separator: Bool) -> String:
+    loop rem:
+      case []:
+        rendered = chars_to_String(trim_trailing_separators(rev_chars).reverse())
+        if rendered matches "":
+          "/"
+        else:
+          rendered
+      case [.'/', *tail]:
+        if last_was_separator:
+          go(tail, rev_chars, True)
+        else:
+          go(tail, [.'/', *rev_chars], True)
+      case [head, *tail]:
+        go(tail, [head, *rev_chars], False)
+
+  match raw_name:
+    case "":
+      ""
+    case _:
+      go(chars, [], False)
+
 def path_exists_from_key(path_key: String) -> Prog[IOError, Bool]:
   if path_key matches ".":
     pure(True)
@@ -516,42 +561,45 @@ def expand_short_token_rev(token: String) -> Result[String, List[String]]:
     case _:
       Ok([token])
 
-def prepare_cli_args(args: List[String]) -> Result[CliPrepError, List[String]]:
-  def finish_operands(rev_tokens: List[String], head: String, tail: List[String]) -> Result[CliPrepError, List[String]]:
+def prepare_cli_args(args: List[String]) -> Result[CliPrepError, PreparedCliArgs]:
+  def finish_operands(rev_tokens: List[String], last_mode_empty: Bool, head: String, tail: List[String]) -> Result[CliPrepError, PreparedCliArgs]:
     match tail:
       case []:
-        Ok([*rev_tokens.reverse(), head])
+        Ok(PreparedCliArgs([*rev_tokens.reverse(), head], last_mode_empty))
       case _:
-        Ok([*rev_tokens.reverse(), head, "--", *tail])
+        Ok(PreparedCliArgs([*rev_tokens.reverse(), head, "--", *tail], last_mode_empty))
 
-  def go(rem: List[String], rev_tokens: List[String]) -> Result[CliPrepError, List[String]]:
+  def go(rem: List[String], rev_tokens: List[String], last_mode_empty: Bool) -> Result[CliPrepError, PreparedCliArgs]:
     loop rem:
       case []:
-        Ok(rev_tokens.reverse())
+        Ok(PreparedCliArgs(rev_tokens.reverse(), last_mode_empty))
       case ["--", *tail]:
-        Ok([*rev_tokens.reverse(), "--", *tail])
+        Ok(PreparedCliArgs([*rev_tokens.reverse(), "--", *tail], last_mode_empty))
       case [head, *tail]:
         match head:
           case "--${_}":
             Err(IllegalOption("-"))
           case "-":
-            finish_operands(rev_tokens, head, tail)
+            finish_operands(rev_tokens, last_mode_empty, head, tail)
           case "-${_}":
             match expand_short_token_rev(head):
               case Ok(["-m", *rest_rev]):
                 match tail:
                   case [value, *tail_tail]:
-                    go(tail_tail, ["-m${value}", *rest_rev, *rev_tokens])
+                    if value matches "":
+                      go(tail_tail, ["-m0", *rest_rev, *rev_tokens], True)
+                    else:
+                      go(tail_tail, ["-m${value}", *rest_rev, *rev_tokens], False)
                   case []:
                     Err(MissingModeArgument)
               case Ok(expanded_rev):
-                go(tail, [*expanded_rev, *rev_tokens])
+                go(tail, [*expanded_rev, *rev_tokens], last_mode_empty)
               case Err(bad):
                 Err(IllegalOption(bad))
           case _:
-            finish_operands(rev_tokens, head, tail)
+            finish_operands(rev_tokens, last_mode_empty, head, tail)
 
-  go(args, [])
+  go(args, [], False)
 
 # `Main` receives argv including argv0; keep leading option tokens untouched and
 # otherwise drop the executable name.
@@ -567,9 +615,10 @@ def plan_target(raw_name: String) -> Target:
     case "":
       EmptyTarget(raw_name)
     case _:
-      match string_to_Path(raw_name):
+      target_name = normalize_target_name(raw_name)
+      match string_to_Path(target_name):
         case Some(path):
-          ValidTarget(raw_name, path)
+          ValidTarget(raw_name, target_name, path)
         case None:
           InvalidTarget(raw_name)
 
@@ -710,34 +759,38 @@ def parse_mode_atom(ch: Char) -> Option[ModeAtom]:
     case _:
       None
 
-def parse_mode_atoms(chars: List[Char]) -> Option[List[ModeAtom]]:
-  def go(rem: List[Char], rev_atoms: List[ModeAtom]) -> Option[List[ModeAtom]]:
-    loop rem:
-      case []:
-        Some(rev_atoms.reverse())
-      case [head, *tail]:
-        match parse_mode_atom(head):
-          case Some(atom):
-            go(tail, [atom, *rev_atoms])
-          case None:
-            None
-
-  go(chars, [])
-
-def parse_mode_clause_chars(chars: List[Char]) -> Option[ModeClause]:
+def parse_mode_segment_chars(chars: List[Char]) -> Option[List[ModeClause]]:
   if chars matches []:
     None
   else:
     (who_mask, who_omitted, sticky_allowed, after_who) = parse_who_chars(chars)
-    match after_who:
-      case [op_char, *perm_chars]:
-        match (parse_mode_op(op_char), parse_mode_atoms(perm_chars)):
-          case (Some(op), Some(atoms)):
-            Some(ModeClause(who_mask, who_omitted, sticky_allowed, op, atoms))
-          case _:
-            None
-      case []:
-        None
+    def clause_with(op: ModeOp, rev_atoms: List[ModeAtom]) -> ModeClause:
+      ModeClause(who_mask, who_omitted, sticky_allowed, op, rev_atoms.reverse())
+
+    def go(rem: List[Char], current_op: Option[ModeOp], rev_atoms: List[ModeAtom], rev_clauses: List[ModeClause]) -> Option[List[ModeClause]]:
+      loop rem:
+        case []:
+          match current_op:
+            case Some(op):
+              Some([clause_with(op, rev_atoms), *rev_clauses].reverse())
+            case None:
+              None
+        case [head, *tail]:
+          match parse_mode_op(head):
+            case Some(next_op):
+              match current_op:
+                case Some(op):
+                  go(tail, Some(next_op), [], [clause_with(op, rev_atoms), *rev_clauses])
+                case None:
+                  go(tail, Some(next_op), [], rev_clauses)
+            case None:
+              match (current_op, parse_mode_atom(head)):
+                case (Some(op), Some(atom)):
+                  go(tail, Some(op), [atom, *rev_atoms], rev_clauses)
+                case _:
+                  None
+
+    go(after_who, None, [], [])
 
 def parse_mode_clauses(raw_mode: String) -> Option[List[ModeClause]]:
   chars = string_to_Char_List(raw_mode)
@@ -747,9 +800,9 @@ def parse_mode_clauses(raw_mode: String) -> Option[List[ModeClause]]:
     def go(rem: List[Char], current_rev: List[Char], rev_clauses: List[ModeClause]) -> Option[List[ModeClause]]:
       loop rem:
         case []:
-          match parse_mode_clause_chars(current_rev.reverse()):
-            case Some(clause):
-              Some([clause, *rev_clauses].reverse())
+          match parse_mode_segment_chars(current_rev.reverse()):
+            case Some(clauses):
+              Some(prepend_reversed(clauses, rev_clauses).reverse())
             case None:
               None
         case [.',', *tail]:
@@ -757,9 +810,9 @@ def parse_mode_clauses(raw_mode: String) -> Option[List[ModeClause]]:
             case []:
               None
             case _:
-              match parse_mode_clause_chars(current_rev.reverse()):
-                case Some(clause):
-                  go(tail, [], [clause, *rev_clauses])
+              match parse_mode_segment_chars(current_rev.reverse()):
+                case Some(clauses):
+                  go(tail, [], prepend_reversed(clauses, rev_clauses))
                 case None:
                   None
         case [head, *tail]:
@@ -910,16 +963,22 @@ def apply_mode_clause(current_mode: Int, umask: Int, clause: ModeClause) -> Int:
       case CopyUserMode | CopyGroupMode | CopyOtherMode:
         flushed_mode =
           if pending_explicit:
-            flush_pending_mode_bits(
-              mode_state,
-              who_mask,
-              who_omitted,
-              op,
-              umask,
-              pending_regular,
-              pending_special,
-              set_emitted,
-            )
+            if and(
+              op matches SetMode,
+              and(who_mask.eq_Int(class_other), and(pending_regular.eq_Int(0), pending_special.eq_Int(0))),
+            ):
+              mode_state
+            else:
+              flush_pending_mode_bits(
+                mode_state,
+                who_mask,
+                who_omitted,
+                op,
+                umask,
+                pending_regular,
+                pending_special,
+                set_emitted,
+              )
           else:
             mode_state
         mode_before_copy =
@@ -1108,7 +1167,7 @@ def run_target(target: Target, options: CliOptions, mode_plan: ModePlan) -> Prog
     case InvalidTarget(raw_name):
       _ <- emit_target_reason(raw_name, "Invalid argument").await()
       pure(True)
-    case ValidTarget(raw_name, path):
+    case ValidTarget(raw_name, target_name, path):
       planned_created <- planned_created_paths(raw_name, verbose).await()
       create_result <- create_target(path, parents, mode_plan).attempt().await()
       match create_result:
@@ -1117,7 +1176,7 @@ def run_target(target: Target, options: CliOptions, mode_plan: ModePlan) -> Prog
           pure(False)
         case Err(err):
           _ <- emit_created_so_far(verbose, planned_created).await()
-          _ <- emit_target_io_error(raw_name, path, err).await()
+          _ <- emit_target_io_error(target_name, path, err).await()
           pure(True)
 
 def run_targets(targets: List[Target], options: CliOptions, mode_plan: ModePlan) -> Prog[IOError, Bool]:
@@ -1168,7 +1227,7 @@ def run(args: List[String]) -> Prog[IOError, Int]:
       _ <- emit_stderr_line("mkdir: option requires an argument -- m").await()
       _ <- emit_usage().await()
       pure(usage_exit_code)
-    case Ok(cli_args):
+    case Ok(PreparedCliArgs { cli_args, last_mode_empty }):
       match parse_cli(default_parse_config, mkdir_command, cli_args):
         case Failed(errors, _):
           render_cli_failure(head_NonEmptyChain(errors))
@@ -1179,14 +1238,15 @@ def run(args: List[String]) -> Prog[IOError, Int]:
           _ <- write_utf8(stdout, "${render(doc, 80)}\n").await()
           pure(success_exit_code)
         case Parsed(options):
-          CliOptions { raw_mode, operands, ... } = options
-          mode_result <- resolve_mode(raw_mode).await()
+          CliOptions { raw_mode, operands, parents, verbose } = options
+          resolved_raw_mode = effective_raw_mode(last_mode_empty, raw_mode)
+          mode_result <- resolve_mode(resolved_raw_mode).await()
           match mode_result:
             case Err(raw_mode_value):
               _ <- emit_stderr_line("mkdir: invalid file mode: ${raw_mode_value}").await()
               pure(error_exit_code)
             case Ok(mode_plan):
-              had_error <- run_targets(plan_targets(operands), options, mode_plan).await()
+              had_error <- run_targets(plan_targets(operands), CliOptions(parents, verbose, resolved_raw_mode, operands), mode_plan).await()
               if had_error:
                 pure(error_exit_code)
               else:
@@ -1208,27 +1268,45 @@ tests = TestSuite("mkdir tool", [
     "normalize drops an absolute executable path",
   ),
   Assertion(
-    prepare_cli_args(["-pvm700", "alpha"]) matches Ok(["-p", "-v", "-m700", "alpha"]),
+    prepare_cli_args(["-pvm700", "alpha"]) matches Ok(
+      PreparedCliArgs { cli_args: ["-p", "-v", "-m700", "alpha"], last_mode_empty: False }
+    ),
     "clustered BSD short options are normalized before parsing",
   ),
   Assertion(
-    prepare_cli_args(["-m", "700", "alpha"]) matches Ok(["-m700", "alpha"]),
+    prepare_cli_args(["-m", "700", "alpha"]) matches Ok(
+      PreparedCliArgs { cli_args: ["-m700", "alpha"], last_mode_empty: False }
+    ),
     "separate mode arguments are attached before parsing",
   ),
   Assertion(
-    prepare_cli_args(["-pm", "700", "alpha"]) matches Ok(["-p", "-m700", "alpha"]),
+    prepare_cli_args(["-m", "", "alpha"]) matches Ok(
+      PreparedCliArgs { cli_args: ["-m0", "alpha"], last_mode_empty: True }
+    ),
+    "empty mode arguments stay distinguishable through normalization",
+  ),
+  Assertion(
+    prepare_cli_args(["-pm", "700", "alpha"]) matches Ok(
+      PreparedCliArgs { cli_args: ["-p", "-m700", "alpha"], last_mode_empty: False }
+    ),
     "clustered flags still consume a following mode argument",
   ),
   Assertion(
-    prepare_cli_args(["foo", "-p"]) matches Ok(["foo", "--", "-p"]),
+    prepare_cli_args(["foo", "-p"]) matches Ok(
+      PreparedCliArgs { cli_args: ["foo", "--", "-p"], last_mode_empty: False }
+    ),
     "option rewriting stops after the first operand",
   ),
   Assertion(
-    prepare_cli_args(["foo", "-m", "700"]) matches Ok(["foo", "--", "-m", "700"]),
+    prepare_cli_args(["foo", "-m", "700"]) matches Ok(
+      PreparedCliArgs { cli_args: ["foo", "--", "-m", "700"], last_mode_empty: False }
+    ),
     "trailing mode-looking tokens stay literal after the first operand",
   ),
   Assertion(
-    prepare_cli_args(["foo", "--", "bar"]) matches Ok(["foo", "--", "--", "bar"]),
+    prepare_cli_args(["foo", "--", "bar"]) matches Ok(
+      PreparedCliArgs { cli_args: ["foo", "--", "--", "bar"], last_mode_empty: False }
+    ),
     "double dash stays literal after the first operand",
   ),
   Assertion(prepare_cli_args(["-m"]) matches Err(MissingModeArgument), "bare mode flags report a missing argument"),
@@ -1237,6 +1315,10 @@ tests = TestSuite("mkdir tool", [
       CliOptions { parents: False, verbose: False, raw_mode: Some("700"), operands: ["alpha"] }
     ),
     "attached mode options decode after normalization",
+  ),
+  Assertion(
+    effective_raw_mode(True, Some("0")) matches Some(""),
+    "the empty-mode marker is restored after parsing",
   ),
   Assertion(
     parse_cli(default_parse_config, mkdir_command, ["foo", "--", "-p"]) matches Parsed(
@@ -1276,6 +1358,9 @@ tests = TestSuite("mkdir tool", [
   Assertion(normalize_path_key("x/.") matches "x", "dot segments normalize to the created directory"),
   Assertion(normalize_path_key("x/..") matches ".", "parent segments normalize against created prefixes"),
   Assertion(normalize_path_key("x/../y") matches "y", "parent references normalize to their semantic destination"),
+  Assertion(normalize_target_name("a/") matches "a", "target names drop a trailing separator before creation"),
+  Assertion(normalize_target_name("a//b") matches "a/b", "target names collapse repeated separators for creation"),
+  Assertion(normalize_target_name("/") matches "/", "root stays rooted after separator normalization"),
   Assertion(parse_octal_mode("755") matches Some(493), "octal modes parse to permission bits"),
   Assertion(parse_octal_mode("888") matches None, "invalid octal modes are rejected"),
   Assertion(apply_symbolic_mode("u=gt", perm_mask, 18) matches Some(63), "ignored sticky after a group copy still clears user bits"),
@@ -1290,8 +1375,14 @@ tests = TestSuite("mkdir tool", [
   Assertion(apply_symbolic_mode("+", perm_mask, 18) matches Some(511), "empty add clauses are accepted as no-ops"),
   Assertion(apply_symbolic_mode("u+", perm_mask, 18) matches Some(511), "empty add clauses with explicit who stay no-ops"),
   Assertion(apply_symbolic_mode("a-", perm_mask, 18) matches Some(511), "empty remove clauses are accepted as no-ops"),
+  Assertion(apply_symbolic_mode("--", perm_mask, 18) matches Some(511), "chained empty remove clauses are accepted like BSD setmode"),
+  Assertion(apply_symbolic_mode("u++x", perm_mask, 18) matches Some(511), "chained operator breaks reuse the same who set"),
+  Assertion(parse_mode_clauses("u+s+t") matches Some(_), "additional operator breaks keep parsing within one symbolic segment"),
   Assertion(apply_symbolic_mode("ugo+t", perm_mask, 18) matches Some(511), "explicit ugo does not enable sticky"),
   Assertion(apply_symbolic_mode("u=tu", perm_mask, 18) matches Some(63), "zero-bit sticky atoms still clear before later copies"),
+  Assertion(apply_symbolic_mode("o=sost", perm_mask, 18) matches Some(511), "ignored specials before and after an other copy keep copied bits"),
+  Assertion(apply_symbolic_mode("o=sooo", perm_mask, 18) matches Some(511), "later other copies still see the preserved other bits"),
+  Assertion(apply_symbolic_mode("o=sost,g=", perm_mask, 18) matches Some(455), "comma-separated clauses keep the preserved other copy before later clears"),
   Assertion(apply_symbolic_mode("-X", perm_mask, 18) matches Some(511), "conditional execute never removes bits for mkdir"),
   Assertion(apply_symbolic_mode("+X", perm_mask, 18) matches Some(511), "conditional execute adds execute bits for mkdir"),
   Assertion(apply_symbolic_mode("=X", perm_mask, 18) matches Some(73), "set mode clears first and then adds conditional execute"),
