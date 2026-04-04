@@ -56,6 +56,34 @@ run_case() {
   )
 }
 
+compare_symbolic_mode_case() {
+  local mode="$1"
+  local case_dir="$WORKDIR/symbolic_$(printf '%s' "$mode" | tr '=,+-' '____')"
+  mkdir -p "$case_dir/system" "$case_dir/zafu"
+
+  (
+    cd "$case_dir/system"
+    umask 022
+    mkdir -m "$mode" d
+    stat -f '%p' d >mode
+    chmod -R u+rwx d >/dev/null 2>&1 || true
+  )
+
+  (
+    cd "$case_dir/zafu"
+    umask 022
+    "$EXE_PATH" -m "$mode" d >stdout 2>stderr
+    printf '%s' "$?" >exit_code
+    stat -f '%p' d >mode
+    chmod -R u+rwx d >/dev/null 2>&1 || true
+  )
+
+  assert_eq "symbolic mode exit code ($mode)" "0" "$(cat "$case_dir/zafu/exit_code")"
+  assert_eq "symbolic mode stdout ($mode)" "" "$(cat "$case_dir/zafu/stdout")"
+  assert_eq "symbolic mode stderr ($mode)" "" "$(cat "$case_dir/zafu/stderr")"
+  assert_eq "symbolic mode diff ($mode)" "$(cat "$case_dir/system/mode")" "$(cat "$case_dir/zafu/mode")"
+}
+
 ./bosatsu build --main_pack Zafu/Tool/Mkdir --exe_out "$EXE_PATH" >/dev/null
 
 run_case missing_parent bar/baz
@@ -93,3 +121,18 @@ assert_eq "verbose continue exit code" "1" "$(cat "$WORKDIR/verbose_continue/exi
 assert_eq "verbose continue stdout" "ok" "$(cat "$WORKDIR/verbose_continue/stdout")"
 assert_eq "verbose continue stderr" "mkdir: file: Not a directory" "$(cat "$WORKDIR/verbose_continue/stderr")"
 assert_dir_exists "verbose continue should create later operand" "$WORKDIR/verbose_continue/ok"
+
+for mode in \
+  'u=or' \
+  'u=ro' \
+  'u=os' \
+  'u=so' \
+  'u=gr' \
+  'u=rg' \
+  'u=ow' \
+  'u=wo' \
+  'u=orx' \
+  'u=rog'
+do
+  compare_symbolic_mode_case "$mode"
+done
