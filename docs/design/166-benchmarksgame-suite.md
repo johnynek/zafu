@@ -57,8 +57,19 @@ These benchmarks are intentionally out of scope for phase 1:
 These path names are intentional parts of the contract, not cleanup targets. `fixtures/benchmarksgame/mandelbrot/mandelbrot-output-n200.pbm` keeps the `n200` suffix because the checked-in PBM sample is tied to the exact validation input used by the byte-compare rule. The vendored C filenames retain the source identifier in the basename so the local filename, pinned benchmarksgame page, and `vendor/benchmarksgame/manifest.json` provenance entry stay unambiguous. The Java entries intentionally keep the simpler `.java` basenames because their source identity is already carried by the containing directory and the manifest metadata.
 
 ## Single-Machine Comparison Protocol
+Bosatsu JVM setup from the checked-in default-branch state:
+1. `BOSATSU_VERSION="$(tr -d '[:space:]' < .bosatsu_version)"`
+2. `mkdir -p ".bosatsuc/cli/${BOSATSU_VERSION}" && curl -fL "https://github.com/johnynek/bosatsu/releases/download/v${BOSATSU_VERSION}/bosatsu.jar" -o ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar"`
+3. Run `java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" fetch` to populate the repo-local Bosatsu dependency cache that `eval` uses.
+4. Run `./bosatsu --fetch` as well for the repo-default native CLI artifact and C-runtime helper used by `bosatsu_c`. The checked-in `.bosatsu_platform` is `native`, so this installs `.bosatsuc/cli/${BOSATSU_VERSION}/bosatsu-macos` or `.bosatsuc/cli/${BOSATSU_VERSION}/bosatsu-linux`, not `.bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar`; it is necessary for `bosatsu_c` but not sufficient bootstrap for `bosatsu_jvm`.
+
 Command contract by target:
-- `bosatsu_jvm`: `./bosatsu eval --main Zafu/Benchmark/Game/<Package>::main --run <N>`
+- `bosatsu_jvm`: after the setup above and with `BOSATSU_VERSION="$(tr -d '[:space:]' < .bosatsu_version)"`:
+  - `n-body`: `java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchmark/Game/NBody::main --run <N>`
+  - `spectral-norm`: `java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchmark/Game/SpectralNorm::main --run <N>`
+  - `binary-trees`: `java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchmark/Game/BinaryTrees::main --run <N>`
+  - `fannkuch-redux`: `java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchmark/Game/FannkuchRedux::main --run <N>`
+  - `mandelbrot`: `java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchmark/Game/Mandelbrot::main --run <N> > <temporary-pbm-path>`
 - `bosatsu_c`: `./bosatsu build --main_pack Zafu/Benchmark/Game/<Package> --outdir .bosatsu_bench/game/<slug> --exe_out .bosatsu_bench/game/<slug>/<slug>` and then run the produced executable with `<N>`
 - `java`: `javac -d .build/benchmarksgame/java/<slug> vendor/benchmarksgame/java/<source-id>/<main>.java` and then `java -cp .build/benchmarksgame/java/<slug> <mainclass> <N>`
 - `c`: `gcc -O3 -fomit-frame-pointer -march=native ... vendor/benchmarksgame/c/<source-id>/<file>.c` plus only the libraries listed in `vendor/benchmarksgame/manifest.json`
@@ -69,7 +80,12 @@ Execution policy:
 3. Warmup policy: 2 untimed warmup executions at the performance input for `bosatsu_jvm` and `java`; 1 untimed warmup execution at the performance input for `bosatsu_c` and `c`.
 4. Repeat policy: 5 measured runs per benchmark and target at the official large-N input. Record each run individually and derive summaries later; do not collapse the raw artifact to a single min or mean.
 5. Ordering: run the suite in this fixed benchmark order: `n-body`, `spectral-norm`, `binary-trees`, `fannkuch-redux`, `mandelbrot`. Within each repetition, rotate target order so the same target is not always first after an idle period.
-6. Output handling: capture stdout directly for the four text benchmarks. For `mandelbrot`, write stdout to a temporary file, record byte count and SHA-256, validate sample `N=200` against the checked-in PBM fixture, and delete the temporary file after each measured run.
+6. Output handling: capture stdout directly for the four text benchmarks. For `mandelbrot`, keep the `bosatsu_jvm` target on the same `eval --run` path but redirect its stdout to a harness-owned temporary PBM file and treat that file as the source of truth:
+   - record byte count and SHA-256 from the temporary file.
+   - validate sample `N=200` against `fixtures/benchmarksgame/mandelbrot/mandelbrot-output-n200.pbm` with exact byte compare.
+   - perform no newline conversion, text decoding, or other normalization.
+   - delete the temporary file after each measured run.
+   The `java`, `bosatsu_c`, and `c` `mandelbrot` runs should likewise validate from temporary-file stdout capture rather than any text-normalized path.
 7. Timing source: use one repo-controlled monotonic timer around subprocess execution. Do not make platform-specific `/usr/bin/time` output part of the contract.
 8. Metadata capture: at minimum record `benchmark`, `target`, `input`, `repeat_index`, `elapsed_ns`, `exit_code`, `validation_passed`, `source_id`, `source_url`, `build_command`, `run_command`, `git_sha`, `bosatsu_version`, `java_version`, `gcc_version`, `os`, `cpu_model`, and `timestamp_utc`.
 9. Result artifact shape: `docs/benchmarksgame/baseline-local.json` should contain a top-level `run_metadata` object plus a `results` array. `docs/benchmarksgame/baseline-local.csv` should flatten the measured rows with stable columns `benchmark,target,input,repeat_index,elapsed_ns,exit_code,validation_passed,source_id,git_sha,timestamp_utc`.
