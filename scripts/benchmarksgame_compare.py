@@ -537,7 +537,7 @@ def build_command_for_plan(spec: BenchmarkSpec, target: str, bosatsu_version: st
     if target == "bosatsu_jvm":
         return shlex.join(["java", "-jar", bosatsu_jar_rel_path(bosatsu_version), "fetch"])
     if target == "bosatsu_c":
-        return shlex.join(bosatsu_c_build_command(spec))
+        return shlex.join(bosatsu_c_build_command(spec, use_contract_path=True))
     if target == "java":
         return shlex.join(java_build_command(spec))
     if target == "c":
@@ -615,7 +615,9 @@ def build_targets(
             if target == "bosatsu_c":
                 outdir = repo_root / ".bosatsu_bench/game" / spec.slug
                 outdir.mkdir(parents=True, exist_ok=True)
-                run_checked(repo_root, bosatsu_c_build_command(spec))
+                # The native CLI resolves --exe_out relative to --outdir, so keep
+                # the basename here while recording the repo-relative contract path.
+                run_checked(repo_root, bosatsu_c_build_command(spec, use_contract_path=False))
             elif target == "java":
                 outdir = repo_root / ".build/benchmarksgame/java" / spec.slug
                 outdir.mkdir(parents=True, exist_ok=True)
@@ -884,8 +886,9 @@ def decode_output(output: bytes, label: str) -> str:
         raise HarnessError(f"failed to decode {label} as UTF-8: {exc}") from exc
 
 
-def bosatsu_c_build_command(spec: BenchmarkSpec) -> list[str]:
+def bosatsu_c_build_command(spec: BenchmarkSpec, use_contract_path: bool) -> list[str]:
     outdir = f".bosatsu_bench/game/{spec.slug}"
+    exe_out = f"{outdir}/{spec.slug}" if use_contract_path else spec.slug
     return [
         "./bosatsu",
         "build",
@@ -894,7 +897,7 @@ def bosatsu_c_build_command(spec: BenchmarkSpec) -> list[str]:
         "--outdir",
         outdir,
         "--exe_out",
-        spec.slug,
+        exe_out,
     ]
 
 

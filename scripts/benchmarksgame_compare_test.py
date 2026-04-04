@@ -87,6 +87,17 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         c_plan = MODULE.expand_execution_matrix(self.specs[:1], ["c"], 1, self.version)
         self.assertEqual(c_plan["setup_commands"], [])
 
+    def test_bosatsu_c_plan_uses_repo_relative_exe_out_path(self) -> None:
+        plan = MODULE.expand_execution_matrix(self.specs[:1], ["bosatsu_c"], 1, self.version)
+        builds = {
+            (entry["benchmark"], entry["target"]): entry["command"]
+            for entry in plan["builds"]
+        }
+        self.assertEqual(
+            builds[("n-body", "bosatsu_c")],
+            "./bosatsu build --main_pack Zafu/Benchmark/Game/NBody --outdir .bosatsu_bench/game/n-body --exe_out .bosatsu_bench/game/n-body/n-body",
+        )
+
     def test_rotation_preserves_target_set(self) -> None:
         targets = ["bosatsu_jvm", "bosatsu_c", "java", "c"]
         rotations = [MODULE.rotate_targets(targets, index) for index in range(len(targets))]
@@ -344,6 +355,29 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         artifact = json.loads(json_path.read_text(encoding="utf-8"))
         self.assertIn("run_metadata", artifact)
         self.assertIn("results", artifact)
+        self.assertTrue(artifact["run_metadata"]["validation_only"])
+        self.assertEqual(
+            artifact["run_metadata"]["git_sha"],
+            subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=REPO_ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True,
+            ).stdout.strip(),
+        )
+        validation_rows = artifact["run_metadata"]["validation_results"]
+        self.assertEqual(len(validation_rows), len(self.specs) * len(MODULE.DEFAULT_TARGET_ORDER))
+        self.assertTrue(all(row["validation_passed"] for row in validation_rows))
+        self.assertCountEqual(
+            [(row["benchmark"], row["target"]) for row in validation_rows],
+            [
+                (spec.benchmark, target)
+                for spec in self.specs
+                for target in MODULE.DEFAULT_TARGET_ORDER
+            ],
+        )
 
         with csv_path.open(newline="", encoding="utf-8") as handle:
             reader = csv.reader(handle)
