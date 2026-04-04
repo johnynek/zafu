@@ -101,6 +101,29 @@ assert_eq "missing parent stdout" "" "$(cat "$WORKDIR/missing_parent/stdout")"
 assert_eq "missing parent stderr" "mkdir: bar: No such file or directory" "$(cat "$WORKDIR/missing_parent/stderr")"
 assert_dir_missing "missing parent should not create bar" "$WORKDIR/missing_parent/bar"
 
+run_case trailing_p_operand foo -p
+assert_eq "trailing -p operand exit code" "0" "$(cat "$WORKDIR/trailing_p_operand/exit_code")"
+assert_eq "trailing -p operand stdout" "" "$(cat "$WORKDIR/trailing_p_operand/stdout")"
+assert_eq "trailing -p operand stderr" "" "$(cat "$WORKDIR/trailing_p_operand/stderr")"
+assert_dir_exists "trailing -p should create foo" "$WORKDIR/trailing_p_operand/foo"
+assert_dir_exists "trailing -p should create -p" "$WORKDIR/trailing_p_operand/-p"
+
+run_case trailing_m_operand foo -m 700
+assert_eq "trailing -m operand exit code" "0" "$(cat "$WORKDIR/trailing_m_operand/exit_code")"
+assert_eq "trailing -m operand stdout" "" "$(cat "$WORKDIR/trailing_m_operand/stdout")"
+assert_eq "trailing -m operand stderr" "" "$(cat "$WORKDIR/trailing_m_operand/stderr")"
+assert_dir_exists "trailing -m should create foo" "$WORKDIR/trailing_m_operand/foo"
+assert_dir_exists "trailing -m should create -m" "$WORKDIR/trailing_m_operand/-m"
+assert_dir_exists "trailing -m should create 700" "$WORKDIR/trailing_m_operand/700"
+
+run_case trailing_dashdash_operand foo -- bar
+assert_eq "trailing -- operand exit code" "0" "$(cat "$WORKDIR/trailing_dashdash_operand/exit_code")"
+assert_eq "trailing -- operand stdout" "" "$(cat "$WORKDIR/trailing_dashdash_operand/stdout")"
+assert_eq "trailing -- operand stderr" "" "$(cat "$WORKDIR/trailing_dashdash_operand/stderr")"
+assert_dir_exists "trailing -- should create foo" "$WORKDIR/trailing_dashdash_operand/foo"
+assert_dir_exists "trailing -- should create --" "$WORKDIR/trailing_dashdash_operand/--"
+assert_dir_exists "trailing -- should create bar" "$WORKDIR/trailing_dashdash_operand/bar"
+
 run_case nested_missing_parent a/b/c
 assert_eq "nested missing parent exit code" "1" "$(cat "$WORKDIR/nested_missing_parent/exit_code")"
 assert_eq "nested missing parent stdout" "" "$(cat "$WORKDIR/nested_missing_parent/stdout")"

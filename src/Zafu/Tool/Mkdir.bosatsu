@@ -517,6 +517,13 @@ def expand_short_token_rev(token: String) -> Result[String, List[String]]:
       Ok([token])
 
 def prepare_cli_args(args: List[String]) -> Result[CliPrepError, List[String]]:
+  def finish_operands(rev_tokens: List[String], head: String, tail: List[String]) -> Result[CliPrepError, List[String]]:
+    match tail:
+      case []:
+        Ok([*rev_tokens.reverse(), head])
+      case _:
+        Ok([*rev_tokens.reverse(), head, "--", *tail])
+
   def go(rem: List[String], rev_tokens: List[String]) -> Result[CliPrepError, List[String]]:
     loop rem:
       case []:
@@ -528,7 +535,7 @@ def prepare_cli_args(args: List[String]) -> Result[CliPrepError, List[String]]:
           case "--${_}":
             Err(IllegalOption("-"))
           case "-":
-            go(tail, [head, *rev_tokens])
+            finish_operands(rev_tokens, head, tail)
           case "-${_}":
             match expand_short_token_rev(head):
               case Ok(["-m", *rest_rev]):
@@ -542,7 +549,7 @@ def prepare_cli_args(args: List[String]) -> Result[CliPrepError, List[String]]:
               case Err(bad):
                 Err(IllegalOption(bad))
           case _:
-            go(tail, [head, *rev_tokens])
+            finish_operands(rev_tokens, head, tail)
 
   go(args, [])
 
@@ -1212,12 +1219,30 @@ tests = TestSuite("mkdir tool", [
     prepare_cli_args(["-pm", "700", "alpha"]) matches Ok(["-p", "-m700", "alpha"]),
     "clustered flags still consume a following mode argument",
   ),
+  Assertion(
+    prepare_cli_args(["foo", "-p"]) matches Ok(["foo", "--", "-p"]),
+    "option rewriting stops after the first operand",
+  ),
+  Assertion(
+    prepare_cli_args(["foo", "-m", "700"]) matches Ok(["foo", "--", "-m", "700"]),
+    "trailing mode-looking tokens stay literal after the first operand",
+  ),
+  Assertion(
+    prepare_cli_args(["foo", "--", "bar"]) matches Ok(["foo", "--", "--", "bar"]),
+    "double dash stays literal after the first operand",
+  ),
   Assertion(prepare_cli_args(["-m"]) matches Err(MissingModeArgument), "bare mode flags report a missing argument"),
   Assertion(
     parse_cli(default_parse_config, mkdir_command, ["-m700", "alpha"]) matches Parsed(
       CliOptions { parents: False, verbose: False, raw_mode: Some("700"), operands: ["alpha"] }
     ),
     "attached mode options decode after normalization",
+  ),
+  Assertion(
+    parse_cli(default_parse_config, mkdir_command, ["foo", "--", "-p"]) matches Parsed(
+      CliOptions { parents: False, verbose: False, raw_mode: None, operands: ["foo", "-p"] }
+    ),
+    "the cli parser treats trailing dash tokens as operands",
   ),
   Assertion(
     last_or_None(["755", "700"]) matches Some("700"),
