@@ -229,8 +229,8 @@ def mk_cli_options(
   operands: List[String],
 ) -> CliOptions:
   CliOptions(
-    p_count.eq_Int(0) matches False,
-    v_count.eq_Int(0) matches False,
+    not(p_count matches 0),
+    not(v_count matches 0),
     last_or_None(raw_modes),
     operands,
   )
@@ -339,11 +339,7 @@ def io_error_target_name(target_name: String, err: IOError) -> String:
       context
 
 def has_generic_mkdir_context(err: IOError) -> Bool:
-  match io_error_context(err):
-    case "creating directory" | "creating directory with mode":
-      True
-    case _:
-      False
+  io_error_context(err) matches "creating directory" | "creating directory with mode"
 
 def first_problem_path(path: Path) -> Prog[IOError, Option[Path]]:
   pure(path_parent(path))
@@ -390,30 +386,24 @@ def contains_string(items: List[String], item: String) -> Bool:
 
   go(items)
 
-def prepend_reversed[a](items: List[a], rev_acc: List[a]) -> List[a]:
-  items.foldl_List(rev_acc, (acc, item) -> [item, *acc])
-
 def raw_prefix_candidates(raw_name: String) -> List[String]:
-  chars = string_to_Char_List(raw_name)
-  def go(rem: List[Char], prefix_rev: List[Char], segment_rev: List[Char], rev_prefixes: List[String]) -> List[String]:
+  def go(rem: String, prefix: String, saw_segment: Bool, rev_prefixes: List[String]) -> List[String]:
     loop rem:
-      case []:
-        if segment_rev matches []:
-          rev_prefixes.reverse()
+      case "":
+        if saw_segment:
+          [prefix, *rev_prefixes].reverse()
         else:
-          [chars_to_String(prefix_rev.reverse()), *rev_prefixes].reverse()
-      case [.'/', *tail]:
-        next_prefix_rev = [.'/', *prefix_rev]
-        match segment_rev:
-          case []:
-            go(tail, next_prefix_rev, [], rev_prefixes)
-          case _:
-            prefix = chars_to_String(prefix_rev.reverse())
-            go(tail, next_prefix_rev, [], [prefix, *rev_prefixes])
-      case [head, *tail]:
-        go(tail, [head, *prefix_rev], [head, *segment_rev], rev_prefixes)
+          rev_prefixes.reverse()
+      case "/${tail}":
+        next_prefix = "${prefix}/"
+        if saw_segment:
+          go(tail, next_prefix, False, [prefix, *rev_prefixes])
+        else:
+          go(tail, next_prefix, False, rev_prefixes)
+      case "$.{head}${tail}":
+        go(tail, "${prefix}$.{head}", True, rev_prefixes)
 
-  go(chars, [], [], [])
+  go(raw_name, "", False, [])
 
 def normalize_path_components(absolute: Bool, rev_components: List[String], component: String) -> List[String]:
   match component:
@@ -802,7 +792,7 @@ def parse_mode_clauses(raw_mode: String) -> Option[List[ModeClause]]:
         case []:
           match parse_mode_segment_chars(current_rev.reverse()):
             case Some(clauses):
-              Some(prepend_reversed(clauses, rev_clauses).reverse())
+              Some(clauses.reverse_concat(rev_clauses).reverse())
             case None:
               None
         case [.',', *tail]:
@@ -812,7 +802,7 @@ def parse_mode_clauses(raw_mode: String) -> Option[List[ModeClause]]:
             case _:
               match parse_mode_segment_chars(current_rev.reverse()):
                 case Some(clauses):
-                  go(tail, [], prepend_reversed(clauses, rev_clauses))
+                  go(tail, [], clauses.reverse_concat(rev_clauses))
                 case None:
                   None
         case [head, *tail]:
