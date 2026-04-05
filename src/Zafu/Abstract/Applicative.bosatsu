@@ -12,6 +12,8 @@ export (
   pure,
   map,
   map2,
+  map3,
+  map4,
   map5,
   ap,
   product_left,
@@ -97,11 +99,38 @@ def product3[f: * -> *, a, b, c](inst: Applicative[f], fa: f[a], fb: f[b], fc: f
         (value_a, value_b, value_c)
   ))
 
+def map3[f: * -> *, a, b, c, g](
+  inst: Applicative[f],
+  fa: f[a],
+  fb: f[b],
+  fc: f[c],
+  fn: (a, b, c) -> g,
+) -> f[g]:
+  inst.product3(fa, fb, fc).map(inst, tuple3 -> (
+    match tuple3:
+      case (value_a, value_b, value_c):
+        fn(value_a, value_b, value_c)
+  ))
+
 def product4[f: * -> *, a, b, c, d](inst: Applicative[f], fa: f[a], fb: f[b], fc: f[c], fd: f[d]) -> f[(a, b, c, d)]:
   inst.map2(inst.product2(fa, fb), inst.product2(fc, fd), (pair_ab, pair_cd) -> (
     match (pair_ab, pair_cd):
       case ((value_a, value_b), (value_c, value_d)):
         (value_a, value_b, value_c, value_d)
+  ))
+
+def map4[f: * -> *, a, b, c, d, g](
+  inst: Applicative[f],
+  fa: f[a],
+  fb: f[b],
+  fc: f[c],
+  fd: f[d],
+  fn: (a, b, c, d) -> g,
+) -> f[g]:
+  inst.product4(fa, fb, fc, fd).map(inst, tuple4 -> (
+    match tuple4:
+      case (value_a, value_b, value_c, value_d):
+        fn(value_a, value_b, value_c, value_d)
   ))
 
 def product5[f: * -> *, a, b, c, d, e](inst: Applicative[f], fa: f[a], fb: f[b], fc: f[c], fd: f[d], fe: f[e]) -> f[(a, b, c, d, e)]:

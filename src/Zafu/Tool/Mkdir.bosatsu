@@ -72,6 +72,7 @@ from Zafu/Control/Result import (
   Ok,
   Err,
   attempt,
+  result_to_Prog,
 )
 
 from Zafu/Text/Pretty import (
@@ -224,14 +225,11 @@ def directory_parser():
   string_value(text("directory_name"))
 
 def last_or_None(items: List[a]) -> Option[a]:
-  def go(rem: List[a], current: Option[a]) -> Option[a]:
-    loop rem:
-      case []:
-        current
-      case [head, *tail]:
-        go(tail, Some(head))
-
-  go(items, None)
+  match items:
+    case [*_, last]:
+      Some(last)
+    case []:
+      None
 
 def mk_cli_options(
   p_count: Int,
@@ -247,10 +245,7 @@ def mk_cli_options(
   )
 
 def effective_raw_mode(last_mode_empty: Bool, raw_mode: Option[String]) -> Option[String]:
-  if last_mode_empty:
-    Some("")
-  else:
-    raw_mode
+  Some("") if last_mode_empty else raw_mode
 
 mkdir_args = map5(
   applicative_Args,
@@ -460,8 +455,10 @@ def normalize_path_key(raw_name: String) -> String:
 
 def trim_trailing_separators(rev_chars: List[Char]) -> List[Char]:
   loop rev_chars:
-    case [.'/', *tail] if not(tail matches []):
-      trim_trailing_separators(tail)
+    case [.'/']:
+      rev_chars
+    case [.'/', *not_empty]:
+      trim_trailing_separators(not_empty)
     case _:
       rev_chars
 
@@ -653,25 +650,22 @@ def who_special_target_mask(who_mask: Int) -> Int:
 
 def parse_octal_mode(raw_mode: String) -> Option[Int]:
   chars = string_to_Char_List(raw_mode)
-  if chars matches []:
-    None
-  else:
-    def go(rem: List[Char], acc: Int) -> Option[Int]:
-      loop rem:
-        case []:
-          Some(acc)
-        case [head, *tail]:
-          match to_digit(head, 8):
-            case Some(digit):
-              next_value = acc.mul(8).add(digit)
-              if next_value.and_Int(mode_mask).eq_Int(next_value):
-                go(tail, next_value)
-              else:
-                None
-            case None:
+  def go(rem: List[Char], acc: Int, seen_digit: Bool) -> Option[Int]:
+    loop rem:
+      case []:
+        Some(acc) if seen_digit else None
+      case [head, *tail]:
+        match to_digit(head, 8):
+          case Some(digit):
+            next_value = acc.mul(8).add(digit)
+            if next_value.and_Int(mode_mask).eq_Int(next_value):
+              go(tail, next_value, True)
+            else:
               None
+          case None:
+            None
 
-    go(chars, 0)
+  go(chars, 0, False)
 
 def parse_who_chars(chars: List[Char]) -> (Int, Bool, Bool, List[Char]):
   def go(rem: List[Char], seen: Bool, sticky_allowed: Bool, who_mask: Int) -> (Int, Bool, Bool, List[Char]):
@@ -824,12 +818,7 @@ def mode_bits_for_atom(who_mask: Int, sticky_allowed: Bool, atom: ModeAtom) -> (
     case SetIdMode:
       (0, select_class_bits(who_mask, setuid_bit, setgid_bit, 0))
     case StickyMode:
-      sticky_bits =
-        if sticky_allowed:
-          sticky_bit
-        else:
-          0
-      (0, sticky_bits)
+      (0, sticky_bit if sticky_allowed else 0)
     case ConditionalExecuteMode | CopyUserMode | CopyGroupMode | CopyOtherMode:
       (0, 0)
 
@@ -1005,11 +994,9 @@ def probe_default_mode() -> Prog[IOError, Int]:
     pure(posix_mode_to_Int(mode) & perm_mask)
   )).attempt().await()
   _ <- recover(remove(temp_dir, True), _ -> pure(Unit)).await()
-  match probe_result:
-    case Ok(result):
-      pure(result)
-    case Err(err):
-      raise_error(err)
+  result_prog = result_to_Prog(probe_result)
+  result <- result_prog.await()
+  pure(result)
 
 def infer_umask() -> Prog[IOError, Int]:
   default_mode <- probe_default_mode().await()

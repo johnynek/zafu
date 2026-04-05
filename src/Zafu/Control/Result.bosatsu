@@ -2,8 +2,8 @@ package Zafu/Control/Result
 
 from Bosatsu/Prog import (
   Prog,
-  await,
   pure as pure_Prog,
+  raise_error,
   recover,
 )
 
@@ -47,6 +47,7 @@ from Zafu/Abstract/Monad import (
   tailrec_steps,
   laws_Monad,
 )
+from Zafu/Abstract/Instances/Predef import applicative_Prog
 from Zafu/Abstract/Foldable import (
   Foldable,
   foldable_from_folds,
@@ -82,6 +83,7 @@ export (
   unwrap,
   from_Option,
   attempt,
+  result_to_Prog,
   applicative,
   applicative_Result,
   applicative_combine_Err,
@@ -193,10 +195,14 @@ def from_Option(value: Option[a], on_none: () -> e) -> Result[e, a]:
       Ok(item)
 
 def attempt[e, a, err](prog: Prog[e, a]) -> Prog[err, Result[e, a]]:
-  recover((
-    value <- prog.await()
-    pure_Prog(Ok(value))
-  ), raised -> pure_Prog(Err(raised)))
+  recover(prog.map_app(applicative_Prog, Ok), raised -> pure_Prog(Err(raised)))
+
+def result_to_Prog(result: Result[e, a]) -> Prog[e, a]:
+  match result:
+    case Ok(value):
+      pure_Prog(value)
+    case Err(err):
+      raise_error(err)
 
 def map2_result(left: Result[e, a], right: Result[e, b], fn: (a, b) -> c) -> Result[e, c]:
   match left:
