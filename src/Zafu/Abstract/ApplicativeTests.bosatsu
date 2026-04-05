@@ -11,6 +11,7 @@ from Zafu/Abstract/Applicative import (
   product3,
   product4,
   product5,
+  map5,
   laws_Applicative,
 )
 from Zafu/Abstract/Eq import (
@@ -102,6 +103,7 @@ tests = TestSuite("Applicative tests", [
   Assertion(applicative_Option.product3(Some(1), Some(2), Some(3)) matches Some((1, 2, 3)), "product3"),
   Assertion(applicative_Option.product4(Some(1), Some(2), Some(3), Some(4)) matches Some((1, 2, 3, 4)), "product4"),
   Assertion(applicative_Option.product5(Some(1), Some(2), Some(3), Some(4), Some(5)) matches Some((1, 2, 3, 4, 5)), "product5"),
+  Assertion(applicative_Option.map5(Some(1), Some(2), Some(3), Some(4), Some(5), (a, b, c, d, e) -> a.add(b).add(c).add(d).add(e)) matches Some(15), "map5"),
   Assertion(applicative_Option.product_left(Some(1), Some("x")) matches Some(1), "product_left"),
   Assertion(applicative_Option.product_right(Some(1), Some("x")) matches Some("x"), "product_right"),
   Assertion((Some(1)).void(applicative_Option) matches Some(()), "void"),

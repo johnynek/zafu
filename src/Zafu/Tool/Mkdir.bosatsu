@@ -71,11 +71,16 @@ from Zafu/Control/Result import (
   Result,
   Ok,
   Err,
+  attempt,
 )
 
 from Zafu/Text/Pretty import (
   render_String as render,
   text,
+)
+
+from Zafu/Abstract/Applicative import (
+  map5,
 )
 
 from Zafu/Abstract/Eq import (
@@ -84,17 +89,23 @@ from Zafu/Abstract/Eq import (
 
 from Zafu/Abstract/Instances/Predef import (
   eq_String,
+  foldable_List,
+  monoid_String,
+)
+
+from Zafu/Abstract/Foldable import (
+  intercalate,
 )
 
 from Zafu/Cli/Args import (
   allow_attached,
   allow_separate,
+  applicative_Args,
   arg_info,
   clusterable,
   command as cli_command,
   count,
   default_parse_config,
-  map2,
   parse as parse_cli,
   positional,
   rest,
@@ -241,27 +252,17 @@ def effective_raw_mode(last_mode_empty: Bool, raw_mode: Option[String]) -> Optio
   else:
     raw_mode
 
-mkdir_args = map2(
-  map2(count_flag(.'p'), count_flag(.'v'), (p_count, v_count) -> (p_count, v_count)),
-  map2(
-    zero_or_more(string_value(text("mode")), mode_spellings(), arg_info),
-    map2(
-      positional(directory_parser(), arg_info),
-      rest(directory_parser(), arg_info),
-      (head, tail) -> [head, *tail],
-    ),
-    (raw_modes, operands) -> (raw_modes, operands),
-  ),
-  ((p_count, v_count), (raw_modes, operands)) -> mk_cli_options(p_count, v_count, raw_modes, operands),
+mkdir_args = map5(
+  applicative_Args,
+  count_flag(.'p'),
+  count_flag(.'v'),
+  zero_or_more(string_value(text("mode")), mode_spellings(), arg_info),
+  positional(directory_parser(), arg_info),
+  rest(directory_parser(), arg_info),
+  (p_count, v_count, raw_modes, head, tail) -> mk_cli_options(p_count, v_count, raw_modes, [head, *tail]),
 )
 
 mkdir_command = cli_command("mkdir", mkdir_args)
-
-def attempt[e, a, err](prog: Prog[e, a]) -> Prog[err, Result[e, a]]:
-  recover((
-    value <- prog.await()
-    pure(Ok(value))
-  ), raised -> pure(Err(raised)))
 
 def io_error_context(err: IOError) -> String:
   match err:
@@ -341,27 +342,25 @@ def io_error_target_name(target_name: String, err: IOError) -> String:
 def has_generic_mkdir_context(err: IOError) -> Bool:
   io_error_context(err) matches "creating directory" | "creating directory with mode"
 
-def first_problem_path(path: Path) -> Prog[IOError, Option[Path]]:
-  pure(path_parent(path))
+def first_problem_path(path: Path) -> Option[Path]:
+  path_parent(path)
 
-def resolve_target_io_error_name(target_name: String, path: Path, err: IOError) -> Prog[IOError, String]:
+def resolve_target_io_error_name(target_name: String, path: Path, err: IOError) -> String:
   if has_generic_mkdir_context(err):
     match err:
       case AlreadyExists(_):
-        pure(target_name)
+        target_name
       case _:
-        problem_path <- recover(first_problem_path(path), _ -> pure(None)).await()
-        match problem_path:
+        match first_problem_path(path):
           case Some(problem):
-            pure(path_to_String(problem))
+            path_to_String(problem)
           case None:
-            pure(target_name)
+            target_name
   else:
-    pure(io_error_target_name(target_name, err))
+    io_error_target_name(target_name, err)
 
 def emit_target_io_error(target_name: String, path: Path, err: IOError) -> Prog[IOError, Unit]:
-  target_name <- resolve_target_io_error_name(target_name, path, err).await()
-  emit_target_reason(target_name, io_error_reason(err))
+  emit_target_reason(resolve_target_io_error_name(target_name, path, err), io_error_reason(err))
 
 def unknown_option_char(token: String) -> String:
   match token:
@@ -374,36 +373,26 @@ def chars_to_String(chars: List[Char]) -> String:
   concat_String(["$.{ch}" for ch in chars])
 
 def contains_string(items: List[String], item: String) -> Bool:
-  def go(rem: List[String]) -> Bool:
-    loop rem:
-      case []:
-        False
-      case [head, *tail]:
-        if eq_Eq(eq_String, head, item):
-          True
-        else:
-          go(tail)
-
-  go(items)
+  items matches [*_, el, *_] if eq_Eq(eq_String, el, item)
 
 def raw_prefix_candidates(raw_name: String) -> List[String]:
-  def go(rem: String, prefix: String, saw_segment: Bool, rev_prefixes: List[String]) -> List[String]:
+  def go(rem: String, prefix_rev: List[Char], saw_segment: Bool, rev_prefixes: List[String]) -> List[String]:
     loop rem:
       case "":
         if saw_segment:
-          [prefix, *rev_prefixes].reverse()
+          [chars_to_String(prefix_rev.reverse()), *rev_prefixes].reverse()
         else:
           rev_prefixes.reverse()
       case "/${tail}":
-        next_prefix = "${prefix}/"
+        next_prefix_rev = [.'/', *prefix_rev]
         if saw_segment:
-          go(tail, next_prefix, False, [prefix, *rev_prefixes])
+          go(tail, next_prefix_rev, False, [chars_to_String(prefix_rev.reverse()), *rev_prefixes])
         else:
-          go(tail, next_prefix, False, rev_prefixes)
+          go(tail, next_prefix_rev, False, rev_prefixes)
       case "$.{head}${tail}":
-        go(tail, "${prefix}$.{head}", True, rev_prefixes)
+        go(tail, [head, *prefix_rev], True, rev_prefixes)
 
-  go(raw_name, "", False, [])
+  go(raw_name, [], False, [])
 
 def normalize_path_components(absolute: Bool, rev_components: List[String], component: String) -> List[String]:
   match component:
@@ -427,19 +416,7 @@ def normalize_path_components(absolute: Bool, rev_components: List[String], comp
       [component, *rev_components]
 
 def join_with_slash(parts: List[String]) -> String:
-  def go(rem: List[String], current: String) -> String:
-    loop rem:
-      case []:
-        current
-      case [head, *tail]:
-        next =
-          if current matches "":
-            head
-          else:
-            "${current}/${head}"
-        go(tail, next)
-
-  go(parts, "")
+  intercalate(parts, foldable_List, monoid_String, "/")
 
 def normalize_path_key(raw_name: String) -> String:
   chars = string_to_Char_List(raw_name)

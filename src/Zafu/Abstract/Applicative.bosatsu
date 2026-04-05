@@ -12,6 +12,7 @@ export (
   pure,
   map,
   map2,
+  map5,
   ap,
   product_left,
   product_right,
@@ -113,6 +114,21 @@ def product5[f: * -> *, a, b, c, d, e](inst: Applicative[f], fa: f[a], fb: f[b],
     match tuple4_abcd:
       case (value_a, value_b, value_c, value_d):
         (value_a, value_b, value_c, value_d, value_e)
+  ))
+
+def map5[f: * -> *, a, b, c, d, e, g](
+  inst: Applicative[f],
+  fa: f[a],
+  fb: f[b],
+  fc: f[c],
+  fd: f[d],
+  fe: f[e],
+  fn: (a, b, c, d, e) -> g,
+) -> f[g]:
+  inst.product5(fa, fb, fc, fd, fe).map(inst, tuple5 -> (
+    match tuple5:
+      case (value_a, value_b, value_c, value_d, value_e):
+        fn(value_a, value_b, value_c, value_d, value_e)
   ))
 
 def laws_Applicative[f: * -> *, a, b, c](

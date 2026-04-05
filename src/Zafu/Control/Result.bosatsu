@@ -1,5 +1,12 @@
 package Zafu/Control/Result
 
+from Bosatsu/Prog import (
+  Prog,
+  await,
+  pure as pure_Prog,
+  recover,
+)
+
 from Zafu/Abstract/Eq import (
   Eq,
   eq_from_fn,
@@ -74,6 +81,7 @@ export (
   unwrap_or_else,
   unwrap,
   from_Option,
+  attempt,
   applicative,
   applicative_Result,
   applicative_combine_Err,
@@ -85,6 +93,7 @@ export (
 )
 
 exposes (
+  Bosatsu/Prog,
   Zafu/Abstract/Applicative,
   Zafu/Abstract/Eq,
   Zafu/Abstract/Hash,
@@ -182,6 +191,12 @@ def from_Option(value: Option[a], on_none: () -> e) -> Result[e, a]:
       Err(on_none())
     case Some(item):
       Ok(item)
+
+def attempt[e, a, err](prog: Prog[e, a]) -> Prog[err, Result[e, a]]:
+  recover((
+    value <- prog.await()
+    pure_Prog(Ok(value))
+  ), raised -> pure_Prog(Err(raised)))
 
 def map2_result(left: Result[e, a], right: Result[e, b], fn: (a, b) -> c) -> Result[e, c]:
   match left:
