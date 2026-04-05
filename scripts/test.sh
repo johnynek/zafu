@@ -12,6 +12,7 @@ cd "$REPO_ROOT"
 ./bosatsu fetch
 ./bosatsu check
 ./bosatsu test
+scripts/test_mkdir_tool.sh
 
 MANDELBROT_FIXTURE="$REPO_ROOT/fixtures/benchmarksgame/mandelbrot/mandelbrot-output-n200.pbm"
 MANDELBROT_TMPDIR="$(mktemp -d)"

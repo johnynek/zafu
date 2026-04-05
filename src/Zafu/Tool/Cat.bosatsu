@@ -52,6 +52,7 @@ from Zafu/Control/Result import (
   Result,
   Ok,
   Err,
+  attempt,
 )
 
 from Zafu/Text/Pretty import (
@@ -155,12 +156,6 @@ def emit_source_reason[e](raw_name: String, reason: String) -> Prog[e, Unit]:
 
 def emit_source_io_error[e](raw_name: String, err: IOError) -> Prog[e, Unit]:
   emit_source_reason(raw_name, io_error_reason(err))
-
-def attempt[e, a, err](prog: Prog[e, a]) -> Prog[err, Result[e, a]]:
-  recover((
-    value <- prog.await()
-    pure(Ok(value))
-  ), raised -> pure(Err(raised)))
 
 # `Main` may hand us argv with the command name first. For `cat`, only leading
 # dash-prefixed tokens can be real options; keeping slash-prefixed argv0 values

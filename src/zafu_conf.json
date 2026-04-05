@@ -45,7 +45,8 @@
     "Zafu/Text/Parse/Rfc5234",
     "Zafu/Text/Pretty",
     "Zafu/Tool/Cat",
-    "Zafu/Tool/JsonFormat"
+    "Zafu/Tool/JsonFormat",
+    "Zafu/Tool/Mkdir"
   ],
   "all_packages": [
     ".*"

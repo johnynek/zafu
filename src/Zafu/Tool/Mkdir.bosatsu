@@ -1,0 +1,1354 @@
+package Zafu/Tool/Mkdir
+
+from Bosatsu/Char import (
+  string_to_Char_List,
+  to_digit,
+)
+
+from Bosatsu/IO/Core import (
+  Path,
+  PosixMode,
+  FileStat,
+  create_temp_dir,
+  mkdir,
+  mkdir_with_mode,
+  path_join,
+  path_parent,
+  path_to_String,
+  posix_mode,
+  posix_mode_to_Int,
+  remove,
+  stat,
+  stderr,
+  stdout,
+  string_to_Path,
+  write_utf8,
+)
+
+from Bosatsu/IO/Error import (
+  IOError,
+  AccessDenied,
+  AlreadyExists,
+  BadFileDescriptor,
+  BrokenPipe,
+  CrossDeviceLink,
+  Interrupted,
+  InvalidArgument,
+  InvalidUtf8,
+  IsDirectory,
+  NameTooLong,
+  NoSpace,
+  NotDirectory,
+  NotEmpty,
+  NotFound,
+  Other,
+  QuotaExceeded,
+  ReadOnlyFileSystem,
+  TimedOut,
+  TooManyOpenFiles,
+  Unsupported,
+  WouldBlock,
+)
+
+from Bosatsu/Prog import (
+  Main,
+  Prog,
+  await,
+  pure,
+  raise_error,
+  recover,
+)
+
+from Zafu/Collection/NonEmptyChain import (
+  head as head_NonEmptyChain,
+)
+
+from Zafu/Collection/NonEmptyList import (
+  from_prepend as from_prepend_NonEmptyList,
+)
+
+from Zafu/Control/Result import (
+  Result,
+  Ok,
+  Err,
+  attempt,
+  result_to_Prog,
+)
+
+from Zafu/Text/Pretty import (
+  render_String as render,
+  text,
+)
+
+from Zafu/Abstract/Applicative import (
+  map5,
+)
+
+from Zafu/Abstract/Eq import (
+  eq as eq_Eq,
+)
+
+from Zafu/Abstract/Instances/Predef import (
+  eq_String,
+  foldable_List,
+  monoid_String,
+)
+
+from Zafu/Abstract/Foldable import (
+  intercalate,
+)
+
+from Zafu/Cli/Args import (
+  allow_attached,
+  allow_separate,
+  applicative_Args,
+  arg_info,
+  clusterable,
+  command as cli_command,
+  count,
+  default_parse_config,
+  parse as parse_cli,
+  positional,
+  rest,
+  short,
+  string_value,
+  zero_or_more,
+)
+
+from Zafu/Cli/Args/Types import (
+  AmbiguousSpecification,
+  Failed,
+  MissingArgument,
+  MissingValue,
+  RequestedHelp,
+  RequestedVersion,
+  Parsed,
+  UnexpectedArgument,
+  UnknownOption,
+  ValidationError,
+  ValueParseError,
+)
+
+export (
+  main,
+)
+
+exposes Bosatsu/Prog
+
+struct CliOptions(
+  parents: Bool,
+  verbose: Bool,
+  raw_mode: Option[String],
+  operands: List[String],
+)
+
+struct PreparedCliArgs(
+  cli_args: List[String],
+  last_mode_empty: Bool,
+)
+
+enum Target:
+  EmptyTarget(raw_name: String)
+  InvalidTarget(raw_name: String)
+  ValidTarget(raw_name: String, target_name: String, path: Path)
+
+enum ModeOp:
+  AddMode
+  RemoveMode
+  SetMode
+
+enum ModeAtom:
+  ReadMode
+  WriteMode
+  ExecuteMode
+  ConditionalExecuteMode
+  SetIdMode
+  StickyMode
+  CopyUserMode
+  CopyGroupMode
+  CopyOtherMode
+
+struct ModeClause(
+  who_mask: Int,
+  who_omitted: Bool,
+  sticky_allowed: Bool,
+  op: ModeOp,
+  atoms: List[ModeAtom],
+)
+
+enum ModePlan:
+  DefaultMode
+  ExplicitMode(mode: PosixMode)
+
+enum CliPrepError:
+  IllegalOption(bad_option: String)
+  MissingModeArgument
+
+usage_line = "usage: mkdir [-pv] [-m mode] directory_name ..."
+mode_probe_prefix = "zafu-mkdir-mode-"
+success_exit_code = 0
+usage_exit_code = 64
+error_exit_code = 1
+class_user = 4
+class_group = 2
+class_other = 1
+all_classes = 7
+perm_mask = 511
+mode_mask = 4095
+user_read_bit = 256
+user_write_bit = 128
+user_exec_bit = 64
+group_read_bit = 32
+group_write_bit = 16
+group_exec_bit = 8
+other_read_bit = 4
+other_write_bit = 2
+other_exec_bit = 1
+user_all_bits = 448
+group_all_bits = 56
+other_all_bits = 7
+setuid_bit = 2048
+setgid_bit = 1024
+sticky_bit = 512
+
+def operator &(a, b): a.and_Int(b)
+def operator |(a, b): a.or_Int(b)
+def operator ^(a, b): a.xor_Int(b)
+
+def count_flag(ch: Char):
+  count(from_prepend_NonEmptyList(clusterable(short(ch)), []), arg_info)
+
+def mode_spellings():
+  from_prepend_NonEmptyList(allow_separate(allow_attached(short(.'m'))), [])
+
+def directory_parser():
+  string_value(text("directory_name"))
+
+def last_or_None(items: List[a]) -> Option[a]:
+  match items:
+    case [*_, last]:
+      Some(last)
+    case []:
+      None
+
+def mk_cli_options(
+  p_count: Int,
+  v_count: Int,
+  raw_modes: List[String],
+  operands: List[String],
+) -> CliOptions:
+  CliOptions(
+    not(p_count matches 0),
+    not(v_count matches 0),
+    last_or_None(raw_modes),
+    operands,
+  )
+
+def effective_raw_mode(last_mode_empty: Bool, raw_mode: Option[String]) -> Option[String]:
+  Some("") if last_mode_empty else raw_mode
+
+mkdir_args = map5(
+  applicative_Args,
+  count_flag(.'p'),
+  count_flag(.'v'),
+  zero_or_more(string_value(text("mode")), mode_spellings(), arg_info),
+  positional(directory_parser(), arg_info),
+  rest(directory_parser(), arg_info),
+  (p_count, v_count, raw_modes, head, tail) -> mk_cli_options(p_count, v_count, raw_modes, [head, *tail]),
+)
+
+mkdir_command = cli_command("mkdir", mkdir_args)
+
+def io_error_context(err: IOError) -> String:
+  match err:
+    case NotFound(context) | AccessDenied(context) | AlreadyExists(context) | NotDirectory(context) | IsDirectory(context) | NotEmpty(context) | TooManyOpenFiles(context) | ReadOnlyFileSystem(context) | CrossDeviceLink(context) | NoSpace(context) | QuotaExceeded(context) | NameTooLong(context) | InvalidArgument(context) | InvalidUtf8(context) | BadFileDescriptor(context) | Interrupted(context) | WouldBlock(context) | TimedOut(context) | BrokenPipe(context) | Unsupported(context):
+      context
+    case Other(context, _, _):
+      context
+
+def io_error_reason(err: IOError) -> String:
+  match err:
+    case NotFound(_):
+      "No such file or directory"
+    case AccessDenied(_):
+      "Permission denied"
+    case AlreadyExists(_):
+      "File exists"
+    case NotDirectory(_):
+      "Not a directory"
+    case IsDirectory(_):
+      "Is a directory"
+    case NotEmpty(_):
+      "Directory not empty"
+    case TooManyOpenFiles(_):
+      "Too many open files"
+    case ReadOnlyFileSystem(_):
+      "Read-only file system"
+    case CrossDeviceLink(_):
+      "Cross-device link"
+    case NoSpace(_):
+      "No space left on device"
+    case QuotaExceeded(_):
+      "Disk quota exceeded"
+    case NameTooLong(_):
+      "File name too long"
+    case InvalidArgument(_):
+      "Invalid argument"
+    case InvalidUtf8(_):
+      "Invalid UTF-8"
+    case BadFileDescriptor(_):
+      "Bad file descriptor"
+    case Interrupted(_):
+      "Interrupted system call"
+    case WouldBlock(_):
+      "Resource temporarily unavailable"
+    case TimedOut(_):
+      "Operation timed out"
+    case BrokenPipe(_):
+      "Broken pipe"
+    case Unsupported(_):
+      "Operation not supported"
+    case Other(_, _, message):
+      if message matches "":
+        "I/O error"
+      else:
+        message
+
+def emit_stderr_line[e](line: String) -> Prog[e, Unit]:
+  _ <- recover(write_utf8(stderr, "${line}\n"), _ -> pure(Unit)).await()
+  pure(Unit)
+
+def emit_stdout_line(line: String) -> Prog[IOError, Unit]:
+  write_utf8(stdout, "${line}\n")
+
+def emit_usage() -> Prog[IOError, Unit]:
+  write_utf8(stderr, "${usage_line}\n")
+
+def emit_target_reason[e](raw_name: String, reason: String) -> Prog[e, Unit]:
+  emit_stderr_line("mkdir: ${raw_name}: ${reason}")
+
+def io_error_target_name(target_name: String, err: IOError) -> String:
+  match io_error_context(err):
+    case "":
+      target_name
+    case context:
+      context
+
+def has_generic_mkdir_context(err: IOError) -> Bool:
+  io_error_context(err) matches "creating directory" | "creating directory with mode"
+
+def first_problem_path(path: Path) -> Option[Path]:
+  path_parent(path)
+
+def resolve_target_io_error_name(target_name: String, path: Path, err: IOError) -> String:
+  if has_generic_mkdir_context(err):
+    match err:
+      case AlreadyExists(_):
+        target_name
+      case _:
+        match first_problem_path(path):
+          case Some(problem):
+            path_to_String(problem)
+          case None:
+            target_name
+  else:
+    io_error_target_name(target_name, err)
+
+def emit_target_io_error(target_name: String, path: Path, err: IOError) -> Prog[IOError, Unit]:
+  emit_target_reason(resolve_target_io_error_name(target_name, path, err), io_error_reason(err))
+
+def unknown_option_char(token: String) -> String:
+  match token:
+    case "-$.{bad}${_}":
+      "$.{bad}"
+    case _:
+      token
+
+def chars_to_String(chars: List[Char]) -> String:
+  concat_String(["$.{ch}" for ch in chars])
+
+def contains_string(items: List[String], item: String) -> Bool:
+  items matches [*_, el, *_] if eq_Eq(eq_String, el, item)
+
+def raw_prefix_candidates(raw_name: String) -> List[String]:
+  def go(rem: String, prefix_rev: List[Char], saw_segment: Bool, rev_prefixes: List[String]) -> List[String]:
+    loop rem:
+      case "":
+        if saw_segment:
+          [chars_to_String(prefix_rev.reverse()), *rev_prefixes].reverse()
+        else:
+          rev_prefixes.reverse()
+      case "/${tail}":
+        next_prefix_rev = [.'/', *prefix_rev]
+        if saw_segment:
+          go(tail, next_prefix_rev, False, [chars_to_String(prefix_rev.reverse()), *rev_prefixes])
+        else:
+          go(tail, next_prefix_rev, False, rev_prefixes)
+      case "$.{head}${tail}":
+        go(tail, [head, *prefix_rev], True, rev_prefixes)
+
+  go(raw_name, [], False, [])
+
+def normalize_path_components(absolute: Bool, rev_components: List[String], component: String) -> List[String]:
+  match component:
+    case "" | ".":
+      rev_components
+    case "..":
+      match rev_components:
+        case []:
+          if absolute:
+            []
+          else:
+            [".."]
+        case ["..", *_]:
+          if absolute:
+            rev_components
+          else:
+            ["..", *rev_components]
+        case [_, *tail]:
+          tail
+    case _:
+      [component, *rev_components]
+
+def join_with_slash(parts: List[String]) -> String:
+  intercalate(parts, foldable_List, monoid_String, "/")
+
+def normalize_path_key(raw_name: String) -> String:
+  chars = string_to_Char_List(raw_name)
+  def go(rem: List[Char], absolute: Bool, segment_rev: List[Char], rev_components: List[String]) -> String:
+    loop rem:
+      case []:
+        final_components =
+          match segment_rev:
+            case []:
+              rev_components
+            case _:
+              normalize_path_components(absolute, rev_components, chars_to_String(segment_rev.reverse()))
+        rendered = join_with_slash(final_components.reverse())
+        if rendered matches "":
+          if absolute:
+            "/"
+          else:
+            "."
+        else:
+          if absolute:
+            "/${rendered}"
+          else:
+            rendered
+      case [.'/', *tail]:
+        next_absolute =
+          if and(absolute matches False, and(segment_rev matches [], rev_components matches [])):
+            True
+          else:
+            absolute
+        next_components =
+          match segment_rev:
+            case []:
+              rev_components
+            case _:
+              normalize_path_components(next_absolute, rev_components, chars_to_String(segment_rev.reverse()))
+        go(tail, next_absolute, [], next_components)
+      case [head, *tail]:
+        go(tail, absolute, [head, *segment_rev], rev_components)
+
+  go(chars, False, [], [])
+
+def trim_trailing_separators(rev_chars: List[Char]) -> List[Char]:
+  loop rev_chars:
+    case [.'/']:
+      rev_chars
+    case [.'/', *not_empty]:
+      trim_trailing_separators(not_empty)
+    case _:
+      rev_chars
+
+def normalize_target_name(raw_name: String) -> String:
+  chars = string_to_Char_List(raw_name)
+  def go(rem: List[Char], rev_chars: List[Char], last_was_separator: Bool) -> String:
+    loop rem:
+      case []:
+        rendered = chars_to_String(trim_trailing_separators(rev_chars).reverse())
+        if rendered matches "":
+          "/"
+        else:
+          rendered
+      case [.'/', *tail]:
+        if last_was_separator:
+          go(tail, rev_chars, True)
+        else:
+          go(tail, [.'/', *rev_chars], True)
+      case [head, *tail]:
+        go(tail, [head, *rev_chars], False)
+
+  match raw_name:
+    case "":
+      ""
+    case _:
+      go(chars, [], False)
+
+def path_exists_from_key(path_key: String) -> Prog[IOError, Bool]:
+  if path_key matches ".":
+    pure(True)
+  else:
+    match string_to_Path(path_key):
+      case Some(path):
+        stat_result <- stat(path).await()
+        match stat_result:
+          case Some(_):
+            pure(True)
+          case None:
+            pure(False)
+      case None:
+        pure(False)
+
+def expand_short_token_rev(token: String) -> Result[String, List[String]]:
+  match string_to_Char_List(token):
+    case [.'-', *tail]:
+      def go(rem: List[Char], rev_tokens: List[String]) -> Result[String, List[String]]:
+        loop rem:
+          case []:
+            Ok(rev_tokens)
+          case [.'p', *tail_chars]:
+            go(tail_chars, ["-p", *rev_tokens])
+          case [.'v', *tail_chars]:
+            go(tail_chars, ["-v", *rev_tokens])
+          case [.'m', *tail_chars]:
+            mode_token =
+              if tail_chars matches []:
+                "-m"
+              else:
+                "-m${chars_to_String(tail_chars)}"
+            Ok([mode_token, *rev_tokens])
+          case [bad, *_]:
+            Err("$.{bad}")
+      go(tail, [])
+    case _:
+      Ok([token])
+
+def prepare_cli_args(args: List[String]) -> Result[CliPrepError, PreparedCliArgs]:
+  def finish_operands(rev_tokens: List[String], last_mode_empty: Bool, head: String, tail: List[String]) -> Result[CliPrepError, PreparedCliArgs]:
+    match tail:
+      case []:
+        Ok(PreparedCliArgs([*rev_tokens.reverse(), head], last_mode_empty))
+      case _:
+        Ok(PreparedCliArgs([*rev_tokens.reverse(), head, "--", *tail], last_mode_empty))
+
+  def go(rem: List[String], rev_tokens: List[String], last_mode_empty: Bool) -> Result[CliPrepError, PreparedCliArgs]:
+    loop rem:
+      case []:
+        Ok(PreparedCliArgs(rev_tokens.reverse(), last_mode_empty))
+      case ["--", *tail]:
+        Ok(PreparedCliArgs([*rev_tokens.reverse(), "--", *tail], last_mode_empty))
+      case [head, *tail]:
+        match head:
+          case "--${_}":
+            Err(IllegalOption("-"))
+          case "-":
+            finish_operands(rev_tokens, last_mode_empty, head, tail)
+          case "-${_}":
+            match expand_short_token_rev(head):
+              case Ok(["-m", *rest_rev]):
+                match tail:
+                  case [value, *tail_tail]:
+                    if value matches "":
+                      go(tail_tail, ["-m0", *rest_rev, *rev_tokens], True)
+                    else:
+                      go(tail_tail, ["-m${value}", *rest_rev, *rev_tokens], False)
+                  case []:
+                    Err(MissingModeArgument)
+              case Ok(expanded_rev):
+                go(tail, [*expanded_rev, *rev_tokens], last_mode_empty)
+              case Err(bad):
+                Err(IllegalOption(bad))
+          case _:
+            finish_operands(rev_tokens, last_mode_empty, head, tail)
+
+  go(args, [], False)
+
+# `Main` receives argv including argv0; keep leading option tokens untouched and
+# otherwise drop the executable name.
+def normalize_cli_args(args: List[String]) -> List[String]:
+  match args:
+    case ["-${_}", *_] | []:
+      args
+    case [_, *tail]:
+      tail
+
+def plan_target(raw_name: String) -> Target:
+  match raw_name:
+    case "":
+      EmptyTarget(raw_name)
+    case _:
+      target_name = normalize_target_name(raw_name)
+      match string_to_Path(target_name):
+        case Some(path):
+          ValidTarget(raw_name, target_name, path)
+        case None:
+          InvalidTarget(raw_name)
+
+def plan_targets(raw_names: List[String]) -> List[Target]:
+  raw_names.map_List(plan_target)
+
+def probe_child_path(base: Path) -> Path:
+  match string_to_Path("mode-probe"):
+    case Some(child):
+      path_join(base, child)
+    case None:
+      base
+
+def stat_posix_mode(path: Path) -> Prog[IOError, PosixMode]:
+  stat_result <- stat(path).await()
+  match stat_result:
+    case Some(FileStat { posix_mode: Some(mode), ... }):
+      pure(mode)
+    case Some(_):
+      raise_error(Other("resolving directory mode", 0, "filesystem did not report directory permissions"))
+    case None:
+      raise_error(Other("resolving directory mode", 0, "mode probe disappeared before it could be inspected"))
+
+def has_class(mask: Int, class_bit: Int) -> Bool:
+  (mask & class_bit).eq_Int(0) matches False
+
+def select_class_bits(class_mask: Int, user_bits: Int, group_bits: Int, other_bits: Int) -> Int:
+  user_part =
+    if has_class(class_mask, class_user):
+      user_bits
+    else:
+      0
+  group_part =
+    if has_class(class_mask, class_group):
+      group_bits
+    else:
+      0
+  other_part =
+    if has_class(class_mask, class_other):
+      other_bits
+    else:
+      0
+  user_part | group_part | other_part
+
+def who_regular_target_mask(who_mask: Int) -> Int:
+  select_class_bits(who_mask, user_all_bits, group_all_bits, other_all_bits)
+
+def who_special_target_mask(who_mask: Int) -> Int:
+  user_part =
+    if has_class(who_mask, class_user):
+      setuid_bit
+    else:
+      0
+  group_part =
+    if has_class(who_mask, class_group):
+      setgid_bit
+    else:
+      0
+  sticky_part =
+    if who_mask.eq_Int(all_classes):
+      sticky_bit
+    else:
+      0
+  user_part | group_part | sticky_part
+
+def parse_octal_mode(raw_mode: String) -> Option[Int]:
+  chars = string_to_Char_List(raw_mode)
+  def go(rem: List[Char], acc: Int, seen_digit: Bool) -> Option[Int]:
+    loop rem:
+      case []:
+        Some(acc) if seen_digit else None
+      case [head, *tail]:
+        match to_digit(head, 8):
+          case Some(digit):
+            next_value = acc.mul(8).add(digit)
+            if next_value.and_Int(mode_mask).eq_Int(next_value):
+              go(tail, next_value, True)
+            else:
+              None
+          case None:
+            None
+
+  go(chars, 0, False)
+
+def parse_who_chars(chars: List[Char]) -> (Int, Bool, Bool, List[Char]):
+  def go(rem: List[Char], seen: Bool, sticky_allowed: Bool, who_mask: Int) -> (Int, Bool, Bool, List[Char]):
+    loop rem:
+      case [.'u', *tail]:
+        go(tail, True, sticky_allowed, who_mask | class_user)
+      case [.'g', *tail]:
+        go(tail, True, sticky_allowed, who_mask | class_group)
+      case [.'o', *tail]:
+        go(tail, True, sticky_allowed, who_mask | class_other)
+      case [.'a', *tail]:
+        go(tail, True, True, all_classes)
+      case _:
+        if seen:
+          (who_mask, False, sticky_allowed, rem)
+        else:
+          (all_classes, True, True, rem)
+
+  go(chars, False, False, 0)
+
+def parse_mode_op(ch: Char) -> Option[ModeOp]:
+  match ch:
+    case .'+':
+      Some(AddMode)
+    case .'-':
+      Some(RemoveMode)
+    case .'=':
+      Some(SetMode)
+    case _:
+      None
+
+def parse_mode_atom(ch: Char) -> Option[ModeAtom]:
+  match ch:
+    case .'r':
+      Some(ReadMode)
+    case .'w':
+      Some(WriteMode)
+    case .'x':
+      Some(ExecuteMode)
+    case .'X':
+      Some(ConditionalExecuteMode)
+    case .'s':
+      Some(SetIdMode)
+    case .'t':
+      Some(StickyMode)
+    case .'u':
+      Some(CopyUserMode)
+    case .'g':
+      Some(CopyGroupMode)
+    case .'o':
+      Some(CopyOtherMode)
+    case _:
+      None
+
+def parse_mode_segment_chars(chars: List[Char]) -> Option[List[ModeClause]]:
+  if chars matches []:
+    None
+  else:
+    (who_mask, who_omitted, sticky_allowed, after_who) = parse_who_chars(chars)
+    def clause_with(op: ModeOp, rev_atoms: List[ModeAtom]) -> ModeClause:
+      ModeClause(who_mask, who_omitted, sticky_allowed, op, rev_atoms.reverse())
+
+    def go(rem: List[Char], current_op: Option[ModeOp], rev_atoms: List[ModeAtom], rev_clauses: List[ModeClause]) -> Option[List[ModeClause]]:
+      loop rem:
+        case []:
+          match current_op:
+            case Some(op):
+              Some([clause_with(op, rev_atoms), *rev_clauses].reverse())
+            case None:
+              None
+        case [head, *tail]:
+          match parse_mode_op(head):
+            case Some(next_op):
+              match current_op:
+                case Some(op):
+                  go(tail, Some(next_op), [], [clause_with(op, rev_atoms), *rev_clauses])
+                case None:
+                  go(tail, Some(next_op), [], rev_clauses)
+            case None:
+              match (current_op, parse_mode_atom(head)):
+                case (Some(op), Some(atom)):
+                  go(tail, Some(op), [atom, *rev_atoms], rev_clauses)
+                case _:
+                  None
+
+    go(after_who, None, [], [])
+
+def parse_mode_clauses(raw_mode: String) -> Option[List[ModeClause]]:
+  chars = string_to_Char_List(raw_mode)
+  if chars matches []:
+    None
+  else:
+    def go(rem: List[Char], current_rev: List[Char], rev_clauses: List[ModeClause]) -> Option[List[ModeClause]]:
+      loop rem:
+        case []:
+          match parse_mode_segment_chars(current_rev.reverse()):
+            case Some(clauses):
+              Some(clauses.reverse_concat(rev_clauses).reverse())
+            case None:
+              None
+        case [.',', *tail]:
+          match current_rev:
+            case []:
+              None
+            case _:
+              match parse_mode_segment_chars(current_rev.reverse()):
+                case Some(clauses):
+                  go(tail, [], clauses.reverse_concat(rev_clauses))
+                case None:
+                  None
+        case [head, *tail]:
+          go(tail, [head, *current_rev], rev_clauses)
+
+    go(chars, [], [])
+
+def source_perm_bit(source_class: Int, user_bit: Int, group_bit: Int, other_bit: Int) -> Int:
+  if source_class.eq_Int(class_user):
+    user_bit
+  elif source_class.eq_Int(class_group):
+    group_bit
+  else:
+    other_bit
+
+def copy_source_bits(current_mode: Int, source_class: Int, target_mask: Int) -> Int:
+  read_part =
+    if (current_mode & source_perm_bit(source_class, user_read_bit, group_read_bit, other_read_bit)).eq_Int(0):
+      0
+    else:
+      select_class_bits(target_mask, user_read_bit, group_read_bit, other_read_bit)
+  write_part =
+    if (current_mode & source_perm_bit(source_class, user_write_bit, group_write_bit, other_write_bit)).eq_Int(0):
+      0
+    else:
+      select_class_bits(target_mask, user_write_bit, group_write_bit, other_write_bit)
+  exec_part =
+    if (current_mode & source_perm_bit(source_class, user_exec_bit, group_exec_bit, other_exec_bit)).eq_Int(0):
+      0
+    else:
+      select_class_bits(target_mask, user_exec_bit, group_exec_bit, other_exec_bit)
+  read_part | write_part | exec_part
+
+def mode_bits_for_atom(who_mask: Int, sticky_allowed: Bool, atom: ModeAtom) -> (Int, Int):
+  match atom:
+    case ReadMode:
+      (select_class_bits(who_mask, user_read_bit, group_read_bit, other_read_bit), 0)
+    case WriteMode:
+      (select_class_bits(who_mask, user_write_bit, group_write_bit, other_write_bit), 0)
+    case ExecuteMode:
+      (select_class_bits(who_mask, user_exec_bit, group_exec_bit, other_exec_bit), 0)
+    case SetIdMode:
+      (0, select_class_bits(who_mask, setuid_bit, setgid_bit, 0))
+    case StickyMode:
+      (0, sticky_bit if sticky_allowed else 0)
+    case ConditionalExecuteMode | CopyUserMode | CopyGroupMode | CopyOtherMode:
+      (0, 0)
+
+def apply_conditional_execute_mode(mode_state: Int, who_mask: Int, who_omitted: Bool, umask: Int) -> Int:
+  execute_bits =
+    if who_omitted:
+      select_class_bits(who_mask, user_exec_bit, group_exec_bit, other_exec_bit) & (perm_mask ^ umask)
+    else:
+      select_class_bits(who_mask, user_exec_bit, group_exec_bit, other_exec_bit)
+  mode_state | execute_bits
+
+def apply_pending_mode_bits(
+  current_mode: Int,
+  who_mask: Int,
+  who_omitted: Bool,
+  op: ModeOp,
+  umask: Int,
+  pending_regular: Int,
+  pending_special: Int,
+) -> Int:
+  regular_bits =
+    if who_omitted:
+      pending_regular & (perm_mask ^ umask)
+    else:
+      pending_regular
+  bits_to_apply = regular_bits | pending_special
+  target_mask = who_regular_target_mask(who_mask) | who_special_target_mask(who_mask)
+  match op:
+    case AddMode:
+      current_mode | bits_to_apply
+    case RemoveMode:
+      current_mode & (mode_mask ^ bits_to_apply)
+    case SetMode:
+      (current_mode & (mode_mask ^ target_mask)) | bits_to_apply
+
+def flush_pending_mode_bits(
+  current_mode: Int,
+  who_mask: Int,
+  who_omitted: Bool,
+  op: ModeOp,
+  umask: Int,
+  pending_regular: Int,
+  pending_special: Int,
+  set_emitted: Bool,
+) -> Int:
+  if and(pending_regular.eq_Int(0), pending_special.eq_Int(0)):
+    if op matches SetMode:
+      if and(set_emitted, who_mask.eq_Int(class_other)):
+        current_mode
+      else:
+        apply_pending_mode_bits(current_mode, who_mask, who_omitted, op, umask, 0, 0)
+    else:
+      current_mode
+  else:
+    apply_pending_mode_bits(current_mode, who_mask, who_omitted, op, umask, pending_regular, pending_special)
+
+def apply_copy_mode_atom(
+  current_mode: Int,
+  who_mask: Int,
+  who_omitted: Bool,
+  op: ModeOp,
+  umask: Int,
+  atom: ModeAtom,
+) -> Int:
+  copied_regular_bits =
+    match atom:
+      case CopyUserMode:
+        copy_source_bits(current_mode, class_user, who_mask)
+      case CopyGroupMode:
+        copy_source_bits(current_mode, class_group, who_mask)
+      case CopyOtherMode:
+        copy_source_bits(current_mode, class_other, who_mask)
+      case _:
+        0
+  target_regular_mask =
+    if who_omitted:
+      perm_mask ^ umask
+    else:
+      who_regular_target_mask(who_mask)
+  regular_bits_to_apply =
+    if who_omitted:
+      copied_regular_bits & target_regular_mask
+    else:
+      copied_regular_bits
+  match op:
+    case AddMode:
+      current_mode | regular_bits_to_apply
+    case RemoveMode:
+      current_mode & (mode_mask ^ regular_bits_to_apply)
+    case SetMode:
+      (current_mode & (mode_mask ^ target_regular_mask)) | regular_bits_to_apply
+
+def apply_mode_clause(current_mode: Int, umask: Int, clause: ModeClause) -> Int:
+  ModeClause { who_mask, who_omitted, sticky_allowed, op, atoms } = clause
+  def step(state: (Int, Int, Int, Bool, Bool, Bool), atom: ModeAtom) -> (Int, Int, Int, Bool, Bool, Bool):
+    (mode_state, pending_regular, pending_special, pending_conditional_execute, pending_explicit, set_emitted) = state
+    match atom:
+      case CopyUserMode | CopyGroupMode | CopyOtherMode:
+        flushed_mode =
+          if pending_explicit:
+            if and(
+              op matches SetMode,
+              and(who_mask.eq_Int(class_other), and(pending_regular.eq_Int(0), pending_special.eq_Int(0))),
+            ):
+              mode_state
+            else:
+              flush_pending_mode_bits(
+                mode_state,
+                who_mask,
+                who_omitted,
+                op,
+                umask,
+                pending_regular,
+                pending_special,
+                set_emitted,
+              )
+          else:
+            mode_state
+        mode_before_copy =
+          if and(pending_conditional_execute, op matches AddMode):
+            apply_conditional_execute_mode(flushed_mode, who_mask, who_omitted, umask)
+          else:
+            flushed_mode
+        next_mode = apply_copy_mode_atom(mode_before_copy, who_mask, who_omitted, op, umask, atom)
+        next_set_emitted =
+          if op matches SetMode:
+            True
+          else:
+            set_emitted
+        next_pending_conditional_execute =
+          if op matches AddMode:
+            False
+          else:
+            pending_conditional_execute
+        (next_mode, 0, 0, next_pending_conditional_execute, False, next_set_emitted)
+      case ConditionalExecuteMode:
+        (mode_state, pending_regular, pending_special, True, pending_explicit, set_emitted)
+      case _:
+        (regular_bits, special_bits) = mode_bits_for_atom(who_mask, sticky_allowed, atom)
+        (mode_state, pending_regular | regular_bits, pending_special | special_bits, pending_conditional_execute, True, set_emitted)
+
+  (mode_state, pending_regular, pending_special, pending_conditional_execute, pending_explicit, set_emitted) =
+    atoms.foldl_List((current_mode, 0, 0, False, False, False), step)
+  mode_after_explicit =
+    if pending_explicit:
+      flush_pending_mode_bits(
+        mode_state,
+        who_mask,
+        who_omitted,
+        op,
+        umask,
+        pending_regular,
+        pending_special,
+        set_emitted,
+      )
+    elif (op, set_emitted) matches (SetMode, False):
+      apply_pending_mode_bits(mode_state, who_mask, who_omitted, op, umask, 0, 0)
+    else:
+      mode_state
+  if pending_conditional_execute:
+    apply_conditional_execute_mode(mode_after_explicit, who_mask, who_omitted, umask)
+  else:
+    mode_after_explicit
+
+def probe_default_mode() -> Prog[IOError, Int]:
+  temp_dir <- create_temp_dir(None, mode_probe_prefix).await()
+  probe_path = probe_child_path(temp_dir)
+  probe_result <- (
+    _ <- mkdir(probe_path, False).await()
+    mode <- stat_posix_mode(probe_path).await()
+    pure(posix_mode_to_Int(mode) & perm_mask)
+  ).attempt().await()
+  _ <- recover(remove(temp_dir, True), _ -> pure(Unit)).await()
+  result_to_Prog(probe_result)
+
+def infer_umask() -> Prog[IOError, Int]:
+  default_mode <- probe_default_mode().await()
+  pure(perm_mask ^ default_mode)
+
+def resolve_explicit_mode(raw_mode: String) -> Prog[IOError, Result[String, PosixMode]]:
+  match parse_octal_mode(raw_mode):
+    case Some(bits):
+      match posix_mode(bits):
+        case Some(mode):
+          pure(Ok(mode))
+        case None:
+          pure(Err(raw_mode))
+    case None:
+      match parse_mode_clauses(raw_mode):
+        case Some(clauses):
+          umask <- infer_umask().await()
+          bits = clauses.foldl_List(perm_mask, (mode_bits, clause) -> apply_mode_clause(mode_bits, umask, clause))
+          match posix_mode(bits):
+            case Some(mode):
+              pure(Ok(mode))
+            case None:
+              pure(Err(raw_mode))
+        case None:
+          pure(Err(raw_mode))
+
+def resolve_mode(raw_mode: Option[String]) -> Prog[IOError, Result[String, ModePlan]]:
+  match raw_mode:
+    case Some(raw_mode_value):
+      resolved <- resolve_explicit_mode(raw_mode_value).await()
+      match resolved:
+        case Ok(mode):
+          pure(Ok(ExplicitMode(mode)))
+        case Err(invalid):
+          pure(Err(invalid))
+    case None:
+      pure(Ok(DefaultMode))
+
+def planned_created_paths(raw_name: String, verbose: Bool) -> Prog[IOError, List[String]]:
+  if verbose:
+    candidates = raw_prefix_candidates(raw_name)
+    def go(rem: List[String], rev_created: List[String], seen_keys: List[String]) -> Prog[IOError, List[String]]:
+      recur rem:
+        case []:
+          pure(rev_created.reverse())
+        case [head, *tail]:
+          key = normalize_path_key(head)
+          if contains_string(seen_keys, key):
+            go(tail, rev_created, seen_keys)
+          else:
+            exists <- path_exists_from_key(key).await()
+            next_seen_keys = [key, *seen_keys]
+            if exists:
+              go(tail, rev_created, next_seen_keys)
+            else:
+              go(tail, [head, *rev_created], next_seen_keys)
+
+    recover(go(candidates, [], []), _ -> pure([]))
+  else:
+    pure([])
+
+def existing_paths(paths: List[String]) -> Prog[IOError, List[String]]:
+  def go(rem: List[String], rev_existing: List[String]) -> Prog[IOError, List[String]]:
+    recur rem:
+      case []:
+        pure(rev_existing.reverse())
+      case [head, *tail]:
+        match string_to_Path(head):
+          case Some(path):
+            stat_result <- stat(path).await()
+            match stat_result:
+              case Some(_):
+                go(tail, [head, *rev_existing])
+              case None:
+                go(tail, rev_existing)
+          case None:
+            go(tail, rev_existing)
+
+  go(paths, [])
+
+def emit_created_paths(paths: List[String]) -> Prog[IOError, Unit]:
+  def go(rem: List[String]) -> Prog[IOError, Unit]:
+    recur rem:
+      case []:
+        pure(Unit)
+      case [head, *tail]:
+        _ <- emit_stdout_line(head).await()
+        go(tail)
+
+  go(paths)
+
+def emit_created_so_far(verbose: Bool, planned_created: List[String]) -> Prog[IOError, Unit]:
+  if verbose:
+    created_so_far <- recover(existing_paths(planned_created), _ -> pure([])).await()
+    emit_created_paths(created_so_far)
+  else:
+    pure(Unit)
+
+def create_target(path: Path, parents: Bool, mode_plan: ModePlan) -> Prog[IOError, Unit]:
+  match mode_plan:
+    case DefaultMode:
+      mkdir(path, parents)
+    case ExplicitMode(mode):
+      mkdir_with_mode(path, parents, mode)
+
+def run_target(target: Target, options: CliOptions, mode_plan: ModePlan) -> Prog[IOError, Bool]:
+  CliOptions { parents, verbose, ... } = options
+  match target:
+    case EmptyTarget(raw_name):
+      display_name =
+        if parents:
+          raw_name
+        else:
+          "."
+      _ <- emit_target_reason(display_name, "No such file or directory").await()
+      pure(True)
+    case InvalidTarget(raw_name):
+      _ <- emit_target_reason(raw_name, "Invalid argument").await()
+      pure(True)
+    case ValidTarget(raw_name, target_name, path):
+      planned_created <- planned_created_paths(raw_name, verbose).await()
+      create_result <- create_target(path, parents, mode_plan).attempt().await()
+      match create_result:
+        case Ok(_):
+          _ <- emit_created_paths(planned_created).await()
+          pure(False)
+        case Err(err):
+          _ <- emit_created_so_far(verbose, planned_created).await()
+          _ <- emit_target_io_error(target_name, path, err).await()
+          pure(True)
+
+def run_targets(targets: List[Target], options: CliOptions, mode_plan: ModePlan) -> Prog[IOError, Bool]:
+  def go(rem: List[Target], had_error: Bool) -> Prog[IOError, Bool]:
+    recur rem:
+      case []:
+        pure(had_error)
+      case [head, *tail]:
+        next_error <- run_target(head, options, mode_plan).await()
+        go(tail, or(had_error, next_error))
+
+  go(targets, False)
+
+def render_cli_failure(err) -> Prog[IOError, Int]:
+  match err:
+    case UnknownOption(_, token):
+      _ <- emit_stderr_line("mkdir: illegal option -- ${unknown_option_char(token)}").await()
+      _ <- emit_usage().await()
+      pure(usage_exit_code)
+    case MissingValue(_, _):
+      _ <- emit_stderr_line("mkdir: option requires an argument -- m").await()
+      _ <- emit_usage().await()
+      pure(usage_exit_code)
+    case MissingArgument(_, _):
+      _ <- emit_usage().await()
+      pure(usage_exit_code)
+    case ValueParseError(_, _, raw_value, _):
+      _ <- emit_stderr_line("mkdir: invalid file mode: ${raw_value}").await()
+      pure(error_exit_code)
+    case ValidationError(_, detail) | AmbiguousSpecification(_, detail):
+      _ <- emit_stderr_line("mkdir: ${render(detail, 80)}").await()
+      pure(error_exit_code)
+    case UnexpectedArgument(_, token):
+      _ <- emit_stderr_line("mkdir: ${token}: Invalid argument").await()
+      pure(error_exit_code)
+    case _:
+      _ <- emit_usage().await()
+      pure(usage_exit_code)
+
+def run(args: List[String]) -> Prog[IOError, Int]:
+  raw_cli_args = normalize_cli_args(args)
+  match prepare_cli_args(raw_cli_args):
+    case Err(IllegalOption(bad_option)):
+      _ <- emit_stderr_line("mkdir: illegal option -- ${bad_option}").await()
+      _ <- emit_usage().await()
+      pure(usage_exit_code)
+    case Err(MissingModeArgument):
+      _ <- emit_stderr_line("mkdir: option requires an argument -- m").await()
+      _ <- emit_usage().await()
+      pure(usage_exit_code)
+    case Ok(PreparedCliArgs { cli_args, last_mode_empty }):
+      match parse_cli(default_parse_config, mkdir_command, cli_args):
+        case Failed(errors, _):
+          render_cli_failure(head_NonEmptyChain(errors))
+        case RequestedHelp(_, doc):
+          _ <- write_utf8(stdout, "${render(doc, 80)}\n").await()
+          pure(success_exit_code)
+        case RequestedVersion(doc):
+          _ <- write_utf8(stdout, "${render(doc, 80)}\n").await()
+          pure(success_exit_code)
+        case Parsed(options):
+          CliOptions { raw_mode, operands, parents, verbose } = options
+          resolved_raw_mode = effective_raw_mode(last_mode_empty, raw_mode)
+          mode_result <- resolve_mode(resolved_raw_mode).await()
+          match mode_result:
+            case Err(raw_mode_value):
+              _ <- emit_stderr_line("mkdir: invalid file mode: ${raw_mode_value}").await()
+              pure(error_exit_code)
+            case Ok(mode_plan):
+              had_error <- run_targets(plan_targets(operands), CliOptions(parents, verbose, resolved_raw_mode, operands), mode_plan).await()
+              if had_error:
+                pure(error_exit_code)
+              else:
+                pure(success_exit_code)
+
+def apply_symbolic_mode(raw_mode: String, current_mode: Int, umask: Int) -> Option[Int]:
+  match parse_mode_clauses(raw_mode):
+    case Some(clauses):
+      Some(clauses.foldl_List(current_mode, (mode_bits, clause) -> apply_mode_clause(mode_bits, umask, clause)))
+    case None:
+      None
+
+tests = TestSuite("mkdir tool", [
+  Assertion(normalize_cli_args([]) matches [], "normalize leaves empty argv untouched"),
+  Assertion(normalize_cli_args(["-p", "alpha"]) matches ["-p", "alpha"], "normalize keeps leading options"),
+  Assertion(normalize_cli_args(["mkdir", "alpha"]) matches ["alpha"], "normalize drops executable name"),
+  Assertion(
+    normalize_cli_args(["/tmp/zafu-mkdir", "/tmp/alpha"]) matches ["/tmp/alpha"],
+    "normalize drops an absolute executable path",
+  ),
+  Assertion(
+    prepare_cli_args(["-pvm700", "alpha"]) matches Ok(
+      PreparedCliArgs { cli_args: ["-p", "-v", "-m700", "alpha"], last_mode_empty: False }
+    ),
+    "clustered BSD short options are normalized before parsing",
+  ),
+  Assertion(
+    prepare_cli_args(["-m", "700", "alpha"]) matches Ok(
+      PreparedCliArgs { cli_args: ["-m700", "alpha"], last_mode_empty: False }
+    ),
+    "separate mode arguments are attached before parsing",
+  ),
+  Assertion(
+    prepare_cli_args(["-m", "", "alpha"]) matches Ok(
+      PreparedCliArgs { cli_args: ["-m0", "alpha"], last_mode_empty: True }
+    ),
+    "empty mode arguments stay distinguishable through normalization",
+  ),
+  Assertion(
+    prepare_cli_args(["-pm", "700", "alpha"]) matches Ok(
+      PreparedCliArgs { cli_args: ["-p", "-m700", "alpha"], last_mode_empty: False }
+    ),
+    "clustered flags still consume a following mode argument",
+  ),
+  Assertion(
+    prepare_cli_args(["foo", "-p"]) matches Ok(
+      PreparedCliArgs { cli_args: ["foo", "--", "-p"], last_mode_empty: False }
+    ),
+    "option rewriting stops after the first operand",
+  ),
+  Assertion(
+    prepare_cli_args(["foo", "-m", "700"]) matches Ok(
+      PreparedCliArgs { cli_args: ["foo", "--", "-m", "700"], last_mode_empty: False }
+    ),
+    "trailing mode-looking tokens stay literal after the first operand",
+  ),
+  Assertion(
+    prepare_cli_args(["foo", "--", "bar"]) matches Ok(
+      PreparedCliArgs { cli_args: ["foo", "--", "--", "bar"], last_mode_empty: False }
+    ),
+    "double dash stays literal after the first operand",
+  ),
+  Assertion(prepare_cli_args(["-m"]) matches Err(MissingModeArgument), "bare mode flags report a missing argument"),
+  Assertion(
+    parse_cli(default_parse_config, mkdir_command, ["-m700", "alpha"]) matches Parsed(
+      CliOptions { parents: False, verbose: False, raw_mode: Some("700"), operands: ["alpha"] }
+    ),
+    "attached mode options decode after normalization",
+  ),
+  Assertion(
+    effective_raw_mode(True, Some("0")) matches Some(""),
+    "the empty-mode marker is restored after parsing",
+  ),
+  Assertion(
+    parse_cli(default_parse_config, mkdir_command, ["foo", "--", "-p"]) matches Parsed(
+      CliOptions { parents: False, verbose: False, raw_mode: None, operands: ["foo", "-p"] }
+    ),
+    "the cli parser treats trailing dash tokens as operands",
+  ),
+  Assertion(
+    last_or_None(["755", "700"]) matches Some("700"),
+    "last_or_None keeps the last mode flag",
+  ),
+  Assertion(
+    parse_cli(default_parse_config, mkdir_command, ["--", "-dash"]) matches Parsed(
+      CliOptions { parents: False, verbose: False, raw_mode: None, operands: ["-dash"] }
+    ),
+    "double dash preserves leading dash operands",
+  ),
+  Assertion(prepare_cli_args(["--help"]) matches Err(IllegalOption("-")), "long options are rejected like BSD mkdir"),
+  Assertion(unknown_option_char("--help") matches "-", "double-dash unknown options report the second dash"),
+  Assertion(
+    io_error_target_name("bar/baz", NotFound("bar")) matches "bar",
+    "target errors prefer the failing path reported by the kernel",
+  ),
+  Assertion(
+    io_error_target_name("file/subdir", NotDirectory("file")) matches "file",
+    "target errors use the failing component for not-a-directory cases",
+  ),
+  Assertion(plan_targets([""]) matches [EmptyTarget("")], "empty operands are planned explicitly"),
+  Assertion(has_generic_mkdir_context(NotFound("creating directory")), "mkdir context fallback detects generic mkdir errors"),
+  Assertion(
+    has_generic_mkdir_context(NotFound("bar")) matches False,
+    "path-aware io errors skip the stat fallback",
+  ),
+  Assertion(raw_prefix_candidates("a//b") matches ["a", "a//b"], "verbose candidates preserve repeated separators on emitted prefixes"),
+  Assertion(raw_prefix_candidates("x/.") matches ["x", "x/."], "verbose candidates keep dot segments until normalization"),
+  Assertion(raw_prefix_candidates("x/../y") matches ["x", "x/..", "x/../y"], "verbose candidates keep parent segments in order"),
+  Assertion(normalize_path_key("x/.") matches "x", "dot segments normalize to the created directory"),
+  Assertion(normalize_path_key("x/..") matches ".", "parent segments normalize against created prefixes"),
+  Assertion(normalize_path_key("x/../y") matches "y", "parent references normalize to their semantic destination"),
+  Assertion(normalize_target_name("a/") matches "a", "target names drop a trailing separator before creation"),
+  Assertion(normalize_target_name("a//b") matches "a/b", "target names collapse repeated separators for creation"),
+  Assertion(normalize_target_name("/") matches "/", "root stays rooted after separator normalization"),
+  Assertion(parse_octal_mode("755") matches Some(493), "octal modes parse to permission bits"),
+  Assertion(parse_octal_mode("888") matches None, "invalid octal modes are rejected"),
+  Assertion(apply_symbolic_mode("u=gt", perm_mask, 18) matches Some(63), "ignored sticky after a group copy still clears user bits"),
+  Assertion(apply_symbolic_mode("g=ot", perm_mask, 18) matches Some(455), "ignored sticky after an other copy still clears group bits"),
+  Assertion(apply_symbolic_mode("g=ut", perm_mask, 18) matches Some(455), "ignored sticky after a user copy still clears group bits"),
+  Assertion(apply_symbolic_mode("u=got", perm_mask, 18) matches Some(63), "ignored sticky after multiple copies still clears user bits"),
+  Assertion(apply_symbolic_mode("u=ogt", perm_mask, 18) matches Some(63), "ignored sticky after reordered copies still clears user bits"),
+  Assertion(apply_symbolic_mode("o=os", perm_mask, 18) matches Some(511), "ignored setid atoms keep copied other bits in set clauses"),
+  Assertion(apply_symbolic_mode("o=gs", perm_mask, 18) matches Some(511), "ignored setid atoms after group copies keep other bits"),
+  Assertion(apply_symbolic_mode("o=ut", perm_mask, 18) matches Some(511), "ignored sticky atoms after user copies keep other bits"),
+  Assertion(apply_symbolic_mode("o=uXs", perm_mask, 18) matches Some(511), "conditional execute and ignored specials keep copied other bits"),
+  Assertion(apply_symbolic_mode("+", perm_mask, 18) matches Some(511), "empty add clauses are accepted as no-ops"),
+  Assertion(apply_symbolic_mode("u+", perm_mask, 18) matches Some(511), "empty add clauses with explicit who stay no-ops"),
+  Assertion(apply_symbolic_mode("a-", perm_mask, 18) matches Some(511), "empty remove clauses are accepted as no-ops"),
+  Assertion(apply_symbolic_mode("--", perm_mask, 18) matches Some(511), "chained empty remove clauses are accepted like BSD setmode"),
+  Assertion(apply_symbolic_mode("u++x", perm_mask, 18) matches Some(511), "chained operator breaks reuse the same who set"),
+  Assertion(parse_mode_clauses("u+s+t") matches Some(_), "additional operator breaks keep parsing within one symbolic segment"),
+  Assertion(apply_symbolic_mode("ugo+t", perm_mask, 18) matches Some(511), "explicit ugo does not enable sticky"),
+  Assertion(apply_symbolic_mode("u=tu", perm_mask, 18) matches Some(63), "zero-bit sticky atoms still clear before later copies"),
+  Assertion(apply_symbolic_mode("o=sost", perm_mask, 18) matches Some(511), "ignored specials before and after an other copy keep copied bits"),
+  Assertion(apply_symbolic_mode("o=sooo", perm_mask, 18) matches Some(511), "later other copies still see the preserved other bits"),
+  Assertion(apply_symbolic_mode("o=sost,g=", perm_mask, 18) matches Some(455), "comma-separated clauses keep the preserved other copy before later clears"),
+  Assertion(apply_symbolic_mode("-X", perm_mask, 18) matches Some(511), "conditional execute never removes bits for mkdir"),
+  Assertion(apply_symbolic_mode("+X", perm_mask, 18) matches Some(511), "conditional execute adds execute bits for mkdir"),
+  Assertion(apply_symbolic_mode("=X", perm_mask, 18) matches Some(73), "set mode clears first and then adds conditional execute"),
+  Assertion(apply_symbolic_mode("=uX", perm_mask, 18) matches Some(511), "copy atoms and conditional execute stay in the same set clause"),
+  Assertion(apply_symbolic_mode("=uoX", perm_mask, 18) matches Some(511), "multiple copy atoms still keep later conditional execute in order"),
+  Assertion(apply_symbolic_mode("-wX", perm_mask, 18) matches Some(383), "conditional execute remains additive after removals"),
+  Assertion(apply_symbolic_mode("-gXx", perm_mask, 18) matches Some(91), "conditional execute keeps BSD ordering with mixed explicit atoms"),
+  Assertion(apply_symbolic_mode("u=or", perm_mask, 18) matches Some(319), "copy atoms before explicit atoms stay ordered"),
+  Assertion(apply_symbolic_mode("u=os", perm_mask, 18) matches Some(2111), "copy atoms before setid atoms stay ordered"),
+  Assertion(apply_symbolic_mode("u=so", perm_mask, 18) matches Some(2559), "copy atoms after setid atoms stay ordered"),
+  Assertion(apply_symbolic_mode("g-w", perm_mask, 0) matches Some(495), "symbolic subtraction updates permission bits"),
+  Assertion(apply_symbolic_mode("=rw", perm_mask, 18) matches Some(420), "omitted who honors the inferred umask"),
+])
+
+main: Main = Main(args -> (
+  recover(run(args), err -> (
+    match err:
+      case BrokenPipe(_):
+        pure(error_exit_code)
+      case _:
+        _ <- emit_stderr_line("mkdir: ${io_error_reason(err)}").await()
+        pure(error_exit_code)
+  ))
+))
