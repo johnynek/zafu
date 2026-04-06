@@ -159,6 +159,8 @@ class SkippedMeasurement:
     target: str
     phase: str
     reason: str
+    build_command: str
+    run_command: str
 
 
 def main() -> int:
@@ -232,7 +234,13 @@ def main() -> int:
     bosatsu_version = read_text(repo_root / ".bosatsu_version")
 
     if args.print_plan:
-        plan = expand_execution_matrix(selected_specs, selected_targets, args.repeats, bosatsu_version)
+        plan = expand_execution_matrix(
+            selected_specs,
+            selected_targets,
+            args.repeats,
+            bosatsu_version,
+            args.time_budget_seconds is not None,
+        )
         emit_text(render_json(plan), args.output_json)
         return 0
 
@@ -254,7 +262,11 @@ def main() -> int:
         bosatsu_version,
         deadline_ns,
     )
-    skipped_measurements = skipped_measurements_for_validation(validation_rows)
+    skipped_measurements = skipped_measurements_for_validation(
+        selected_specs,
+        validation_rows,
+        bosatsu_version,
+    )
 
     if args.validate_only:
         results: list[RunRecord] = []
@@ -474,6 +486,7 @@ def expand_execution_matrix(
     targets: Sequence[str],
     repeats: int,
     bosatsu_version: str,
+    time_budgeted: bool = False,
 ) -> dict[str, object]:
     setup_commands = bosatsu_setup_commands(bosatsu_version, targets)
     build_commands: list[BuildPlan] = []
@@ -486,6 +499,7 @@ def expand_execution_matrix(
             build_command = build_command_for_plan(spec, target, bosatsu_version)
             if build_command is not None:
                 build_commands.append(BuildPlan(spec.benchmark, target, build_command))
+            warmups = planned_warmup_count(target, time_budgeted)
             validation_runs.append(
                 RunPlan(
                     benchmark=spec.benchmark,
@@ -499,19 +513,26 @@ def expand_execution_matrix(
                     validation_kind=spec.validation.kind,
                 )
             )
-            warmup_runs.append(
-                RunPlan(
-                    benchmark=spec.benchmark,
-                    target=target,
-                    phase="warmup",
-                    input=spec.performance_input,
-                    repeat_index=None,
-                    warmup_count=warmup_count(target),
-                    command=render_run_command(spec, target, spec.performance_input, bosatsu_version, TEMP_PBM_PLACEHOLDER),
-                    capture_stdout_to=TEMP_PBM_PLACEHOLDER if spec.validation.kind == "exact_bytes" else None,
-                    validation_kind=spec.validation.kind,
+            if warmups > 0:
+                warmup_runs.append(
+                    RunPlan(
+                        benchmark=spec.benchmark,
+                        target=target,
+                        phase="warmup",
+                        input=spec.performance_input,
+                        repeat_index=None,
+                        warmup_count=warmups,
+                        command=render_run_command(
+                            spec,
+                            target,
+                            spec.performance_input,
+                            bosatsu_version,
+                            TEMP_PBM_PLACEHOLDER,
+                        ),
+                        capture_stdout_to=TEMP_PBM_PLACEHOLDER if spec.validation.kind == "exact_bytes" else None,
+                        validation_kind=spec.validation.kind,
+                    )
                 )
-            )
 
     for repeat_index in range(repeats):
         rotated = rotate_targets(targets, repeat_index)
@@ -549,6 +570,15 @@ def rotate_targets(targets: Sequence[str], offset: int) -> list[str]:
 
 def warmup_count(target: str) -> int:
     return 2 if target in ("bosatsu_jvm", "java") else 1
+
+
+def planned_warmup_count(target: str, time_budgeted: bool) -> int:
+    if time_budgeted:
+        # A bounded run is meant to capture at least one comparable result per
+        # target before the budget expires, so prioritize first measurements
+        # over extra warmup work.
+        return 0
+    return warmup_count(target)
 
 
 def bosatsu_jar_rel_path(version: str) -> str:
@@ -608,6 +638,27 @@ def render_run_command(
         )
         return f"{command} > {capture_path}"
     return command
+
+
+def skipped_measurement_commands(
+    spec: BenchmarkSpec,
+    target: str,
+    input_value: int,
+    bosatsu_version: str,
+) -> tuple[str, str]:
+    build_command = build_command_for_plan(spec, target, bosatsu_version)
+    if build_command is None:
+        raise HarnessError(f"no build command available for {spec.benchmark}/{target}")
+    return (
+        build_command,
+        render_run_command(
+            spec,
+            target,
+            input_value,
+            bosatsu_version,
+            TEMP_PBM_PLACEHOLDER if spec.validation.kind == "exact_bytes" else None,
+        ),
+    )
 
 
 def ensure_prerequisites(targets: Sequence[str], skip_setup: bool) -> None:
@@ -758,8 +809,14 @@ def run_warmups(
         for target in targets:
             if (spec.benchmark, target) not in eligible_pairs:
                 continue
-            for _ in range(warmup_count(target)):
+            for _ in range(planned_warmup_count(target, deadline_ns is not None)):
                 timeout_seconds = remaining_timeout_seconds(deadline_ns)
+                build_command, run_command = skipped_measurement_commands(
+                    spec,
+                    target,
+                    spec.performance_input,
+                    bosatsu_version,
+                )
                 if timeout_seconds is not None and timeout_seconds <= 0:
                     skipped.append(
                         SkippedMeasurement(
@@ -767,6 +824,8 @@ def run_warmups(
                             target=target,
                             phase="warmup",
                             reason="time budget exhausted before warmup",
+                            build_command=build_command,
+                            run_command=run_command,
                         )
                     )
                     break
@@ -786,6 +845,8 @@ def run_warmups(
                             target=target,
                             phase="warmup",
                             reason="time budget exhausted during warmup",
+                            build_command=build_command,
+                            run_command=execution.run_command,
                         )
                     )
                     break
@@ -823,8 +884,14 @@ def run_measured_repeats(
 
                 if key not in warmed_pairs:
                     warmup_failed = False
-                    for _ in range(warmup_count(target)):
+                    for _ in range(planned_warmup_count(target, deadline_ns is not None)):
                         timeout_seconds = remaining_timeout_seconds(deadline_ns)
+                        build_command, run_command = skipped_measurement_commands(
+                            spec,
+                            target,
+                            spec.performance_input,
+                            bosatsu_version,
+                        )
                         if timeout_seconds is not None and timeout_seconds <= 0:
                             skipped.append(
                                 SkippedMeasurement(
@@ -832,6 +899,8 @@ def run_measured_repeats(
                                     target=target,
                                     phase="warmup",
                                     reason="time budget exhausted before warmup",
+                                    build_command=build_command,
+                                    run_command=run_command,
                                 )
                             )
                             skip_pairs.add(key)
@@ -853,6 +922,8 @@ def run_measured_repeats(
                                     target=target,
                                     phase="warmup",
                                     reason="time budget exhausted during warmup",
+                                    build_command=build_commands[key],
+                                    run_command=execution.run_command,
                                 )
                             )
                             skip_pairs.add(key)
@@ -871,6 +942,14 @@ def run_measured_repeats(
                             target=target,
                             phase="measure",
                             reason="time budget exhausted before measured run",
+                            build_command=build_commands[key],
+                            run_command=render_run_command(
+                                spec,
+                                target,
+                                spec.performance_input,
+                                bosatsu_version,
+                                TEMP_PBM_PLACEHOLDER if spec.validation.kind == "exact_bytes" else None,
+                            ),
                         )
                     )
                     skip_pairs.add(key)
@@ -918,23 +997,39 @@ def run_measured_repeats(
                             target=target,
                             phase="measure",
                             reason="time budget exhausted during measured run",
+                            build_command=build_commands[key],
+                            run_command=execution.run_command,
                         )
                     )
                     skip_pairs.add(key)
     return records, skipped
 
 
-def skipped_measurements_for_validation(rows: Sequence[ValidationRow]) -> list[SkippedMeasurement]:
+def skipped_measurements_for_validation(
+    specs: Sequence[BenchmarkSpec],
+    rows: Sequence[ValidationRow],
+    bosatsu_version: str,
+) -> list[SkippedMeasurement]:
+    specs_by_benchmark = {spec.benchmark: spec for spec in specs}
     skipped: list[SkippedMeasurement] = []
     for row in rows:
         if row.validation_passed:
             continue
+        spec = specs_by_benchmark[row.benchmark]
+        build_command, run_command = skipped_measurement_commands(
+            spec,
+            row.target,
+            spec.sample_input,
+            bosatsu_version,
+        )
         skipped.append(
             SkippedMeasurement(
                 benchmark=row.benchmark,
                 target=row.target,
                 phase="validation",
                 reason=row.failure_reason or "sample validation did not pass",
+                build_command=build_command,
+                run_command=run_command,
             )
         )
     return skipped

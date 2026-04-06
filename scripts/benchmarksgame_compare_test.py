@@ -8,6 +8,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -379,6 +380,12 @@ class BenchmarksgameCompareTests(unittest.TestCase):
 
     def test_run_warmups_records_time_budget_skips(self) -> None:
         spectral = next(spec for spec in self.specs if spec.benchmark == "spectral-norm")
+        build_command, run_command = MODULE.skipped_measurement_commands(
+            spectral,
+            "java",
+            spectral.performance_input,
+            self.version,
+        )
 
         with mock.patch.object(
             MODULE,
@@ -402,6 +409,8 @@ class BenchmarksgameCompareTests(unittest.TestCase):
                     target="java",
                     phase="warmup",
                     reason="time budget exhausted during warmup",
+                    build_command=build_command,
+                    run_command="cmd",
                 )
             ],
         )
@@ -459,9 +468,53 @@ class BenchmarksgameCompareTests(unittest.TestCase):
                     target="java",
                     phase="measure",
                     reason="time budget exhausted during measured run",
+                    build_command="javac -d .build/benchmarksgame/java/spectral-norm ...",
+                    run_command="java -cp ...",
                 )
             ],
         )
+
+    def test_run_measured_repeats_skips_warmups_when_time_budget_is_enabled(self) -> None:
+        spectral = next(spec for spec in self.specs if spec.benchmark == "spectral-norm")
+        validation_rows = [
+            MODULE.ValidationRow("spectral-norm", "java", 100, 0, True, None, None),
+        ]
+        build_commands = {("spectral-norm", "java"): "javac -d .build/benchmarksgame/java/spectral-norm ..."}
+        toolchain = MODULE.ToolchainInfo(
+            git_sha="abc123",
+            bosatsu_version=self.version,
+            java_version='openjdk version "21.0.2"',
+            gcc_version="unavailable",
+            os="test-os",
+            cpu_model="test-cpu",
+            repo_uri="https://github.com/johnynek/zafu",
+        )
+
+        with mock.patch.object(
+            MODULE,
+            "execute_command_capture",
+            return_value=MODULE.ExecutionOutput(0, 1, b"1.274219991\n", "java -cp ..."),
+        ) as execute_command_capture, mock.patch.object(
+            MODULE,
+            "source_provenance",
+            return_value=("spectralnorm-graalvmaot-8", "https://example.invalid/spectral"),
+        ), mock.patch.object(MODULE, "utc_now", return_value="2026-04-06T22:00:00Z"):
+            records, skipped = MODULE.run_measured_repeats(
+                REPO_ROOT,
+                [spectral],
+                ["java"],
+                {(spectral.benchmark, "java")},
+                1,
+                self.version,
+                build_commands,
+                validation_rows,
+                toolchain,
+                time.perf_counter_ns() + 1_000_000_000,
+            )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(skipped, [])
+        self.assertEqual(execute_command_capture.call_count, 1)
 
     def test_canonical_baseline_artifacts_exist_and_match(self) -> None:
         baseline_dir = REPO_ROOT / "docs/benchmarksgame"
@@ -558,6 +611,14 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         )
         self.assertTrue(measured_pairs)
         self.assertTrue(metadata["skipped_measurements"])
+        self.assertIn(("bosatsu_c",), [(row["target"],) for row in artifact["results"]])
+        self.assertIn(("bosatsu_jvm",), [(row["target"],) for row in artifact["results"]])
+        self.assertTrue(
+            all(row.get("build_command") for row in metadata["skipped_measurements"])
+        )
+        self.assertTrue(
+            all(row.get("run_command") for row in metadata["skipped_measurements"])
+        )
 
         mandelbrot_validation = {
             row["target"]: row
