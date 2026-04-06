@@ -61,15 +61,8 @@ python_is_compatible() {
   "$1" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1
 }
 
-if command -v python3 >/dev/null 2>&1; then
-  if python_is_compatible python3; then
-    PYTHON=python3
-  elif command -v python >/dev/null 2>&1 && python_is_compatible python; then
-    PYTHON=python
-  else
-    echo "Python 3.9+ is required for the benchmarksgame comparison harness" >&2
-    exit 1
-  fi
+if command -v python3 >/dev/null 2>&1 && python_is_compatible python3; then
+  PYTHON=python3
 elif command -v python >/dev/null 2>&1 && python_is_compatible python; then
   PYTHON=python
 else

@@ -98,6 +98,18 @@ class BenchmarksgameCompareTests(unittest.TestCase):
             "./bosatsu build --main_pack Zafu/Benchmark/Game/NBody --outdir .bosatsu_bench/game/n-body --exe_out .bosatsu_bench/game/n-body/n-body",
         )
 
+    def test_bosatsu_c_setup_runs_native_install_then_dependency_fetch(self) -> None:
+        with mock.patch.object(MODULE, "run_checked") as run_checked:
+            MODULE.ensure_repo_setup(REPO_ROOT, self.version, ["bosatsu_c"])
+
+        self.assertEqual(
+            run_checked.call_args_list,
+            [
+                mock.call(REPO_ROOT, ["./bosatsu", "--fetch"]),
+                mock.call(REPO_ROOT, ["./bosatsu", "fetch"]),
+            ],
+        )
+
     def test_rotation_preserves_target_set(self) -> None:
         targets = ["bosatsu_jvm", "bosatsu_c", "java", "c"]
         rotations = [MODULE.rotate_targets(targets, index) for index in range(len(targets))]
@@ -361,26 +373,39 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         # later stores the artifact itself.
         artifact_git_sha = artifact["run_metadata"]["git_sha"]
         self.assertRegex(artifact_git_sha, r"^[0-9a-f]{40}$")
-        self.assertEqual(
+        commit_present = (
             subprocess.run(
                 ["git", "cat-file", "-e", f"{artifact_git_sha}" + "^{commit}"],
                 cwd=REPO_ROOT,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-            ).returncode,
-            0,
+            ).returncode
+            == 0
         )
-        self.assertEqual(
-            subprocess.run(
-                ["git", "merge-base", "--is-ancestor", artifact_git_sha, "HEAD"],
-                cwd=REPO_ROOT,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            ).returncode,
-            0,
-        )
+        if commit_present:
+            self.assertEqual(
+                subprocess.run(
+                    ["git", "merge-base", "--is-ancestor", artifact_git_sha, "HEAD"],
+                    cwd=REPO_ROOT,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                ).returncode,
+                0,
+            )
+        else:
+            self.assertEqual(
+                subprocess.run(
+                    ["git", "rev-parse", "--is-shallow-repository"],
+                    cwd=REPO_ROOT,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                ).stdout.strip(),
+                "true",
+                "baseline artifact git_sha should only be unavailable in shallow clones",
+            )
         validation_rows = artifact["run_metadata"]["validation_results"]
         self.assertEqual(len(validation_rows), len(self.specs) * len(MODULE.DEFAULT_TARGET_ORDER))
         self.assertTrue(all(row["validation_passed"] for row in validation_rows))

@@ -592,6 +592,9 @@ def ensure_repo_setup(repo_root: pathlib.Path, bosatsu_version: str, targets: Se
             )
         run_checked(repo_root, ["java", "-jar", jar_rel, "fetch"])
     if "bosatsu_c" in targets:
+        # `--fetch` installs the native CLI and c-runtime helper, while the
+        # explicit `fetch` subcommand populates the dependency cache used by
+        # `build` for repository libraries such as `core_alpha`.
         run_checked(repo_root, ["./bosatsu", "--fetch"])
         run_checked(repo_root, ["./bosatsu", "fetch"])
 
