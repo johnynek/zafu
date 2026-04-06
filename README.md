@@ -77,10 +77,10 @@ Use the harness wrapper to inspect or run the documented command matrix:
 ```bash
 scripts/benchmarksgame_compare.sh --print-plan
 scripts/benchmarksgame_compare.sh --validate-only
-scripts/benchmarksgame_compare.sh --benchmarks fannkuch-redux --targets c,java --repeats 1 --output-json docs/benchmarksgame/baseline-local.json --output-csv docs/benchmarksgame/baseline-local.csv
+scripts/benchmarksgame_compare.sh --benchmarks fannkuch-redux,binary-trees,mandelbrot,spectral-norm --targets c,java,bosatsu_c,bosatsu_jvm --repeats 1 --time-budget-seconds 300 --output-json docs/benchmarksgame/baseline-local.json --output-csv docs/benchmarksgame/baseline-local.csv
 ```
 
-The harness reads `vendor/benchmarksgame/manifest.json`, builds the Bosatsu C, Java, and C targets automatically, validates each target on the official sample input, and then records measured runs in the stable JSON/CSV formats. The checked-in baseline is intentionally the first immediately reproducible measured slice: `fannkuch-redux` on the vendored `c` and `java` targets with `--repeats 1`. The full Bosatsu C and Bosatsu JVM command matrix remains documented below so another engineer can rerun those targets locally, and the harness still supports broader exploratory runs across the remaining benchmarks. For those slower runs, add `--time-budget-seconds 300` so the JSON artifact records timed-out or skipped work instead of wedging the flow. Omit `--repeats 1` to use the harness default of five measured repeats, drop the `--benchmarks ...` or `--targets ...` filters to expand the matrix, and add `--skip-setup` after the one-time bootstrap above to reuse the fetched CLIs and caches.
+The harness reads `vendor/benchmarksgame/manifest.json`, builds the Bosatsu C, Java, and C targets automatically, validates each target on the official sample input, and then records measured runs in the stable JSON/CSV formats. The checked-in baseline now preserves the intended post-`n-body` matrix over `fannkuch-redux`, `binary-trees`, `mandelbrot`, and `spectral-norm` for `c`, `java`, `bosatsu_c`, and `bosatsu_jvm`, but it does so under a five-minute time budget. That means `validation_results` cover the whole selected matrix, `results` contains whichever measured runs completed before the budget expired, and `skipped_measurements` records the benchmark/target pairs that ran out of time before or during warmup or measurement. The full Bosatsu C and Bosatsu JVM command matrix remains documented below so another engineer can rerun slower targets locally. Omit `--repeats 1` to use the harness default of five measured repeats, drop the `--benchmarks ...` or `--targets ...` filters to expand the matrix, and add `--skip-setup` after the one-time bootstrap above to reuse the fetched CLIs and caches.
 
 The explicit Bosatsu JVM commands are:
 
@@ -95,7 +95,7 @@ java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchm
 
 For sample validation, use the same commands with the manifest inputs `1000`, `100`, `10`, `7`, and `200`. `mandelbrot` must stay byte-exact: redirect stdout to a temporary `.pbm` file, compare it against `fixtures/benchmarksgame/mandelbrot/mandelbrot-output-n200.pbm`, and avoid text decoding or newline normalization.
 
-The checked-in baseline lives at `docs/benchmarksgame/baseline-local.json` and `docs/benchmarksgame/baseline-local.csv`. The JSON artifact captures host and toolchain metadata, validation results, exact build and run commands, and per-run timings for every measured benchmark and target. The CSV is the flat projection for quick diffs or spreadsheet import.
+The checked-in baseline lives at `docs/benchmarksgame/baseline-local.json` and `docs/benchmarksgame/baseline-local.csv`. The JSON artifact captures host and toolchain metadata, validation results, exact build and run commands, per-run timings for completed measurements, and explicit skipped-work records for benchmark/target pairs that exhausted the time budget. The CSV is the flat projection for quick diffs or spreadsheet import.
 
 Interpret the results as local, single-machine measurements only:
 

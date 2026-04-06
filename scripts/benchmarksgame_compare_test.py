@@ -476,14 +476,19 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         metadata = artifact["run_metadata"]
         self.assertFalse(metadata["validation_only"])
         self.assertEqual(metadata["measured_repeats"], 1)
-        self.assertIsNone(metadata["time_budget_seconds"])
+        self.assertEqual(metadata["time_budget_seconds"], 300)
         self.assertEqual(
             metadata["selected_benchmarks"],
-            ["fannkuch-redux"],
+            [
+                "fannkuch-redux",
+                "binary-trees",
+                "mandelbrot",
+                "spectral-norm",
+            ],
         )
         self.assertEqual(
             metadata["selected_targets"],
-            ["c", "java"],
+            ["c", "java", "bosatsu_c", "bosatsu_jvm"],
         )
         # A checked-in artifact records the commit it was generated from, which
         # should stay reachable from HEAD instead of matching the commit that
@@ -537,15 +542,37 @@ class BenchmarksgameCompareTests(unittest.TestCase):
                 for target in selected_targets
             ],
         )
-        self.assertFalse(metadata["time_budget_exhausted"])
-        self.assertEqual(metadata["skipped_measurements"], [])
+        self.assertTrue(metadata["time_budget_exhausted"])
+        measured_pairs = [(row["benchmark"], row["target"]) for row in artifact["results"]]
+        skipped_pairs = [
+            (row["benchmark"], row["target"])
+            for row in metadata["skipped_measurements"]
+        ]
         self.assertCountEqual(
-            [(row["benchmark"], row["target"]) for row in artifact["results"]],
+            measured_pairs + skipped_pairs,
             [
                 (benchmark, target)
                 for benchmark in selected_benchmarks
                 for target in selected_targets
             ],
+        )
+        self.assertTrue(measured_pairs)
+        self.assertTrue(metadata["skipped_measurements"])
+
+        mandelbrot_validation = {
+            row["target"]: row
+            for row in validation_rows
+            if row["benchmark"] == "mandelbrot"
+        }
+        self.assertEqual(set(mandelbrot_validation), set(selected_targets))
+        self.assertTrue(
+            all(row["output_byte_count"] == 5011 for row in mandelbrot_validation.values())
+        )
+        self.assertTrue(
+            all(
+                row["output_sha256"] == "97610473750700638fc63d13cfa49d339b67c18e7f26b3f9c9acb61e746472d5"
+                for row in mandelbrot_validation.values()
+            )
         )
 
         with csv_path.open(newline="", encoding="utf-8") as handle:
@@ -560,8 +587,9 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("docs/benchmarksgame/baseline-local.json", readme)
         self.assertIn("docs/benchmarksgame/baseline-local.csv", readme)
-        self.assertIn("--benchmarks fannkuch-redux", readme)
-        self.assertIn("--targets c,java", readme)
+        self.assertIn("--benchmarks fannkuch-redux,binary-trees,mandelbrot,spectral-norm", readme)
+        self.assertIn("--targets c,java,bosatsu_c,bosatsu_jvm", readme)
+        self.assertIn("--time-budget-seconds 300", readme)
 
     def test_nbody_validation_rejects_surplus_blank_lines(self) -> None:
         nbody = next(spec for spec in self.specs if spec.benchmark == "n-body")
