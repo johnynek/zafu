@@ -72,15 +72,15 @@ java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" fetch
 
 `java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" fetch` prepares the explicit JVM CLI path used by `bosatsu_jvm`. `./bosatsu --fetch` and `./bosatsu fetch` prepare the default native wrapper and dependency cache used by `bosatsu_c`.
 
-Use the harness wrapper to inspect or run the full command matrix:
+Use the harness wrapper to inspect or run the documented command matrix:
 
 ```bash
 scripts/benchmarksgame_compare.sh --print-plan
 scripts/benchmarksgame_compare.sh --validate-only
-scripts/benchmarksgame_compare.sh --repeats 1 --output-json docs/benchmarksgame/baseline-local.json --output-csv docs/benchmarksgame/baseline-local.csv
+scripts/benchmarksgame_compare.sh --benchmarks fannkuch-redux,binary-trees,mandelbrot,spectral-norm --targets c,java,bosatsu_c,bosatsu_jvm --repeats 1 --time-budget-seconds 300 --output-json docs/benchmarksgame/baseline-local.json --output-csv docs/benchmarksgame/baseline-local.csv
 ```
 
-The harness reads `vendor/benchmarksgame/manifest.json`, builds the Bosatsu C, Java, and C targets automatically, validates each target on the official sample input, and then records measured runs in the stable JSON/CSV formats. The checked-in baseline uses `--repeats 1` for a first full-suite local snapshot; omit that flag to use the harness default of five measured repeats. After the one-time bootstrap above, add `--skip-setup` to reuse the fetched CLIs and caches.
+The harness reads `vendor/benchmarksgame/manifest.json`, builds the Bosatsu C, Java, and C targets automatically, validates each target on the official sample input, and then records measured runs in the stable JSON/CSV formats. The checked-in baseline uses `--repeats 1`, `--time-budget-seconds 300`, and currently measures `fannkuch-redux`, `binary-trees`, `mandelbrot`, and `spectral-norm`; `n-body` is documented in the command matrix below but omitted from the first checked-in artifact so the baseline run stays bounded on developer machines. The documented target order starts with the faster compiled paths so a bounded run can still capture measured rows before the slower Bosatsu JVM path exhausts the time budget. When the time budget is exhausted, the JSON artifact records the timed-out or skipped warmups and measured runs instead of wedging the flow. Omit `--repeats 1` to use the harness default of five measured repeats, drop the `--benchmarks ...` filter to run the whole suite, and add `--skip-setup` after the one-time bootstrap above to reuse the fetched CLIs and caches.
 
 The explicit Bosatsu JVM commands are:
 
@@ -95,7 +95,7 @@ java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchm
 
 For sample validation, use the same commands with the manifest inputs `1000`, `100`, `10`, `7`, and `200`. `mandelbrot` must stay byte-exact: redirect stdout to a temporary `.pbm` file, compare it against `fixtures/benchmarksgame/mandelbrot/mandelbrot-output-n200.pbm`, and avoid text decoding or newline normalization.
 
-The checked-in baseline lives at `docs/benchmarksgame/baseline-local.json` and `docs/benchmarksgame/baseline-local.csv`. The JSON artifact captures host and toolchain metadata, validation results, exact build and run commands, and per-run timings for every benchmark and target. The CSV is the flat projection for quick diffs or spreadsheet import.
+The checked-in baseline lives at `docs/benchmarksgame/baseline-local.json` and `docs/benchmarksgame/baseline-local.csv`. The JSON artifact captures host and toolchain metadata, validation results, exact build and run commands, and per-run timings for every measured benchmark and target. The CSV is the flat projection for quick diffs or spreadsheet import.
 
 Interpret the results as local, single-machine measurements only:
 

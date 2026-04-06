@@ -103,6 +103,8 @@ class ValidationRow:
     validation_passed: bool
     output_byte_count: Optional[int]
     output_sha256: Optional[str]
+    timed_out: bool = False
+    failure_reason: Optional[str] = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -127,6 +129,8 @@ class RunRecord:
     timestamp_utc: str
     output_byte_count: Optional[int]
     output_sha256: Optional[str]
+    timed_out: bool = False
+    failure_reason: Optional[str] = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -135,6 +139,7 @@ class ExecutionOutput:
     elapsed_ns: int
     output_bytes: bytes
     run_command: str
+    timed_out: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -146,6 +151,14 @@ class ToolchainInfo:
     os: str
     cpu_model: str
     repo_uri: str
+
+
+@dataclasses.dataclass(frozen=True)
+class SkippedMeasurement:
+    benchmark: str
+    target: str
+    phase: str
+    reason: str
 
 
 def main() -> int:
@@ -194,6 +207,14 @@ def main() -> int:
         help="Assume the native CLI, JVM CLI jar, and dependency caches are already prepared.",
     )
     parser.add_argument(
+        "--time-budget-seconds",
+        type=int,
+        help=(
+            "Stop validation, warmups, and measured runs once this total wall-clock "
+            "budget is exhausted. Timed-out or skipped runs are recorded in the JSON artifact."
+        ),
+    )
+    parser.add_argument(
         "--repo-root",
         help="Override the repository root. Defaults to the parent of this script.",
     )
@@ -201,6 +222,8 @@ def main() -> int:
 
     if args.repeats < 1:
         raise HarnessError("--repeats must be at least 1")
+    if args.time_budget_seconds is not None and args.time_budget_seconds < 1:
+        raise HarnessError("--time-budget-seconds must be at least 1")
 
     repo_root = resolve_repo_root(args.repo_root)
     specs = load_manifest(repo_root)
@@ -219,22 +242,41 @@ def main() -> int:
 
     build_commands = build_targets(repo_root, selected_specs, selected_targets, bosatsu_version)
     toolchain = read_toolchain_info(repo_root, bosatsu_version, selected_targets)
-    validation_rows = run_sample_validations(repo_root, selected_specs, selected_targets, bosatsu_version)
+    deadline_ns = (
+        time.perf_counter_ns() + args.time_budget_seconds * 1_000_000_000
+        if args.time_budget_seconds is not None
+        else None
+    )
+    validation_rows = run_sample_validations(
+        repo_root,
+        selected_specs,
+        selected_targets,
+        bosatsu_version,
+        deadline_ns,
+    )
+    skipped_measurements = skipped_measurements_for_validation(validation_rows)
 
     if args.validate_only:
         results: list[RunRecord] = []
     else:
-        run_warmups(repo_root, selected_specs, selected_targets, bosatsu_version)
-        results = run_measured_repeats(
+        eligible_pairs = {
+            (row.benchmark, row.target)
+            for row in validation_rows
+            if row.validation_passed
+        }
+        results, measurement_skips = run_measured_repeats(
             repo_root,
             selected_specs,
             selected_targets,
+            eligible_pairs,
             args.repeats,
             bosatsu_version,
             build_commands,
             validation_rows,
             toolchain,
+            deadline_ns,
         )
+        skipped_measurements.extend(measurement_skips)
 
     artifact = {
         "run_metadata": {
@@ -250,7 +292,10 @@ def main() -> int:
             "selected_targets": list(selected_targets),
             "validation_only": args.validate_only,
             "measured_repeats": args.repeats,
+            "time_budget_seconds": args.time_budget_seconds,
+            "time_budget_exhausted": time_budget_was_exhausted(validation_rows, results, skipped_measurements),
             "validation_results": [dataclasses.asdict(row) for row in validation_rows],
+            "skipped_measurements": [dataclasses.asdict(row) for row in skipped_measurements],
         },
         "results": [dataclasses.asdict(row) for row in results],
     }
@@ -639,11 +684,52 @@ def run_sample_validations(
     specs: Sequence[BenchmarkSpec],
     targets: Sequence[str],
     bosatsu_version: str,
+    deadline_ns: Optional[int],
 ) -> list[ValidationRow]:
     rows: list[ValidationRow] = []
     for spec in specs:
         for target in targets:
-            execution = execute_command_capture(repo_root, spec, target, spec.sample_input, bosatsu_version)
+            timeout_seconds = remaining_timeout_seconds(deadline_ns)
+            if timeout_seconds is not None and timeout_seconds <= 0:
+                rows.append(
+                    ValidationRow(
+                        benchmark=spec.benchmark,
+                        target=target,
+                        input=spec.sample_input,
+                        exit_code=124,
+                        validation_passed=False,
+                        output_byte_count=None,
+                        output_sha256=None,
+                        timed_out=True,
+                        failure_reason="time budget exhausted before validation",
+                    )
+                )
+                continue
+
+            execution = execute_command_capture(
+                repo_root,
+                spec,
+                target,
+                spec.sample_input,
+                bosatsu_version,
+                timeout_seconds,
+            )
+            if execution.timed_out:
+                rows.append(
+                    ValidationRow(
+                        benchmark=spec.benchmark,
+                        target=target,
+                        input=spec.sample_input,
+                        exit_code=execution.exit_code,
+                        validation_passed=False,
+                        output_byte_count=len(execution.output_bytes) if spec.validation.kind == "exact_bytes" else None,
+                        output_sha256=sha256_hex(execution.output_bytes) if spec.validation.kind == "exact_bytes" else None,
+                        timed_out=True,
+                        failure_reason="time budget exhausted during validation",
+                    )
+                )
+                continue
+
             validate_sample_output(repo_root, spec, target, execution.output_bytes)
             rows.append(
                 ValidationRow(
@@ -663,35 +749,141 @@ def run_warmups(
     repo_root: pathlib.Path,
     specs: Sequence[BenchmarkSpec],
     targets: Sequence[str],
+    eligible_pairs: set[tuple[str, str]],
     bosatsu_version: str,
-) -> None:
+    deadline_ns: Optional[int],
+) -> list[SkippedMeasurement]:
+    skipped: list[SkippedMeasurement] = []
     for spec in specs:
         for target in targets:
+            if (spec.benchmark, target) not in eligible_pairs:
+                continue
             for _ in range(warmup_count(target)):
-                execute_command_capture(repo_root, spec, target, spec.performance_input, bosatsu_version)
+                timeout_seconds = remaining_timeout_seconds(deadline_ns)
+                if timeout_seconds is not None and timeout_seconds <= 0:
+                    skipped.append(
+                        SkippedMeasurement(
+                            benchmark=spec.benchmark,
+                            target=target,
+                            phase="warmup",
+                            reason="time budget exhausted before warmup",
+                        )
+                    )
+                    break
+
+                execution = execute_command_capture(
+                    repo_root,
+                    spec,
+                    target,
+                    spec.performance_input,
+                    bosatsu_version,
+                    timeout_seconds,
+                )
+                if execution.timed_out:
+                    skipped.append(
+                        SkippedMeasurement(
+                            benchmark=spec.benchmark,
+                            target=target,
+                            phase="warmup",
+                            reason="time budget exhausted during warmup",
+                        )
+                    )
+                    break
+    return skipped
 
 
 def run_measured_repeats(
     repo_root: pathlib.Path,
     specs: Sequence[BenchmarkSpec],
     targets: Sequence[str],
+    eligible_pairs: set[tuple[str, str]],
     repeats: int,
     bosatsu_version: str,
     build_commands: dict[tuple[str, str], str],
     validation_rows: Sequence[ValidationRow],
     toolchain: ToolchainInfo,
-) -> list[RunRecord]:
+    deadline_ns: Optional[int],
+) -> tuple[list[RunRecord], list[SkippedMeasurement]]:
     validation_ok = {
         (row.benchmark, row.target): row.validation_passed
         for row in validation_rows
     }
 
     records: list[RunRecord] = []
+    skipped: list[SkippedMeasurement] = []
+    skip_pairs: set[tuple[str, str]] = set()
+    warmed_pairs: set[tuple[str, str]] = set()
     for repeat_index in range(repeats):
         rotated_targets = rotate_targets(targets, repeat_index)
         for spec in specs:
             for target in rotated_targets:
-                execution = execute_command_capture(repo_root, spec, target, spec.performance_input, bosatsu_version)
+                key = (spec.benchmark, target)
+                if key not in eligible_pairs or key in skip_pairs:
+                    continue
+
+                if key not in warmed_pairs:
+                    warmup_failed = False
+                    for _ in range(warmup_count(target)):
+                        timeout_seconds = remaining_timeout_seconds(deadline_ns)
+                        if timeout_seconds is not None and timeout_seconds <= 0:
+                            skipped.append(
+                                SkippedMeasurement(
+                                    benchmark=spec.benchmark,
+                                    target=target,
+                                    phase="warmup",
+                                    reason="time budget exhausted before warmup",
+                                )
+                            )
+                            skip_pairs.add(key)
+                            warmup_failed = True
+                            break
+
+                        execution = execute_command_capture(
+                            repo_root,
+                            spec,
+                            target,
+                            spec.performance_input,
+                            bosatsu_version,
+                            timeout_seconds,
+                        )
+                        if execution.timed_out:
+                            skipped.append(
+                                SkippedMeasurement(
+                                    benchmark=spec.benchmark,
+                                    target=target,
+                                    phase="warmup",
+                                    reason="time budget exhausted during warmup",
+                                )
+                            )
+                            skip_pairs.add(key)
+                            warmup_failed = True
+                            break
+
+                    if warmup_failed:
+                        continue
+                    warmed_pairs.add(key)
+
+                timeout_seconds = remaining_timeout_seconds(deadline_ns)
+                if timeout_seconds is not None and timeout_seconds <= 0:
+                    skipped.append(
+                        SkippedMeasurement(
+                            benchmark=spec.benchmark,
+                            target=target,
+                            phase="measure",
+                            reason="time budget exhausted before measured run",
+                        )
+                    )
+                    skip_pairs.add(key)
+                    continue
+
+                execution = execute_command_capture(
+                    repo_root,
+                    spec,
+                    target,
+                    spec.performance_input,
+                    bosatsu_version,
+                    timeout_seconds,
+                )
                 source_id, source_url = source_provenance(repo_root, toolchain, spec, target)
                 records.append(
                     RunRecord(
@@ -715,9 +907,78 @@ def run_measured_repeats(
                         timestamp_utc=utc_now(),
                         output_byte_count=len(execution.output_bytes) if spec.validation.kind == "exact_bytes" else None,
                         output_sha256=sha256_hex(execution.output_bytes) if spec.validation.kind == "exact_bytes" else None,
+                        timed_out=execution.timed_out,
+                        failure_reason="time budget exhausted during measured run" if execution.timed_out else None,
                     )
                 )
-    return records
+                if execution.timed_out:
+                    skipped.append(
+                        SkippedMeasurement(
+                            benchmark=spec.benchmark,
+                            target=target,
+                            phase="measure",
+                            reason="time budget exhausted during measured run",
+                        )
+                    )
+                    skip_pairs.add(key)
+    return records, skipped
+
+
+def skipped_measurements_for_validation(rows: Sequence[ValidationRow]) -> list[SkippedMeasurement]:
+    skipped: list[SkippedMeasurement] = []
+    for row in rows:
+        if row.validation_passed:
+            continue
+        skipped.append(
+            SkippedMeasurement(
+                benchmark=row.benchmark,
+                target=row.target,
+                phase="validation",
+                reason=row.failure_reason or "sample validation did not pass",
+            )
+        )
+    return skipped
+
+
+def time_budget_was_exhausted(
+    validation_rows: Sequence[ValidationRow],
+    results: Sequence[RunRecord],
+    skipped_measurements: Sequence[SkippedMeasurement],
+) -> bool:
+    return (
+        any(row.timed_out for row in validation_rows)
+        or any(row.timed_out for row in results)
+        or any("time budget exhausted" in row.reason for row in skipped_measurements)
+    )
+
+
+def remaining_timeout_seconds(deadline_ns: Optional[int]) -> Optional[float]:
+    if deadline_ns is None:
+        return None
+    remaining_ns = deadline_ns - time.perf_counter_ns()
+    if remaining_ns <= 0:
+        return 0.0
+    return remaining_ns / 1_000_000_000
+
+
+def timeout_output_bytes(exc: subprocess.TimeoutExpired) -> bytes:
+    output = getattr(exc, "stdout", None)
+    if output is None:
+        output = exc.output
+    if output is None:
+        return b""
+    if isinstance(output, bytes):
+        return output
+    return output.encode("utf-8")
+
+
+def timeout_stderr_bytes(exc: subprocess.TimeoutExpired) -> bytes:
+    stderr = exc.stderr
+    if stderr is None:
+        return b""
+    if isinstance(stderr, bytes):
+        return stderr
+    return stderr.encode("utf-8")
 
 
 def source_provenance(
@@ -743,20 +1004,32 @@ def execute_command_capture(
     target: str,
     input_value: int,
     bosatsu_version: str,
+    timeout_seconds: Optional[float] = None,
 ) -> ExecutionOutput:
     command = run_command_for(spec, target, input_value, bosatsu_version)
+    timed_out = False
     if spec.validation.kind == "exact_bytes":
         with tempfile.NamedTemporaryFile(prefix=f"{spec.slug}-{target}-", suffix=".pbm", delete=False) as handle:
             temp_path = pathlib.Path(handle.name)
         try:
             with temp_path.open("wb") as stdout_handle:
                 start = time.perf_counter_ns()
-                completed = subprocess.run(
-                    command,
-                    cwd=repo_root,
-                    stdout=stdout_handle,
-                    stderr=subprocess.PIPE,
-                )
+                try:
+                    completed = subprocess.run(
+                        command,
+                        cwd=repo_root,
+                        stdout=stdout_handle,
+                        stderr=subprocess.PIPE,
+                        timeout=timeout_seconds,
+                    )
+                except subprocess.TimeoutExpired as exc:
+                    timed_out = True
+                    completed = subprocess.CompletedProcess(
+                        command,
+                        124,
+                        b"",
+                        timeout_stderr_bytes(exc),
+                    )
                 elapsed_ns = time.perf_counter_ns() - start
             output_bytes = temp_path.read_bytes()
         finally:
@@ -766,17 +1039,30 @@ def execute_command_capture(
         command_string = render_run_command(spec, target, input_value, bosatsu_version, TEMP_PBM_PLACEHOLDER)
     else:
         start = time.perf_counter_ns()
-        completed = subprocess.run(
-            command,
-            cwd=repo_root,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        elapsed_ns = time.perf_counter_ns() - start
-        output_bytes = completed.stdout
-        command_string = render_run_command(spec, target, input_value, bosatsu_version, None)
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=repo_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=timeout_seconds,
+            )
+            output_bytes = completed.stdout
+            elapsed_ns = time.perf_counter_ns() - start
+            command_string = render_run_command(spec, target, input_value, bosatsu_version, None)
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            output_bytes = timeout_output_bytes(exc)
+            completed = subprocess.CompletedProcess(
+                command,
+                124,
+                output_bytes,
+                timeout_stderr_bytes(exc),
+            )
+            elapsed_ns = time.perf_counter_ns() - start
+            command_string = render_run_command(spec, target, input_value, bosatsu_version, None)
 
-    if completed.returncode != 0 and input_value == spec.sample_input:
+    if not timed_out and completed.returncode != 0 and input_value == spec.sample_input:
         stderr_text = decode_output(completed.stderr, "stderr")
         raise HarnessError(
             f"sample validation command failed for {spec.benchmark}/{target} "
@@ -788,6 +1074,7 @@ def execute_command_capture(
         elapsed_ns=elapsed_ns,
         output_bytes=output_bytes,
         run_command=command_string,
+        timed_out=timed_out,
     )
 
 

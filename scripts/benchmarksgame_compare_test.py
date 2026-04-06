@@ -346,7 +346,7 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         mandelbrot = next(spec for spec in self.specs if spec.benchmark == "mandelbrot")
         fixture = (REPO_ROOT / mandelbrot.validation.fixture_path).read_bytes()
 
-        def fake_run(command: list[str], cwd: pathlib.Path, stdout, stderr):
+        def fake_run(command: list[str], cwd: pathlib.Path, stdout, stderr, timeout=None):
             stdout.write(fixture)
             return subprocess.CompletedProcess(command, 0, b"", b"")
 
@@ -356,6 +356,112 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         self.assertEqual(execution.output_bytes, fixture)
         self.assertIn(MODULE.TEMP_PBM_PLACEHOLDER, execution.run_command)
         self.assertNotIn("/tmp/", execution.run_command)
+
+    def test_execute_command_capture_marks_text_timeout(self) -> None:
+        spectral = next(spec for spec in self.specs if spec.benchmark == "spectral-norm")
+
+        def fake_run(command: list[str], cwd: pathlib.Path, stdout, stderr, timeout=None):
+            raise subprocess.TimeoutExpired(command, timeout or 1.0, output=b"8.880000000\n", stderr=b"")
+
+        with mock.patch.object(MODULE.subprocess, "run", side_effect=fake_run):
+            execution = MODULE.execute_command_capture(
+                REPO_ROOT,
+                spectral,
+                "java",
+                spectral.performance_input,
+                self.version,
+                1.0,
+            )
+
+        self.assertTrue(execution.timed_out)
+        self.assertEqual(execution.exit_code, 124)
+        self.assertEqual(execution.output_bytes, b"8.880000000\n")
+
+    def test_run_warmups_records_time_budget_skips(self) -> None:
+        spectral = next(spec for spec in self.specs if spec.benchmark == "spectral-norm")
+
+        with mock.patch.object(
+            MODULE,
+            "execute_command_capture",
+            return_value=MODULE.ExecutionOutput(124, 1, b"", "cmd", timed_out=True),
+        ):
+            skipped = MODULE.run_warmups(
+                REPO_ROOT,
+                [spectral],
+                ["java"],
+                {(spectral.benchmark, "java")},
+                self.version,
+                None,
+            )
+
+        self.assertEqual(
+            skipped,
+            [
+                MODULE.SkippedMeasurement(
+                    benchmark="spectral-norm",
+                    target="java",
+                    phase="warmup",
+                    reason="time budget exhausted during warmup",
+                )
+            ],
+        )
+
+    def test_run_measured_repeats_records_timeout_rows_and_future_skips(self) -> None:
+        spectral = next(spec for spec in self.specs if spec.benchmark == "spectral-norm")
+        validation_rows = [
+            MODULE.ValidationRow("spectral-norm", "java", 100, 0, True, None, None),
+        ]
+        build_commands = {("spectral-norm", "java"): "javac -d .build/benchmarksgame/java/spectral-norm ..."}
+        toolchain = MODULE.ToolchainInfo(
+            git_sha="abc123",
+            bosatsu_version=self.version,
+            java_version='openjdk version "21.0.2"',
+            gcc_version="unavailable",
+            os="test-os",
+            cpu_model="test-cpu",
+            repo_uri="https://github.com/johnynek/zafu",
+        )
+
+        with mock.patch.object(
+            MODULE,
+            "execute_command_capture",
+            side_effect=[
+                MODULE.ExecutionOutput(0, 1, b"", "java -cp ..."),
+                MODULE.ExecutionOutput(0, 1, b"", "java -cp ..."),
+                MODULE.ExecutionOutput(124, 1, b"", "java -cp ...", timed_out=True),
+            ],
+        ), mock.patch.object(
+            MODULE,
+            "source_provenance",
+            return_value=("spectralnorm-graalvmaot-8", "https://example.invalid/spectral"),
+        ), mock.patch.object(MODULE, "utc_now", return_value="2026-04-06T22:00:00Z"):
+            records, skipped = MODULE.run_measured_repeats(
+                REPO_ROOT,
+                [spectral],
+                ["java"],
+                {(spectral.benchmark, "java")},
+                2,
+                self.version,
+                build_commands,
+                validation_rows,
+                toolchain,
+                None,
+            )
+
+        self.assertEqual(len(records), 1)
+        self.assertTrue(records[0].timed_out)
+        self.assertEqual(records[0].failure_reason, "time budget exhausted during measured run")
+        self.assertEqual(
+            skipped,
+            [
+                MODULE.SkippedMeasurement(
+                    benchmark="spectral-norm",
+                    target="java",
+                    phase="measure",
+                    reason="time budget exhausted during measured run",
+                )
+            ],
+        )
 
     def test_canonical_baseline_artifacts_exist_and_match(self) -> None:
         baseline_dir = REPO_ROOT / "docs/benchmarksgame"
@@ -367,11 +473,27 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         artifact = json.loads(json_path.read_text(encoding="utf-8"))
         self.assertIn("run_metadata", artifact)
         self.assertIn("results", artifact)
-        self.assertTrue(artifact["run_metadata"]["validation_only"])
+        metadata = artifact["run_metadata"]
+        self.assertFalse(metadata["validation_only"])
+        self.assertEqual(metadata["measured_repeats"], 1)
+        self.assertEqual(metadata["time_budget_seconds"], 300)
+        self.assertEqual(
+            metadata["selected_benchmarks"],
+            [
+                "fannkuch-redux",
+                "binary-trees",
+                "mandelbrot",
+                "spectral-norm",
+            ],
+        )
+        self.assertEqual(
+            metadata["selected_targets"],
+            ["c", "java", "bosatsu_c", "bosatsu_jvm"],
+        )
         # A checked-in artifact records the commit it was generated from, which
         # should stay reachable from HEAD instead of matching the commit that
         # later stores the artifact itself.
-        artifact_git_sha = artifact["run_metadata"]["git_sha"]
+        artifact_git_sha = metadata["git_sha"]
         self.assertRegex(artifact_git_sha, r"^[0-9a-f]{40}$")
         commit_present = (
             subprocess.run(
@@ -406,17 +528,26 @@ class BenchmarksgameCompareTests(unittest.TestCase):
                 "true",
                 "baseline artifact git_sha should only be unavailable in shallow clones",
             )
-        validation_rows = artifact["run_metadata"]["validation_results"]
-        self.assertEqual(len(validation_rows), len(self.specs) * len(MODULE.DEFAULT_TARGET_ORDER))
+        validation_rows = metadata["validation_results"]
+        selected_benchmarks = metadata["selected_benchmarks"]
+        selected_targets = metadata["selected_targets"]
+        self.assertEqual(len(validation_rows), len(selected_benchmarks) * len(selected_targets))
         self.assertTrue(all(row["validation_passed"] for row in validation_rows))
         self.assertCountEqual(
             [(row["benchmark"], row["target"]) for row in validation_rows],
             [
                 (spec.benchmark, target)
                 for spec in self.specs
-                for target in MODULE.DEFAULT_TARGET_ORDER
+                if spec.benchmark in selected_benchmarks
+                for target in selected_targets
             ],
         )
+        self.assertTrue(metadata["time_budget_exhausted"])
+        self.assertTrue(metadata["skipped_measurements"])
+
+        for row in artifact["results"]:
+            self.assertIn(row["benchmark"], selected_benchmarks)
+            self.assertIn(row["target"], selected_targets)
 
         with csv_path.open(newline="", encoding="utf-8") as handle:
             reader = csv.reader(handle)
