@@ -57,16 +57,52 @@ The benchmark prints CSV with header:
 
 ## Benchmarksgame compare harness
 
-Phase-1 cross-language comparison needs Python 3.9+, `curl`, `java`, `javac`, and `gcc` in addition to the Bosatsu wrapper setup.
+Phase-1 cross-language comparison needs Python 3.9+, `curl`, `java`, `javac`, and `gcc`.
 
-Use the checked-in harness wrapper to vendor-aware validate or measure the full suite:
+Bootstrap both Bosatsu entrypoints once from a clean checkout:
 
 ```bash
-scripts/benchmarksgame_compare.sh --validate-only
-scripts/benchmarksgame_compare.sh --output-json docs/benchmarksgame/baseline-local.json --output-csv docs/benchmarksgame/baseline-local.csv
+BOSATSU_VERSION="$(tr -d '[:space:]' < .bosatsu_version)"
+mkdir -p ".bosatsuc/cli/${BOSATSU_VERSION}"
+curl -fL "https://github.com/johnynek/bosatsu/releases/download/v${BOSATSU_VERSION}/bosatsu.jar" -o ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar"
+java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" fetch
+./bosatsu --fetch
+./bosatsu fetch
 ```
 
-The harness reads `vendor/benchmarksgame/manifest.json`, fetches the explicit JVM CLI jar under `.bosatsuc/cli/$BOSATSU_VERSION/bosatsu.jar`, and uses the repo-accurate `java -jar ... eval --main Zafu/Benchmark/Game/*::main --run` commands for `bosatsu_jvm`.
+`java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" fetch` prepares the explicit JVM CLI path used by `bosatsu_jvm`. `./bosatsu --fetch` and `./bosatsu fetch` prepare the default native wrapper and dependency cache used by `bosatsu_c`.
+
+Use the harness wrapper to inspect or run the full command matrix:
+
+```bash
+scripts/benchmarksgame_compare.sh --print-plan
+scripts/benchmarksgame_compare.sh --validate-only
+scripts/benchmarksgame_compare.sh --repeats 1 --output-json docs/benchmarksgame/baseline-local.json --output-csv docs/benchmarksgame/baseline-local.csv
+```
+
+The harness reads `vendor/benchmarksgame/manifest.json`, builds the Bosatsu C, Java, and C targets automatically, validates each target on the official sample input, and then records measured runs in the stable JSON/CSV formats. The checked-in baseline uses `--repeats 1` for a first full-suite local snapshot; omit that flag to use the harness default of five measured repeats. After the one-time bootstrap above, add `--skip-setup` to reuse the fetched CLIs and caches.
+
+The explicit Bosatsu JVM commands are:
+
+```bash
+BOSATSU_VERSION="$(tr -d '[:space:]' < .bosatsu_version)"
+java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchmark/Game/NBody::main --run 50000000
+java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchmark/Game/SpectralNorm::main --run 5500
+java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchmark/Game/BinaryTrees::main --run 21
+java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchmark/Game/FannkuchRedux::main --run 12
+java -jar ".bosatsuc/cli/${BOSATSU_VERSION}/bosatsu.jar" eval --main Zafu/Benchmark/Game/Mandelbrot::main --run 16000 > /tmp/mandelbrot.pbm
+```
+
+For sample validation, use the same commands with the manifest inputs `1000`, `100`, `10`, `7`, and `200`. `mandelbrot` must stay byte-exact: redirect stdout to a temporary `.pbm` file, compare it against `fixtures/benchmarksgame/mandelbrot/mandelbrot-output-n200.pbm`, and avoid text decoding or newline normalization.
+
+The checked-in baseline lives at `docs/benchmarksgame/baseline-local.json` and `docs/benchmarksgame/baseline-local.csv`. The JSON artifact captures host and toolchain metadata, validation results, exact build and run commands, and per-run timings for every benchmark and target. The CSV is the flat projection for quick diffs or spreadsheet import.
+
+Interpret the results as local, single-machine measurements only:
+
+- They are informational and do not gate CI.
+- They are not directly comparable to benchmarksgame BenchExec numbers, because compiler, runtime, and machine setup differ.
+- The `java` target runs the vendored benchmarksgame `graalvmaot` sources on the local HotSpot JVM, not on `native-image`.
+- `mandelbrot` rows include PBM byte count and SHA-256 from raw stdout capture so the Bosatsu JVM path stays replayable and byte-exact.
 
 ## CI, docs, and release
 
