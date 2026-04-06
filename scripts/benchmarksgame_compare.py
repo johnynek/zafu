@@ -16,7 +16,7 @@ import sys
 import tempfile
 import time
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import Optional, Sequence
 
 CSV_COLUMNS = [
     "benchmark",
@@ -44,7 +44,7 @@ class HarnessError(RuntimeError):
 class ValidationSpec:
     kind: str
     fixture_path: str
-    abs_tolerance: float | None = None
+    abs_tolerance: Optional[float] = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -55,7 +55,7 @@ class LanguageSpec:
     thread_model: str
     pinned_at: str
     launch_caveat: str
-    main_class: str | None = None
+    main_class: Optional[str] = None
     local_compile_flags: tuple[str, ...] = ()
     local_run_flags: tuple[str, ...] = ()
     local_libraries: tuple[str, ...] = ()
@@ -87,10 +87,10 @@ class RunPlan:
     target: str
     phase: str
     input: int
-    repeat_index: int | None
+    repeat_index: Optional[int]
     warmup_count: int
     command: str
-    capture_stdout_to: str | None
+    capture_stdout_to: Optional[str]
     validation_kind: str
 
 
@@ -101,8 +101,8 @@ class ValidationRow:
     input: int
     exit_code: int
     validation_passed: bool
-    output_byte_count: int | None
-    output_sha256: str | None
+    output_byte_count: Optional[int]
+    output_sha256: Optional[str]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -125,8 +125,8 @@ class RunRecord:
     os: str
     cpu_model: str
     timestamp_utc: str
-    output_byte_count: int | None
-    output_sha256: str | None
+    output_byte_count: Optional[int]
+    output_sha256: Optional[str]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -265,7 +265,7 @@ def main() -> int:
     return 0
 
 
-def resolve_repo_root(value: str | None) -> pathlib.Path:
+def resolve_repo_root(value: Optional[str]) -> pathlib.Path:
     if value is not None:
         return pathlib.Path(value).resolve()
     return pathlib.Path(__file__).resolve().parent.parent
@@ -346,7 +346,7 @@ def expect_string(raw: dict[str, object], key: str) -> str:
     return value
 
 
-def expect_optional_string(raw: dict[str, object], key: str) -> str | None:
+def expect_optional_string(raw: dict[str, object], key: str) -> Optional[str]:
     value = raw.get(key)
     if value is None:
         return None
@@ -396,7 +396,7 @@ def validate_manifest(repo_root: pathlib.Path, specs: Sequence[BenchmarkSpec]) -
             raise HarnessError(f"{spec.benchmark} is missing java.main_class")
 
 
-def select_benchmarks(specs: Sequence[BenchmarkSpec], raw_selection: str | None) -> list[BenchmarkSpec]:
+def select_benchmarks(specs: Sequence[BenchmarkSpec], raw_selection: Optional[str]) -> list[BenchmarkSpec]:
     if raw_selection is None:
         return list(specs)
 
@@ -411,7 +411,7 @@ def select_benchmarks(specs: Sequence[BenchmarkSpec], raw_selection: str | None)
     return [by_name[name] for name in requested]
 
 
-def select_targets(raw_selection: str | None) -> list[str]:
+def select_targets(raw_selection: Optional[str]) -> list[str]:
     if raw_selection is None:
         return list(DEFAULT_TARGET_ORDER)
 
@@ -533,7 +533,7 @@ def bosatsu_setup_commands(version: str, targets: Sequence[str]) -> list[str]:
     return commands
 
 
-def build_command_for_plan(spec: BenchmarkSpec, target: str, bosatsu_version: str) -> str | None:
+def build_command_for_plan(spec: BenchmarkSpec, target: str, bosatsu_version: str) -> Optional[str]:
     if target == "bosatsu_jvm":
         return shlex.join(["java", "-jar", bosatsu_jar_rel_path(bosatsu_version), "fetch"])
     if target == "bosatsu_c":
@@ -550,7 +550,7 @@ def render_run_command(
     target: str,
     input_value: int,
     bosatsu_version: str,
-    temp_pbm_path: str | None,
+    temp_pbm_path: Optional[str],
 ) -> str:
     command = shlex.join(run_command_for(spec, target, input_value, bosatsu_version))
     if spec.validation.kind == "exact_bytes":
@@ -1095,7 +1095,7 @@ def render_csv(records: Sequence[RunRecord]) -> str:
     return buffer.getvalue()
 
 
-def emit_text(content: str, path_str: str | None) -> None:
+def emit_text(content: str, path_str: Optional[str]) -> None:
     if path_str is None:
         sys.stdout.write(content)
         return

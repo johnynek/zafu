@@ -105,7 +105,7 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         for rotation in rotations:
             self.assertCountEqual(rotation, targets)
 
-    def test_wrapper_requires_python_3_10_or_better(self) -> None:
+    def test_wrapper_requires_python_3_9_or_better(self) -> None:
         cases = [
             (
                 "falls_back_to_compatible_python",
@@ -119,7 +119,7 @@ class BenchmarksgameCompareTests(unittest.TestCase):
                 {"python3": (1, 23), "python": (1, 24)},
                 1,
                 None,
-                "Python 3.10+ is required",
+                "Python 3.9+ is required",
             ),
         ]
         for name, interpreters, expected_code, expected_log, expected_stderr in cases:
@@ -356,16 +356,30 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         self.assertIn("run_metadata", artifact)
         self.assertIn("results", artifact)
         self.assertTrue(artifact["run_metadata"]["validation_only"])
+        # A checked-in artifact records the commit it was generated from, which
+        # should stay reachable from HEAD instead of matching the commit that
+        # later stores the artifact itself.
+        artifact_git_sha = artifact["run_metadata"]["git_sha"]
+        self.assertRegex(artifact_git_sha, r"^[0-9a-f]{40}$")
         self.assertEqual(
-            artifact["run_metadata"]["git_sha"],
             subprocess.run(
-                ["git", "rev-parse", "HEAD"],
+                ["git", "cat-file", "-e", f"{artifact_git_sha}" + "^{commit}"],
                 cwd=REPO_ROOT,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                check=True,
-            ).stdout.strip(),
+            ).returncode,
+            0,
+        )
+        self.assertEqual(
+            subprocess.run(
+                ["git", "merge-base", "--is-ancestor", artifact_git_sha, "HEAD"],
+                cwd=REPO_ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            ).returncode,
+            0,
         )
         validation_rows = artifact["run_metadata"]["validation_results"]
         self.assertEqual(len(validation_rows), len(self.specs) * len(MODULE.DEFAULT_TARGET_ORDER))

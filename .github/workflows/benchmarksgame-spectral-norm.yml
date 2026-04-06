@@ -1,0 +1,82 @@
+name: benchmarksgame-spectral-norm
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    types:
+      - labeled
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+
+jobs:
+  spectral-norm:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'run-benchmarks')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install benchmark dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgc1 libgc-dev pkg-config default-jdk
+
+      - name: Fetch Bosatsu CLI and runtime
+        run: ./bosatsu --fetch
+
+      - name: Run spectral-norm benchmark compare
+        run: |
+          mkdir -p benchmark-results
+          scripts/benchmarksgame_compare.sh \
+            --benchmarks spectral-norm \
+            --targets bosatsu_jvm,bosatsu_c,java,c \
+            --repeats 1 \
+            --output-json benchmark-results/spectral-norm.json \
+            --output-csv benchmark-results/spectral-norm.csv
+
+      - name: Print CSV results
+        run: cat benchmark-results/spectral-norm.csv
+
+      - name: Summarize results
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import csv
+          import json
+          import pathlib
+
+          csv_path = pathlib.Path("benchmark-results/spectral-norm.csv")
+          json_path = pathlib.Path("benchmark-results/spectral-norm.json")
+
+          artifact = json.loads(json_path.read_text(encoding="utf-8"))
+          rows = artifact["results"]
+
+          print("## Spectral Norm benchmark")
+          print()
+          print(f"- Commit: `{artifact['run_metadata']['git_sha']}`")
+          print(f"- Bosatsu version: `{artifact['run_metadata']['bosatsu_version']}`")
+          print(f"- Java version: `{artifact['run_metadata']['java_version']}`")
+          print(f"- GCC version: `{artifact['run_metadata']['gcc_version']}`")
+          print(f"- CPU: `{artifact['run_metadata']['cpu_model']}`")
+          print()
+          print("| target | elapsed_s | validation_passed |")
+          print("| --- | ---: | --- |")
+          for row in rows:
+              print(f"| {row['target']} | {row['elapsed_ns'] / 1e9:.3f} | {row['validation_passed']} |")
+          print()
+          print("```csv")
+          print(csv_path.read_text(encoding="utf-8").rstrip())
+          print("```")
+          PY
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: spectral-norm-benchmark-results
+          path: |
+            benchmark-results/spectral-norm.json
+            benchmark-results/spectral-norm.csv
