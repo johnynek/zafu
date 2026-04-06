@@ -1,0 +1,6 @@
+#ifndef ZAFU_BENCHMARKSGAME_COMPAT_MALLOC_H
+#define ZAFU_BENCHMARKSGAME_COMPAT_MALLOC_H
+
+#include <stdlib.h>
+
+#endif

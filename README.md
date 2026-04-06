@@ -27,7 +27,8 @@ This runs:
 
 1. `./bosatsu check`
 2. `./bosatsu test`
-3. Dry-run style publish via `scripts/publish_bosatsu_libs.sh --dry-run` with `URI_BASE=https://example.invalid/`
+3. A validate-only `mandelbrot` benchmark harness smoke across `bosatsu_jvm`, `bosatsu_c`, `java`, and `c`
+4. Dry-run style publish via `scripts/publish_bosatsu_libs.sh --dry-run` with `URI_BASE=https://example.invalid/`
 
 ## Benchmarking vector
 
@@ -54,9 +55,23 @@ The benchmark prints CSV with header:
 
 `ops_per_us` is most useful for comparing runs of the same `case` across different sizes.
 
+## Benchmarksgame compare harness
+
+Phase-1 cross-language comparison needs Python 3.9+, `curl`, `java`, `javac`, and `gcc` in addition to the Bosatsu wrapper setup.
+
+Use the checked-in harness wrapper to vendor-aware validate or measure the full suite:
+
+```bash
+scripts/benchmarksgame_compare.sh --validate-only
+scripts/benchmarksgame_compare.sh --output-json docs/benchmarksgame/baseline-local.json --output-csv docs/benchmarksgame/baseline-local.csv
+```
+
+The harness reads `vendor/benchmarksgame/manifest.json`, fetches the explicit JVM CLI jar under `.bosatsuc/cli/$BOSATSU_VERSION/bosatsu.jar`, and uses the repo-accurate `java -jar ... eval --main Zafu/Benchmark/Game/*::main --run` commands for `bosatsu_jvm`.
+
 ## CI, docs, and release
 
 - CI (`.github/workflows/ci.yml`) runs check/test/dry-run publish and validates docs generation plus markdown-to-HTML conversion with Pandoc on pull requests.
+- Benchmark compare (`.github/workflows/benchmarksgame-spectral-norm.yml`) runs a measured `spectral-norm` compare on demand or on PRs labeled `run-benchmarks`, prints the CSV in logs, writes a job summary table, and uploads the JSON/CSV artifacts.
 - Docs (`.github/workflows/docs-pages.yml`) runs on each push to `main`, generates markdown docs with `./bosatsu doc`, converts them to HTML with Pandoc, and deploys to GitHub Pages.
 - Release (`.github/workflows/release.yml`) triggers on `vX.Y.Z` tags, verifies the tagged commit is on `main`, publishes `.bosatsu_lib` files, and uploads them to the GitHub Release page.
 

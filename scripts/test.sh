@@ -16,8 +16,10 @@ scripts/test_mkdir_tool.sh
 
 MANDELBROT_FIXTURE="$REPO_ROOT/fixtures/benchmarksgame/mandelbrot/mandelbrot-output-n200.pbm"
 MANDELBROT_TMPDIR="$(mktemp -d)"
+COMPARE_TMPDIR="$(mktemp -d)"
 cleanup() {
   rm -rf "$MANDELBROT_TMPDIR"
+  rm -rf "$COMPARE_TMPDIR"
 }
 trap cleanup EXIT
 
@@ -55,6 +57,29 @@ if [ -s "$MANDELBROT_NEGATIVE_OUT" ]; then
   echo "mandelbrot compiled executable wrote stdout bytes for a negative size" >&2
   exit 1
 fi
+
+python_is_compatible() {
+  "$1" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1
+}
+
+if command -v python3 >/dev/null 2>&1 && python_is_compatible python3; then
+  PYTHON=python3
+elif command -v python >/dev/null 2>&1 && python_is_compatible python; then
+  PYTHON=python
+else
+  echo "Python 3.9+ is required for the benchmarksgame comparison harness" >&2
+  exit 1
+fi
+
+"$PYTHON" -m unittest scripts/benchmarksgame_compare_test.py
+
+# Keep the required pre-PR gate on a single validate-only benchmark smoke.
+# Longer measured compares run in the separate benchmark workflow.
+"$REPO_ROOT/scripts/benchmarksgame_compare.sh" \
+  --validate-only \
+  --benchmarks mandelbrot \
+  --targets bosatsu_jvm,bosatsu_c,java,c \
+  --output-json "$COMPARE_TMPDIR/mandelbrot-compare.json"
 
 OUTDIR="${OUTDIR:-"$REPO_ROOT/.bosatsu_lib_publish_dry_run"}"
 URI_BASE="${URI_BASE:-https://example.invalid/}"

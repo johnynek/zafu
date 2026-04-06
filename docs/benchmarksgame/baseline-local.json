@@ -1,0 +1,210 @@
+{
+  "run_metadata": {
+    "format_version": 1,
+    "generated_at_utc": "2026-04-04T22:37:39Z",
+    "git_sha": "ac7213b902552fafd2b3cef184529927cfbff90c",
+    "bosatsu_version": "0.0.64",
+    "java_version": "openjdk version \"25.0.2\" 2026-01-20",
+    "gcc_version": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
+    "os": "macOS-26.3-arm64-arm-64bit",
+    "cpu_model": "arm",
+    "selected_benchmarks": [
+      "n-body",
+      "spectral-norm",
+      "binary-trees",
+      "fannkuch-redux",
+      "mandelbrot"
+    ],
+    "selected_targets": [
+      "bosatsu_jvm",
+      "bosatsu_c",
+      "java",
+      "c"
+    ],
+    "validation_only": true,
+    "measured_repeats": 5,
+    "validation_results": [
+      {
+        "benchmark": "n-body",
+        "target": "bosatsu_jvm",
+        "input": 1000,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "n-body",
+        "target": "bosatsu_c",
+        "input": 1000,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "n-body",
+        "target": "java",
+        "input": 1000,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "n-body",
+        "target": "c",
+        "input": 1000,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "spectral-norm",
+        "target": "bosatsu_jvm",
+        "input": 100,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "spectral-norm",
+        "target": "bosatsu_c",
+        "input": 100,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "spectral-norm",
+        "target": "java",
+        "input": 100,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "spectral-norm",
+        "target": "c",
+        "input": 100,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "binary-trees",
+        "target": "bosatsu_jvm",
+        "input": 10,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "binary-trees",
+        "target": "bosatsu_c",
+        "input": 10,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "binary-trees",
+        "target": "java",
+        "input": 10,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "binary-trees",
+        "target": "c",
+        "input": 10,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "fannkuch-redux",
+        "target": "bosatsu_jvm",
+        "input": 7,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "fannkuch-redux",
+        "target": "bosatsu_c",
+        "input": 7,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "fannkuch-redux",
+        "target": "java",
+        "input": 7,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "fannkuch-redux",
+        "target": "c",
+        "input": 7,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": null,
+        "output_sha256": null
+      },
+      {
+        "benchmark": "mandelbrot",
+        "target": "bosatsu_jvm",
+        "input": 200,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": 5011,
+        "output_sha256": "97610473750700638fc63d13cfa49d339b67c18e7f26b3f9c9acb61e746472d5"
+      },
+      {
+        "benchmark": "mandelbrot",
+        "target": "bosatsu_c",
+        "input": 200,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": 5011,
+        "output_sha256": "97610473750700638fc63d13cfa49d339b67c18e7f26b3f9c9acb61e746472d5"
+      },
+      {
+        "benchmark": "mandelbrot",
+        "target": "java",
+        "input": 200,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": 5011,
+        "output_sha256": "97610473750700638fc63d13cfa49d339b67c18e7f26b3f9c9acb61e746472d5"
+      },
+      {
+        "benchmark": "mandelbrot",
+        "target": "c",
+        "input": 200,
+        "exit_code": 0,
+        "validation_passed": true,
+        "output_byte_count": 5011,
+        "output_sha256": "97610473750700638fc63d13cfa49d339b67c18e7f26b3f9c9acb61e746472d5"
+      }
+    ]
+  },
+  "results": []
+}
