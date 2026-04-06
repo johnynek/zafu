@@ -476,19 +476,14 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         metadata = artifact["run_metadata"]
         self.assertFalse(metadata["validation_only"])
         self.assertEqual(metadata["measured_repeats"], 1)
-        self.assertEqual(metadata["time_budget_seconds"], 300)
+        self.assertIsNone(metadata["time_budget_seconds"])
         self.assertEqual(
             metadata["selected_benchmarks"],
-            [
-                "fannkuch-redux",
-                "binary-trees",
-                "mandelbrot",
-                "spectral-norm",
-            ],
+            ["fannkuch-redux"],
         )
         self.assertEqual(
             metadata["selected_targets"],
-            ["c", "java", "bosatsu_c", "bosatsu_jvm"],
+            ["c", "java"],
         )
         # A checked-in artifact records the commit it was generated from, which
         # should stay reachable from HEAD instead of matching the commit that
@@ -542,12 +537,16 @@ class BenchmarksgameCompareTests(unittest.TestCase):
                 for target in selected_targets
             ],
         )
-        self.assertTrue(metadata["time_budget_exhausted"])
-        self.assertTrue(metadata["skipped_measurements"])
-
-        for row in artifact["results"]:
-            self.assertIn(row["benchmark"], selected_benchmarks)
-            self.assertIn(row["target"], selected_targets)
+        self.assertFalse(metadata["time_budget_exhausted"])
+        self.assertEqual(metadata["skipped_measurements"], [])
+        self.assertCountEqual(
+            [(row["benchmark"], row["target"]) for row in artifact["results"]],
+            [
+                (benchmark, target)
+                for benchmark in selected_benchmarks
+                for target in selected_targets
+            ],
+        )
 
         with csv_path.open(newline="", encoding="utf-8") as handle:
             reader = csv.reader(handle)
@@ -561,6 +560,8 @@ class BenchmarksgameCompareTests(unittest.TestCase):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("docs/benchmarksgame/baseline-local.json", readme)
         self.assertIn("docs/benchmarksgame/baseline-local.csv", readme)
+        self.assertIn("--benchmarks fannkuch-redux", readme)
+        self.assertIn("--targets c,java", readme)
 
     def test_nbody_validation_rejects_surplus_blank_lines(self) -> None:
         nbody = next(spec for spec in self.specs if spec.benchmark == "n-body")

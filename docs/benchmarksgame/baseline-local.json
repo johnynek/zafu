@@ -1,29 +1,24 @@
 {
   "run_metadata": {
     "format_version": 1,
-    "generated_at_utc": "2026-04-06T21:57:33Z",
-    "git_sha": "3c5c03c0659db76c88ad8c5411b13daedb5e7ccc",
+    "generated_at_utc": "2026-04-06T22:13:07Z",
+    "git_sha": "66ec51c00fbf9beda13f6fd08dff52f44aaf8e3d",
     "bosatsu_version": "0.0.64",
     "java_version": "openjdk version \"25.0.2\" 2026-01-20",
     "gcc_version": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
     "os": "macOS-26.3-arm64-arm-64bit",
     "cpu_model": "arm",
     "selected_benchmarks": [
-      "fannkuch-redux",
-      "binary-trees",
-      "mandelbrot",
-      "spectral-norm"
+      "fannkuch-redux"
     ],
     "selected_targets": [
       "c",
-      "java",
-      "bosatsu_c",
-      "bosatsu_jvm"
+      "java"
     ],
     "validation_only": false,
     "measured_repeats": 1,
-    "time_budget_seconds": 300,
-    "time_budget_exhausted": true,
+    "time_budget_seconds": null,
+    "time_budget_exhausted": false,
     "validation_results": [
       {
         "benchmark": "fannkuch-redux",
@@ -46,248 +41,9 @@
         "output_sha256": null,
         "timed_out": false,
         "failure_reason": null
-      },
-      {
-        "benchmark": "fannkuch-redux",
-        "target": "bosatsu_c",
-        "input": 7,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": null,
-        "output_sha256": null,
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "fannkuch-redux",
-        "target": "bosatsu_jvm",
-        "input": 7,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": null,
-        "output_sha256": null,
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "binary-trees",
-        "target": "c",
-        "input": 10,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": null,
-        "output_sha256": null,
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "binary-trees",
-        "target": "java",
-        "input": 10,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": null,
-        "output_sha256": null,
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "binary-trees",
-        "target": "bosatsu_c",
-        "input": 10,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": null,
-        "output_sha256": null,
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "binary-trees",
-        "target": "bosatsu_jvm",
-        "input": 10,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": null,
-        "output_sha256": null,
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "mandelbrot",
-        "target": "c",
-        "input": 200,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": 5011,
-        "output_sha256": "97610473750700638fc63d13cfa49d339b67c18e7f26b3f9c9acb61e746472d5",
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "mandelbrot",
-        "target": "java",
-        "input": 200,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": 5011,
-        "output_sha256": "97610473750700638fc63d13cfa49d339b67c18e7f26b3f9c9acb61e746472d5",
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "mandelbrot",
-        "target": "bosatsu_c",
-        "input": 200,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": 5011,
-        "output_sha256": "97610473750700638fc63d13cfa49d339b67c18e7f26b3f9c9acb61e746472d5",
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "mandelbrot",
-        "target": "bosatsu_jvm",
-        "input": 200,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": 5011,
-        "output_sha256": "97610473750700638fc63d13cfa49d339b67c18e7f26b3f9c9acb61e746472d5",
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "spectral-norm",
-        "target": "c",
-        "input": 100,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": null,
-        "output_sha256": null,
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "spectral-norm",
-        "target": "java",
-        "input": 100,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": null,
-        "output_sha256": null,
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "spectral-norm",
-        "target": "bosatsu_c",
-        "input": 100,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": null,
-        "output_sha256": null,
-        "timed_out": false,
-        "failure_reason": null
-      },
-      {
-        "benchmark": "spectral-norm",
-        "target": "bosatsu_jvm",
-        "input": 100,
-        "exit_code": 0,
-        "validation_passed": true,
-        "output_byte_count": null,
-        "output_sha256": null,
-        "timed_out": false,
-        "failure_reason": null
       }
     ],
-    "skipped_measurements": [
-      {
-        "benchmark": "fannkuch-redux",
-        "target": "bosatsu_c",
-        "phase": "warmup",
-        "reason": "time budget exhausted during warmup"
-      },
-      {
-        "benchmark": "fannkuch-redux",
-        "target": "bosatsu_jvm",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      },
-      {
-        "benchmark": "binary-trees",
-        "target": "c",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      },
-      {
-        "benchmark": "binary-trees",
-        "target": "java",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      },
-      {
-        "benchmark": "binary-trees",
-        "target": "bosatsu_c",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      },
-      {
-        "benchmark": "binary-trees",
-        "target": "bosatsu_jvm",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      },
-      {
-        "benchmark": "mandelbrot",
-        "target": "c",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      },
-      {
-        "benchmark": "mandelbrot",
-        "target": "java",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      },
-      {
-        "benchmark": "mandelbrot",
-        "target": "bosatsu_c",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      },
-      {
-        "benchmark": "mandelbrot",
-        "target": "bosatsu_jvm",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      },
-      {
-        "benchmark": "spectral-norm",
-        "target": "c",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      },
-      {
-        "benchmark": "spectral-norm",
-        "target": "java",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      },
-      {
-        "benchmark": "spectral-norm",
-        "target": "bosatsu_c",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      },
-      {
-        "benchmark": "spectral-norm",
-        "target": "bosatsu_jvm",
-        "phase": "warmup",
-        "reason": "time budget exhausted before warmup"
-      }
-    ]
+    "skipped_measurements": []
   },
   "results": [
     {
@@ -295,20 +51,20 @@
       "target": "c",
       "input": 12,
       "repeat_index": 1,
-      "elapsed_ns": 28750385709,
+      "elapsed_ns": 57963850375,
       "exit_code": 0,
       "validation_passed": true,
       "source_id": "fannkuchredux-gcc-3",
       "source_url": "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/fannkuchredux-gcc-3.html",
       "build_command": "gcc -O3 -fomit-frame-pointer -march=native -Ivendor/benchmarksgame/c/compat vendor/benchmarksgame/c/fannkuchredux-gcc-3/fannkuchredux.gcc-3.c -o .build/benchmarksgame/c/fannkuch-redux/fannkuch-redux",
       "run_command": ".build/benchmarksgame/c/fannkuch-redux/fannkuch-redux 12",
-      "git_sha": "3c5c03c0659db76c88ad8c5411b13daedb5e7ccc",
+      "git_sha": "66ec51c00fbf9beda13f6fd08dff52f44aaf8e3d",
       "bosatsu_version": "0.0.64",
       "java_version": "openjdk version \"25.0.2\" 2026-01-20",
       "gcc_version": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
       "os": "macOS-26.3-arm64-arm-64bit",
       "cpu_model": "arm",
-      "timestamp_utc": "2026-04-06T21:53:57Z",
+      "timestamp_utc": "2026-04-06T22:11:20Z",
       "output_byte_count": null,
       "output_sha256": null,
       "timed_out": false,
@@ -319,20 +75,20 @@
       "target": "java",
       "input": 12,
       "repeat_index": 1,
-      "elapsed_ns": 32241913166,
+      "elapsed_ns": 32707306167,
       "exit_code": 0,
       "validation_passed": true,
       "source_id": "fannkuchredux-graalvmaot-2",
       "source_url": "https://benchmarksgame-team.pages.debian.net/benchmarksgame/program/fannkuchredux-graalvmaot-2.html",
       "build_command": "javac -d .build/benchmarksgame/java/fannkuch-redux vendor/benchmarksgame/java/fannkuchredux-graalvmaot-2/fannkuchredux.java",
       "run_command": "java -cp .build/benchmarksgame/java/fannkuch-redux fannkuchredux 12",
-      "git_sha": "3c5c03c0659db76c88ad8c5411b13daedb5e7ccc",
+      "git_sha": "66ec51c00fbf9beda13f6fd08dff52f44aaf8e3d",
       "bosatsu_version": "0.0.64",
       "java_version": "openjdk version \"25.0.2\" 2026-01-20",
       "gcc_version": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
       "os": "macOS-26.3-arm64-arm-64bit",
       "cpu_model": "arm",
-      "timestamp_utc": "2026-04-06T21:55:21Z",
+      "timestamp_utc": "2026-04-06T22:13:07Z",
       "output_byte_count": null,
       "output_sha256": null,
       "timed_out": false,
