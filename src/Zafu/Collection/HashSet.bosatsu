@@ -124,8 +124,8 @@ def bitpos(fragment: Int) -> Int:
 def has_bit(bitmap: Int, bit: Int) -> Bool:
   cmp_Int(bitmap & bit, 0) matches GT
 
-def bitmap_index(bitmap: Int, bit: Int) -> Int:
-  popcount_Int(bitmap & (bit - 1))
+def bitmap_index(bitmap: Int, bit: Int) -> Int64:
+  i64(popcount_Int(bitmap & (bit - 1)))
 
 def singleton_Array(item: a) -> Array[a]:
   from_List_Array([item])
@@ -215,7 +215,7 @@ def insert_entry_node_fuel(node: Node[k], entry: Entry[k], eq_key: Eq[k], shift:
           frag = fragment(entry_hash(entry), shift)
           bit = bitpos(frag)
           if has_bit(data_bitmap, bit):
-            data_idx = i64(bitmap_index(data_bitmap, bit))
+            data_idx = bitmap_index(data_bitmap, bit)
             match get_Array(entries, data_idx):
               case Some(current):
                 same_key = and(entry_hash(current).eq_Int(entry_hash(entry)), eq_Eq(eq_key, entry_key(current), entry_key(entry)))
@@ -225,16 +225,16 @@ def insert_entry_node_fuel(node: Node[k], entry: Entry[k], eq_key: Eq[k], shift:
                   merged_child = merge_two_entries(current, entry, shift + fragment_bits)
                   next_entries = array_remove(entries, data_idx)
                   next_data_bitmap = data_bitmap.xor_Int(bit)
-                  child_idx = i64(bitmap_index(node_bitmap, bit))
+                  child_idx = bitmap_index(node_bitmap, bit)
                   next_children = array_insert(children, child_idx, merged_child)
                   (Indexed(next_data_bitmap, next_entries, node_bitmap | bit, next_children), 1)
               case None:
-                insert_idx = i64(bitmap_index(data_bitmap, bit))
+                insert_idx = bitmap_index(data_bitmap, bit)
                 next_entries = array_insert(entries, insert_idx, entry)
                 (Indexed(data_bitmap | bit, next_entries, node_bitmap, children), 1)
           else:
             if has_bit(node_bitmap, bit):
-              child_idx = i64(bitmap_index(node_bitmap, bit))
+              child_idx = bitmap_index(node_bitmap, bit)
               match get_Array(children, child_idx):
                 case Some(child):
                   (next_child, delta) = insert_entry_node_fuel(child, entry, eq_key, shift + fragment_bits, fuel.sub(1))
@@ -243,7 +243,7 @@ def insert_entry_node_fuel(node: Node[k], entry: Entry[k], eq_key: Eq[k], shift:
                   fallback_child = single_entry_node(entry, shift + fragment_bits)
                   (Indexed(data_bitmap, entries, node_bitmap | bit, array_insert(children, child_idx, fallback_child)), 1)
             else:
-              insert_idx = i64(bitmap_index(data_bitmap, bit))
+              insert_idx = bitmap_index(data_bitmap, bit)
               next_entries = array_insert(entries, insert_idx, entry)
               (Indexed(data_bitmap | bit, next_entries, node_bitmap, children), 1)
         case Collision(collision_hash, entries):
@@ -281,7 +281,7 @@ def remove_entry_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], 
           bit = bitpos(frag)
           current_node = Indexed(data_bitmap, entries, node_bitmap, children)
           if has_bit(data_bitmap, bit):
-            data_idx = i64(bitmap_index(data_bitmap, bit))
+            data_idx = bitmap_index(data_bitmap, bit)
             match get_Array(entries, data_idx):
               case Some(current):
                 same_key = and(entry_hash(current).eq_Int(key_hash), eq_Eq(eq_key, entry_key(current), key))
@@ -295,7 +295,7 @@ def remove_entry_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], 
                 (Some(current_node), 0)
           else:
             if has_bit(node_bitmap, bit):
-              child_idx = i64(bitmap_index(node_bitmap, bit))
+              child_idx = bitmap_index(node_bitmap, bit)
               match get_Array(children, child_idx):
                 case None:
                   (Some(current_node), 0)
@@ -349,7 +349,7 @@ def contains_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shif
           frag = fragment(key_hash, shift)
           bit = bitpos(frag)
           if has_bit(data_bitmap, bit):
-            data_idx = i64(bitmap_index(data_bitmap, bit))
+            data_idx = bitmap_index(data_bitmap, bit)
             match get_Array(entries, data_idx):
               case Some(Entry(entry_hash, entry_key)):
                 and(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key))
@@ -357,7 +357,7 @@ def contains_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shif
                 False
           else:
             if has_bit(node_bitmap, bit):
-              child_idx = i64(bitmap_index(node_bitmap, bit))
+              child_idx = bitmap_index(node_bitmap, bit)
               match get_Array(children, child_idx):
                 case Some(child):
                   contains_node_fuel(child, key_hash, key, eq_key, shift + fragment_bits, fuel.sub(1))
