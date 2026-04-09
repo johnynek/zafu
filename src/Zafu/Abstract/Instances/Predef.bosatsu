@@ -27,6 +27,10 @@ from Bosatsu/Num/Float64 import (
   is_nan,
   mulf,
 )
+from Bosatsu/Num/Int64 import (
+  int64_to_Int,
+  int_low_bits_to_Int64 as i64,
+)
 from Zafu/Collection/List import (
   size as size_List,
   is_empty as is_empty_List,
@@ -663,13 +667,13 @@ semigroup_List: Semigroup[List[a]] = semigroup_specialized(
 monoid_List: Monoid[List[a]] = monoid_from_semigroup([], semigroup_List)
 
 def foldr_Array(items: Array[a], init: b, fn: (a, b) -> b) -> b:
-  cnt = size_Array(items)
+  cnt = int64_to_Int(size_Array(items))
   def go(rem: Int, idx: Int, acc: b) -> b:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         acc
       case _:
-        match get_Array(items, idx):
+        match get_Array(items, i64(idx)):
           case Some(item):
             go(rem.sub(1), idx.sub(1), fn(item, acc))
           case None:
@@ -682,8 +686,8 @@ foldable_Array: Foldable[Array] = foldable_specialized(
   (items, monoid, fn) -> foldl_Array(items, empty_Monoid(monoid), (acc, item) -> combine_Monoid(monoid, acc, fn(item))),
   foldl_state_Array,
   foldr_state_Array,
-  (items) -> size_Array(items) matches 0,
-  size_Array,
+  (items) -> int64_to_Int(size_Array(items)) matches 0,
+  items -> int64_to_Int(size_Array(items)),
   to_List_Array,
 )
 

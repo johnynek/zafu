@@ -2,12 +2,21 @@ package Zafu/Benchmark/Game/FannkuchRedux
 
 from Bosatsu/Collection/Array import (
   Array,
+  concat_all_Array,
   from_List_Array,
-  get_or_Array,
-  set_or_self_Array,
-  size_Array,
-  tabulate_Array,
+  get_or_Array as get_or_Array64,
+  set_or_self_Array as set_or_self_Array64,
+  size_Array as size_Array64,
+  slice_Array as slice_Array64,
+  tabulate_Array as tabulate_Array64,
   to_List_Array,
+)
+from Bosatsu/Num/Int64 import (
+  Int64,
+  cmp_Int64,
+  int64_to_Int,
+  int_low_bits_to_Int64 as i64,
+  sub_Int64,
 )
 from Bosatsu/Prog import (
   Main,
@@ -52,6 +61,23 @@ exposes Bosatsu/Prog
 
 struct FannkuchResult(checksum: Int, max_flips: Int)
 
+struct FlipView(base: Array[Int], rev_prefixes: List[Int64])
+
+def size_Array(items: Array[a]) -> Int:
+  int64_to_Int(size_Array64(items))
+
+def get_or_Array(items: Array[a], idx: Int, default: Int -> a) -> a:
+  get_or_Array64(items, i64(idx), _ -> default(idx))
+
+def set_or_self_Array(items: Array[a], idx: Int, value: a) -> Array[a]:
+  set_or_self_Array64(items, i64(idx), value)
+
+def slice_Array(items: Array[a], start: Int, end: Int) -> Array[a]:
+  slice_Array64(items, i64(start), i64(end))
+
+def tabulate_Array(n: Int, fn: Int -> a) -> Array[a]:
+  tabulate_Array64(i64(n), idx -> fn(int64_to_Int(idx)))
+
 struct PermutationState(
   perm: Array[Int],
   counts: Array[Int],
@@ -73,6 +99,16 @@ def max_Int(a: Int, b: Int) -> Int:
     case GT | EQ:
       a
 
+def factorial(n: Int) -> Int:
+  def go(rem: Int, next: Int, acc: Int) -> Int:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        acc
+      case _:
+        go(rem.sub(1), next.add(1), acc.mul(next))
+
+  go(n, 1, 1)
+
 def rotate_prefix_left_array(values: Array[Int], last_idx: Int) -> Array[Int]:
   size = size_Array(values)
   if cmp_Int(size, 1) matches LT | EQ:
@@ -82,50 +118,47 @@ def rotate_prefix_left_array(values: Array[Int], last_idx: Int) -> Array[Int]:
     if cmp_Int(effective_last, 0) matches LT | EQ:
       values
     else:
-      head = get_or_Array(values, 0, _ -> 0)
-      tabulate_Array(size, idx -> (
-        if cmp_Int(idx, effective_last) matches LT:
-          get_or_Array(values, idx.add(1), _ -> head)
-        elif idx.eq_Int(effective_last):
-          head
-        else:
-          get_or_Array(values, idx, _ -> head)
-      ))
+      prefix_end = effective_last.add(1)
+      concat_all_Array([
+        slice_Array(values, 1, prefix_end),
+        slice_Array(values, 0, 1),
+        slice_Array(values, prefix_end, size),
+      ])
 
-def reverse_prefix_array(values: Array[Int], last_idx: Int) -> Array[Int]:
-  size = size_Array(values)
-  if cmp_Int(size, 1) matches LT | EQ:
-    values
-  else:
-    effective_last = min_Int(last_idx, size.sub(1))
-    if cmp_Int(effective_last, 0) matches LT | EQ:
-      values
-    else:
-      # Arrays are immutable here, so a prefix reversal still needs one
-      # replacement array. Keep it to a single tabulation over the source.
-      tabulate_Array(size, idx -> (
-        if cmp_Int(idx, effective_last) matches GT:
-          get_or_Array(values, idx, _ -> 0)
+def resolve_flip_index(rev_prefixes: List[Int64], idx: Int64) -> Int64:
+  def go(current: Int64, remaining: List[Int64]) -> Int64:
+    loop remaining:
+      case []:
+        current
+      case [last_idx, *tail]:
+        next = if cmp_Int64(current, last_idx) matches GT:
+          current
         else:
-          get_or_Array(values, effective_last.sub(idx), _ -> 0)
-      ))
+          sub_Int64(last_idx, current)
+        go(next, tail)
+
+  go(idx, rev_prefixes)
 
 def flip_count_array(values: Array[Int]) -> Int:
   n_size = size_Array(values)
   fuel0 = n_size.mul(n_size).add(1)
+  first0 = get_or_Array(values, 0, _ -> 0)
+  view0 = FlipView(values, [])
 
-  def go(curr: Array[Int], flips: Int, fuel: Int) -> Int:
+  def go(curr: FlipView, first: Int, flips: Int, fuel: Int) -> Int:
     loop fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         flips
       case _:
-        first = get_or_Array(curr, 0, _ -> 0)
         if first.eq_Int(0):
           flips
         else:
-          go(reverse_prefix_array(curr, first), flips.add(1), fuel.sub(1))
+          FlipView(base, rev_prefixes) = curr
+          next_first = get_or_Array64(base, resolve_flip_index(rev_prefixes, i64(first)), _ -> 0)
+          next_view = FlipView(base, [i64(first), *rev_prefixes])
+          go(next_view, next_first, flips.add(1), fuel.sub(1))
 
-  go(values, 0, fuel0)
+  go(view0, first0, 0, fuel0)
 
 def flip_score_array(values: Array[Int]) -> Int:
   first = get_or_Array(values, 0, _ -> 0)
@@ -152,16 +185,6 @@ def initial_state(n: Int) -> PermutationState:
     0,
     False,
   )
-
-def factorial(n: Int) -> Int:
-  def go(rem: Int, next: Int, acc: Int) -> Int:
-    loop rem:
-      case _ if cmp_Int(rem, 0) matches LT | EQ:
-        acc
-      case _:
-        go(rem.sub(1), next.add(1), acc.mul(next))
-
-  go(n, 1, 1)
 
 def next_permutation_state(n: Int, state: PermutationState) -> Option[PermutationState]:
   PermutationState(perm0, counts0, index0, odd0) = state

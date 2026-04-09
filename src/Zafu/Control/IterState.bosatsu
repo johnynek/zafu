@@ -5,6 +5,10 @@ from Bosatsu/Collection/Array import (
   size_Array,
   get_Array,
 )
+from Bosatsu/Num/Int64 import (
+  int64_to_Int,
+  int_low_bits_to_Int64 as i64,
+)
 
 export (
   IterState(),
@@ -51,13 +55,13 @@ def foldr_List(items: List[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterSt
   foldl_List(items.reverse(), init, (acc, item) -> fn(item, acc))
 
 def foldl_Array(items: Array[a], init: b, fn: (b, a) -> IterState[b, b]) -> IterState[b, b]:
-  cnt = size_Array(items)
+  cnt = int64_to_Int(size_Array(items))
   def go(rem: Int, idx: Int, acc: b) -> IterState[b, b]:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         Continue(acc)
       case _:
-        match get_Array(items, idx):
+        match get_Array(items, i64(idx)):
           case Some(item):
             match fn(acc, item):
               case Done(done_value):
@@ -69,13 +73,13 @@ def foldl_Array(items: Array[a], init: b, fn: (b, a) -> IterState[b, b]) -> Iter
   go(cnt, 0, init)
 
 def foldr_Array(items: Array[a], init: b, fn: (a, b) -> IterState[b, b]) -> IterState[b, b]:
-  cnt = size_Array(items)
+  cnt = int64_to_Int(size_Array(items))
   def go(rem: Int, idx: Int, acc: b) -> IterState[b, b]:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         Continue(acc)
       case _:
-        match get_Array(items, idx):
+        match get_Array(items, i64(idx)):
           case Some(item):
             match fn(item, acc):
               case Done(done_value):

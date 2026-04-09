@@ -3,18 +3,22 @@ package Zafu/Collection/Vector
 from Bosatsu/Collection/Array import (
   Array,
   empty_Array,
-  tabulate_Array,
+  tabulate_Array as tabulate_Array64,
   from_List_Array,
   to_List_Array,
-  size_Array,
-  get_Array,
-  get_or_Array,
+  size_Array as size_Array64,
+  get_Array as get_Array64,
+  get_or_Array as get_or_Array64,
   foldl_Array,
   map_Array,
-  set_or_self_Array,
+  set_or_self_Array as set_or_self_Array64,
   concat_all_Array,
-  slice_Array,
+  slice_Array as slice_Array64,
   reverse_Array,
+)
+from Bosatsu/Num/Int64 import (
+  int64_to_Int,
+  int_low_bits_to_Int64 as i64,
 )
 from Zafu/Testing/HedgeHog import (
   Gen,
@@ -143,6 +147,25 @@ exposes (
   Zafu/Abstract/Semigroup,
   Zafu/Abstract/Traverse,
 )
+
+def tabulate_Array(n: Int, fn: Int -> a) -> Array[a]:
+  tabulate_Array64(i64(n), idx -> fn(int64_to_Int(idx)))
+
+def size_Array(items: Array[a]) -> Int:
+  int64_to_Int(size_Array64(items))
+
+def get_Array(items: Array[a], idx: Int) -> Option[a]:
+  get_Array64(items, i64(idx))
+
+def get_or_Array(items: Array[a], idx: Int, default: Int -> a) -> a:
+  get_or_Array64(items, i64(idx), _ -> default(idx))
+
+def set_or_self_Array(items: Array[a], idx: Int, value: a) -> Array[a]:
+  set_or_self_Array64(items, i64(idx), value)
+
+def slice_Array(items: Array[a], start: Int, end: Int) -> Array[a]:
+  slice_Array64(items, i64(start), i64(end))
+
 chunk_width = 32
 hash_seed_vector: Int = 1123
 hash_tag_vector: Int = 1129

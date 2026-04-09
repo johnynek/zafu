@@ -2,11 +2,15 @@ package Zafu/Collection/Chain
 from Bosatsu/Collection/Array import (
   Array,
   from_List_Array,
-  size_Array,
-  get_Array,
+  size_Array as size_Array64,
+  get_Array as get_Array64,
   foldl_Array,
-  slice_Array,
+  slice_Array as slice_Array64,
   reverse_Array,
+)
+from Bosatsu/Num/Int64 import (
+  int64_to_Int,
+  int_low_bits_to_Int64 as i64,
 )
 from Zafu/Testing/HedgeHog import (
   Gen,
@@ -124,6 +128,16 @@ exposes (
   Zafu/Abstract/Semigroup,
   Zafu/Abstract/Traverse,
 )
+
+def size_Array(items: Array[a]) -> Int:
+  int64_to_Int(size_Array64(items))
+
+def get_Array(items: Array[a], idx: Int) -> Option[a]:
+  get_Array64(items, i64(idx))
+
+def slice_Array(items: Array[a], start: Int, end: Int) -> Array[a]:
+  slice_Array64(items, i64(start), i64(end))
+
 # Internal tree used to support O(1) concat while preserving order.
 # Invariant: WrapArray and WrapList only hold collections with at least two items.
 enum Chain[a: +*]:

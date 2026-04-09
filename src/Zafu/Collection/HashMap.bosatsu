@@ -4,13 +4,17 @@ from Bosatsu/Collection/Array import (
   Array,
   empty_Array,
   from_List_Array,
-  size_Array,
-  get_Array,
+  size_Array as size_Array64,
+  get_Array as get_Array64,
   foldl_Array,
   map_Array,
-  set_or_self_Array,
+  set_or_self_Array as set_or_self_Array64,
   concat_all_Array,
-  slice_Array
+  slice_Array as slice_Array64
+)
+from Bosatsu/Num/Int64 import (
+  int64_to_Int,
+  int_low_bits_to_Int64 as i64,
 )
 from Zafu/Testing/HedgeHog import (
   Gen,
@@ -80,6 +84,18 @@ def operator &(a, b): a.and_Int(b)
 def operator |(a, b): a.or_Int(b)
 def operator <<(a, b): a.shift_left_Int(b)
 def operator >>(a, b): a.shift_right_Int(b)
+
+def size_Array(items: Array[a]) -> Int:
+  int64_to_Int(size_Array64(items))
+
+def get_Array(items: Array[a], idx: Int) -> Option[a]:
+  get_Array64(items, i64(idx))
+
+def set_or_self_Array(items: Array[a], idx: Int, value: a) -> Array[a]:
+  set_or_self_Array64(items, i64(idx), value)
+
+def slice_Array(items: Array[a], start: Int, end: Int) -> Array[a]:
+  slice_Array64(items, i64(start), i64(end))
 
 fragment_bits: Int = 5
 fragment_mask: Int = 31
