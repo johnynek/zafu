@@ -3,22 +3,29 @@ package Zafu/Collection/Vector
 from Bosatsu/Collection/Array import (
   Array,
   empty_Array,
-  tabulate_Array as tabulate_Array64,
+  tabulate_Array,
   from_List_Array,
   to_List_Array,
-  size_Array as size_Array64,
-  get_Array as get_Array64,
-  get_or_Array as get_or_Array64,
+  size_Array,
+  get_Array,
+  get_or_Array,
   foldl_Array,
   map_Array,
-  set_or_self_Array as set_or_self_Array64,
+  set_or_self_Array,
   concat_all_Array,
-  slice_Array as slice_Array64,
+  slice_Array,
   reverse_Array,
 )
 from Bosatsu/Num/Int64 import (
+  Int64,
+  add_Int64,
+  cmp_Int64,
+  div_Int64,
+  eq_Int64,
   int64_to_Int,
   int_low_bits_to_Int64 as i64,
+  mul_Int64,
+  sub_Int64,
 )
 from Zafu/Testing/HedgeHog import (
   Gen,
@@ -148,25 +155,8 @@ exposes (
   Zafu/Abstract/Traverse,
 )
 
-def tabulate_Array(n: Int, fn: Int -> a) -> Array[a]:
-  tabulate_Array64(i64(n), idx -> fn(int64_to_Int(idx)))
-
-def size_Array(items: Array[a]) -> Int:
-  int64_to_Int(size_Array64(items))
-
-def get_Array(items: Array[a], idx: Int) -> Option[a]:
-  get_Array64(items, i64(idx))
-
-def get_or_Array(items: Array[a], idx: Int, default: Int -> a) -> a:
-  get_or_Array64(items, i64(idx), _ -> default(idx))
-
-def set_or_self_Array(items: Array[a], idx: Int, value: a) -> Array[a]:
-  set_or_self_Array64(items, i64(idx), value)
-
-def slice_Array(items: Array[a], start: Int, end: Int) -> Array[a]:
-  slice_Array64(items, i64(start), i64(end))
-
 chunk_width = 32
+chunk_width64 = i64(chunk_width)
 hash_seed_vector: Int = 1123
 hash_tag_vector: Int = 1129
 
@@ -209,79 +199,86 @@ def max_Int(a: Int, b: Int) -> Int:
 def clamp_Int(value: Int, low: Int, high: Int) -> Int:
   min_Int(max_Int(value, low), high)
 
-def chunk_count(total: Int) -> Int:
-  if cmp_Int(total, 0) matches LT | EQ:
-    0
+def chunk_count64(total: Int64) -> Int64:
+  if cmp_Int64(total, i64(0)) matches LT | EQ:
+    i64(0)
   else:
-    total.add(chunk_width.sub(1)).div(chunk_width)
+    div_Int64(add_Int64(total, i64(chunk_width.sub(1))), chunk_width64)
+
+def min_Int64(a: Int64, b: Int64) -> Int64:
+  match cmp_Int64(a, b):
+    case LT | EQ:
+      a
+    case GT:
+      b
 
 def traversal_fuel(vec: Vector[a]) -> Int:
   size(vec).mul(2).add(64)
 
 def build_prefix(children: Array[Vector[a]]) -> Array[Int]:
   cnt = size_Array(children)
-  def go(rem: Int, idx: Int, total: Int, rev_prefix: List[Int]) -> List[Int]:
+  def go(rem: Int, idx: Int64, total: Int, rev_prefix: List[Int]) -> List[Int]:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         rev_prefix
       case _:
         child = get_or_Array(children, idx, _ -> empty)
         next_total = total.add(size(child))
-        go(rem.sub(1), idx.add(1), next_total, [next_total, *rev_prefix])
-  rev_prefix = go(cnt, 0, 0, [])
+        go(rem.sub(1), add_Int64(idx, i64(1)), next_total, [next_total, *rev_prefix])
+  rev_prefix = go(int64_to_Int(cnt), i64(0), 0, [])
   from_List_Array(rev_prefix.reverse())
 
 def make_branch(height: Int, children: Array[Vector[a]]) -> Vector[a]:
   prefix = build_prefix(children)
   cnt = size_Array(prefix)
-  sz = get_or_Array(prefix, cnt.sub(1), _ -> 0)
+  sz = get_or_Array(prefix, sub_Int64(cnt, i64(1)), _ -> 0)
   Branch(height, sz, prefix, children)
 
 def regroup_nodes(parent_height: Int, children: Array[Vector[a]]) -> Array[Vector[a]]:
   cnt = size_Array(children)
-  group_cnt = chunk_count(cnt)
+  group_cnt = chunk_count64(cnt)
   tabulate_Array(group_cnt, idx -> (
-    start = idx.mul(chunk_width)
-    stop = min_Int(start.add(chunk_width), cnt)
+    start = mul_Int64(idx, chunk_width64)
+    stop = min_Int64(add_Int64(start, chunk_width64), cnt)
     make_branch(parent_height, slice_Array(children, start, stop))
   ))
 
 def collapse_nodes(nodes: Array[Vector[a]]) -> Option[Vector[a]]:
   cnt0 = size_Array(nodes)
-  if cnt0.cmp_Int(1) matches LT | EQ:
-    get_Array(nodes, 0)
+  if cmp_Int64(cnt0, i64(1)) matches LT | EQ:
+    get_Array(nodes, i64(0))
   else:
-    child_height0 = get_or_Array(nodes, 0, _ -> empty).height()
+    child_height0 = get_or_Array(nodes, i64(0), _ -> empty).height()
     def go(rem: Int, nodes: Array[Vector[a]], child_height: Int) -> (Array[Vector[a]], Int):
       loop rem:
         case _ if cmp_Int(rem, 0) matches LT | EQ:
           (nodes, child_height)
         case _:
           cnt = size_Array(nodes)
-          if cnt.eq_Int(1):
+          if eq_Int64(cnt, i64(1)):
             (nodes, child_height)
           else:
             parent_height = child_height.add(1)
             next_nodes = regroup_nodes(parent_height, nodes)
             go(rem.sub(1), next_nodes, parent_height)
-    (nodes_final, _) = go(cnt0.add(64), nodes, child_height0)
-    get_Array(nodes_final, 0)
+    (nodes_final, _) = go(int64_to_Int(cnt0).add(64), nodes, child_height0)
+    get_Array(nodes_final, i64(0))
 
 def from_Array(arr: Array[a]) -> Vector[a]:
   total = size_Array(arr)
-  if total.eq_Int(0):
+  if eq_Int64(total, i64(0)):
     empty
   else:
-    leaf_cnt = chunk_count(total)
+    leaf_cnt = chunk_count64(total)
     leaves = tabulate_Array(leaf_cnt, idx -> (
-      start = idx.mul(chunk_width)
-      stop = min_Int(start.add(chunk_width), total)
+      start = mul_Int64(idx, chunk_width64)
+      stop = min_Int64(add_Int64(start, chunk_width64), total)
       chunk = slice_Array(arr, start, stop)
-      Leaf(size_Array(chunk), chunk)
+      Leaf(int64_to_Int(size_Array(chunk)), chunk)
     ))
 
-    if leaf_cnt.eq_Int(1):
-      get_or_Array(leaves, 0, _ -> empty)
+    if eq_Int64(leaf_cnt, i64(1)):
+      get_or_Array(leaves, i64(0), _ -> empty)
     else:
       def go(rem: Int, nodes: Array[Vector[a]], child_height: Int) -> (Array[Vector[a]], Int):
         loop rem:
@@ -289,20 +286,20 @@ def from_Array(arr: Array[a]) -> Vector[a]:
             (nodes, child_height)
           case _:
             cnt = size_Array(nodes)
-            if cnt.eq_Int(1):
+            if eq_Int64(cnt, i64(1)):
               (nodes, child_height)
             else:
               parent_height = child_height.add(1)
-              next_cnt = chunk_count(cnt)
+              next_cnt = chunk_count64(cnt)
               next_nodes = tabulate_Array(next_cnt, idx -> (
-                start = idx.mul(chunk_width)
-                stop = min_Int(start.add(chunk_width), cnt)
+                start = mul_Int64(idx, chunk_width64)
+                stop = min_Int64(add_Int64(start, chunk_width64), cnt)
                 child_slice = slice_Array(nodes, start, stop)
                 make_branch(parent_height, child_slice)
               ))
               go(rem.sub(1), next_nodes, parent_height)
-      (nodes_final, _) = go(leaf_cnt.add(64), leaves, 0)
-      get_or_Array(nodes_final, 0, _ -> empty)
+      (nodes_final, _) = go(int64_to_Int(leaf_cnt).add(64), leaves, 0)
+      get_or_Array(nodes_final, i64(0), _ -> empty)
 
 # Builds a vector from a list while preserving order.
 def from_List(list: List[a]) -> Vector[a]:
@@ -337,16 +334,16 @@ def to_Array(vec: Vector[a]) -> Array[a]:
 def to_List(vec: Vector[a]) -> List[a]:
   to_List_Array(to_Array(vec))
 
-def choose_child_loop(prefix: Array[Int], target: Int, low: Int, high: Int, fuel: Int) -> Option[Int]:
+def choose_child_loop(prefix: Array[Int], target: Int, low: Int64, high: Int64, fuel: Int) -> Option[Int64]:
   loop fuel:
-    case _ if cmp_Int(low, high) matches GT:
+    case _ if cmp_Int64(low, high) matches GT:
       None
     case _ if cmp_Int(fuel, 0) matches GT:
-      mid = low.add(high).div(2)
+      mid = div_Int64(add_Int64(low, high), i64(2))
       bound = get_or_Array(prefix, mid, _ -> 0)
       if cmp_Int(target, bound) matches LT:
-        prev = get_or_Array(prefix, mid.sub(1), _ -> 0)
-        is_match = if mid.eq_Int(0):
+        prev = get_or_Array(prefix, sub_Int64(mid, i64(1)), _ -> 0)
+        is_match = if eq_Int64(mid, i64(0)):
           True
         else:
           cmp_Int(target, prev) matches GT | EQ
@@ -354,13 +351,13 @@ def choose_child_loop(prefix: Array[Int], target: Int, low: Int, high: Int, fuel
         if is_match:
           Some(mid)
         else:
-          choose_child_loop(prefix, target, low, mid.sub(1), fuel.sub(1))
+          choose_child_loop(prefix, target, low, sub_Int64(mid, i64(1)), fuel.sub(1))
       else:
-        choose_child_loop(prefix, target, mid.add(1), high, fuel.sub(1))
+        choose_child_loop(prefix, target, add_Int64(mid, i64(1)), high, fuel.sub(1))
     case _:
       None
 
-def choose_child(prefix: Array[Int], target: Int, low: Int, high: Int, fuel: Int) -> Option[Int]:
+def choose_child(prefix: Array[Int], target: Int, low: Int64, high: Int64, fuel: Int) -> Option[Int64]:
   choose_child_loop(prefix, target, low, high, fuel)
 
 def find_with_loop(current: Vector[a], current_idx: Int, fuel: Int, on_missing: () -> b, on_found: a -> b) -> b:
@@ -370,22 +367,22 @@ def find_with_loop(current: Vector[a], current_idx: Int, fuel: Int, on_missing: 
     case _:
       match current:
         case Leaf(_, items):
-          match get_Array(items, current_idx):
+          match get_Array(items, i64(current_idx)):
             case Some(item):
               on_found(item)
             case None:
               on_missing(Unit)
         case Branch(_, _, prefix, children):
           cnt = size_Array(children)
-          if cnt.eq_Int(0):
+          if eq_Int64(cnt, i64(0)):
             on_missing(Unit)
           else:
-            child_idx_opt = choose_child(prefix, current_idx, 0, cnt.sub(1), cnt.add(4))
+            child_idx_opt = choose_child(prefix, current_idx, i64(0), sub_Int64(cnt, i64(1)), int64_to_Int(cnt).add(4))
             match child_idx_opt:
               case None:
                 on_missing(Unit)
               case Some(child_idx):
-                prev = get_or_Array(prefix, child_idx.sub(1), _ -> 0)
+                prev = get_or_Array(prefix, sub_Int64(child_idx, i64(1)), _ -> 0)
                 local_idx = current_idx.sub(prev)
                 match get_Array(children, child_idx):
                   case Some(child):
@@ -558,33 +555,33 @@ def flat_map(vec: Vector[a], fn: a -> Vector[b]) -> Vector[b]:
   from_Array(concat_all_Array(rev_arrays.reverse()))
 
 def split_first_Array(arr: Array[a]) -> Option[(a, Array[a])]:
-  match get_Array(arr, 0):
+  match get_Array(arr, i64(0)):
       case Some(head):
         cnt = size_Array(arr)
-        Some((head, slice_Array(arr, 1, cnt)))
+        Some((head, slice_Array(arr, i64(1), cnt)))
       case None:
         None
 
 def split_last_Array(arr: Array[a]) -> Option[(Array[a], a)]:
   cnt = size_Array(arr)
-  if cnt.eq_Int(0):
+  if eq_Int64(cnt, i64(0)):
     None
   else:
-    last_idx = cnt.sub(1)
+    last_idx = sub_Int64(cnt, i64(1))
     match get_Array(arr, last_idx):
       case Some(last):
-        Some((slice_Array(arr, 0, last_idx), last))
+        Some((slice_Array(arr, i64(0), last_idx), last))
       case None:
         None
 
 def leaf_nodes(arr: Array[a]) -> Array[Vector[a]]:
   total = size_Array(arr)
-  cnt = chunk_count(total)
+  cnt = chunk_count64(total)
   tabulate_Array(cnt, idx -> (
-    start = idx.mul(chunk_width)
-    stop = min_Int(start.add(chunk_width), total)
+    start = mul_Int64(idx, chunk_width64)
+    stop = min_Int64(add_Int64(start, chunk_width64), total)
     items = slice_Array(arr, start, stop)
-    Leaf(size_Array(items), items)
+    Leaf(int64_to_Int(size_Array(items)), items)
   ))
 
 def raise_to_height(vec: Vector[a], target_height: Int) -> Vector[a]:
@@ -694,10 +691,10 @@ def singleton_leaf(item: a) -> Vector[a]:
 
 def node_from_children(height: Int, children: Array[Vector[a]]) -> Vector[a]:
   cnt = size_Array(children)
-  if cnt.eq_Int(0):
+  if eq_Int64(cnt, i64(0)):
     empty
-  elif cnt.eq_Int(1):
-    get_or_Array(children, 0, _ -> empty)
+  elif eq_Int64(cnt, i64(1)):
+    get_or_Array(children, i64(0), _ -> empty)
   else:
     make_branch(height, children)
 
@@ -715,26 +712,26 @@ def append_nodes_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Array[Vector[a
             from_List_Array([vec, singleton_leaf(item)])
         case Branch(height, _, _, children):
           cnt = size_Array(children)
-          if cnt.eq_Int(0):
+          if eq_Int64(cnt, i64(0)):
             from_List_Array([concat_fallback(vec, singleton_leaf(item))])
           else:
-            last_idx = cnt.sub(1)
+            last_idx = sub_Int64(cnt, i64(1))
             child = get_or_Array(children, last_idx, _ -> empty)
             grown = append_nodes_with_fuel(child, item, fuel.sub(1))
             grown_cnt = size_Array(grown)
-            if grown_cnt.eq_Int(1):
-              next_child = get_or_Array(grown, 0, _ -> child)
+            if eq_Int64(grown_cnt, i64(1)):
+              next_child = get_or_Array(grown, i64(0), _ -> child)
               next_children = set_or_self_Array(children, last_idx, next_child)
               from_List_Array([make_branch(height, next_children)])
             else:
-              prefix_children = slice_Array(children, 0, last_idx)
+              prefix_children = slice_Array(children, i64(0), last_idx)
               expanded_children = concat_all_Array([prefix_children, grown])
               expanded_cnt = size_Array(expanded_children)
-              if cmp_Int(expanded_cnt, chunk_width) matches LT | EQ:
+              if cmp_Int64(expanded_cnt, chunk_width64) matches LT | EQ:
                 from_List_Array([make_branch(height, expanded_children)])
               else:
-                left_children = slice_Array(expanded_children, 0, chunk_width)
-                right_children = slice_Array(expanded_children, chunk_width, expanded_cnt)
+                left_children = slice_Array(expanded_children, i64(0), chunk_width64)
+                right_children = slice_Array(expanded_children, chunk_width64, expanded_cnt)
                 from_List_Array([make_branch(height, left_children), make_branch(height, right_children)])
 
 def append_no_split_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Option[Vector[a]]:
@@ -751,10 +748,10 @@ def append_no_split_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Option[Vect
             None
         case Branch(height, _, _, children):
           cnt = size_Array(children)
-          if cnt.eq_Int(0):
+          if eq_Int64(cnt, i64(0)):
             None
           else:
-            last_idx = cnt.sub(1)
+            last_idx = sub_Int64(cnt, i64(1))
             child = get_or_Array(children, last_idx, _ -> empty)
             match append_no_split_with_fuel(child, item, fuel.sub(1)):
               case Some(next_child):
@@ -777,25 +774,25 @@ def prepend_nodes_with_fuel(vec: Vector[a], item: a, fuel: Int) -> Array[Vector[
             from_List_Array([singleton_leaf(item), vec])
         case Branch(height, _, _, children):
           cnt = size_Array(children)
-          if cnt.eq_Int(0):
+          if eq_Int64(cnt, i64(0)):
             from_List_Array([concat_fallback(singleton_leaf(item), vec)])
           else:
-            child = get_or_Array(children, 0, _ -> empty)
+            child = get_or_Array(children, i64(0), _ -> empty)
             grown = prepend_nodes_with_fuel(child, item, fuel.sub(1))
             grown_cnt = size_Array(grown)
-            if grown_cnt.eq_Int(1):
-              next_child = get_or_Array(grown, 0, _ -> child)
-              next_children = set_or_self_Array(children, 0, next_child)
+            if eq_Int64(grown_cnt, i64(1)):
+              next_child = get_or_Array(grown, i64(0), _ -> child)
+              next_children = set_or_self_Array(children, i64(0), next_child)
               from_List_Array([make_branch(height, next_children)])
             else:
-              suffix_children = slice_Array(children, 1, cnt)
+              suffix_children = slice_Array(children, i64(1), cnt)
               expanded_children = concat_all_Array([grown, suffix_children])
               expanded_cnt = size_Array(expanded_children)
-              if cmp_Int(expanded_cnt, chunk_width) matches LT | EQ:
+              if cmp_Int64(expanded_cnt, chunk_width64) matches LT | EQ:
                 from_List_Array([make_branch(height, expanded_children)])
               else:
-                left_children = slice_Array(expanded_children, 0, chunk_width)
-                right_children = slice_Array(expanded_children, chunk_width, expanded_cnt)
+                left_children = slice_Array(expanded_children, i64(0), chunk_width64)
+                right_children = slice_Array(expanded_children, chunk_width64, expanded_cnt)
                 from_List_Array([make_branch(height, left_children), make_branch(height, right_children)])
 
 def updated_with_fuel(vec: Vector[a], idx: Int, item: a, fuel: Int) -> Option[Vector[a]]:
@@ -810,7 +807,7 @@ def updated_with_fuel(vec: Vector[a], idx: Int, item: a, fuel: Int) -> Option[Ve
           elif cmp_Int(idx, sz) matches GT | EQ:
             None
           else:
-            Some(Leaf(sz, set_or_self_Array(items, idx, item)))
+            Some(Leaf(sz, set_or_self_Array(items, i64(idx), item)))
         case Branch(height, sz, prefix, children):
           if cmp_Int(idx, 0) matches LT:
             None
@@ -818,14 +815,14 @@ def updated_with_fuel(vec: Vector[a], idx: Int, item: a, fuel: Int) -> Option[Ve
             None
           else:
             cnt = size_Array(children)
-            if cnt.eq_Int(0):
+            if eq_Int64(cnt, i64(0)):
               None
             else:
-              match choose_child(prefix, idx, 0, cnt.sub(1), cnt.add(4)):
+              match choose_child(prefix, idx, i64(0), sub_Int64(cnt, i64(1)), int64_to_Int(cnt).add(4)):
                 case None:
                   None
                 case Some(child_idx):
-                  prev = get_or_Array(prefix, child_idx.sub(1), _ -> 0)
+                  prev = get_or_Array(prefix, sub_Int64(child_idx, i64(1)), _ -> 0)
                   local_idx = idx.sub(prev)
                   match get_Array(children, child_idx):
                     case None:
@@ -845,25 +842,25 @@ def take_with_fuel(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
     case _:
       match vec:
         case Leaf(_, items):
-          taken = slice_Array(items, 0, count)
-          Leaf(size_Array(taken), taken)
+          taken = slice_Array(items, i64(0), i64(count))
+          Leaf(int64_to_Int(size_Array(taken)), taken)
         case Branch(height, _, prefix, children):
           cnt = size_Array(children)
-          if cnt.eq_Int(0):
+          if eq_Int64(cnt, i64(0)):
             empty
           else:
-            match choose_child(prefix, count.sub(1), 0, cnt.sub(1), cnt.add(4)):
+            match choose_child(prefix, count.sub(1), i64(0), sub_Int64(cnt, i64(1)), int64_to_Int(cnt).add(4)):
               case None:
                 empty
               case Some(child_idx):
-                prev = get_or_Array(prefix, child_idx.sub(1), _ -> 0)
+                prev = get_or_Array(prefix, sub_Int64(child_idx, i64(1)), _ -> 0)
                 local_count = count.sub(prev)
                 child = get_or_Array(children, child_idx, _ -> empty)
                 child_taken = if local_count.eq_Int(size(child)):
                   child
                 else:
                   take_with_fuel(child, local_count, fuel.sub(1))
-                left_children = slice_Array(children, 0, child_idx)
+                left_children = slice_Array(children, i64(0), child_idx)
                 kept_children = concat_all_Array([left_children, from_List_Array([child_taken])])
                 node_from_children(height, kept_children)
 
@@ -875,25 +872,25 @@ def drop_with_fuel(vec: Vector[a], count: Int, fuel: Int) -> Vector[a]:
       match vec:
         case Leaf(_, items):
           sz = size_Array(items)
-          kept = slice_Array(items, count, sz)
-          Leaf(size_Array(kept), kept)
+          kept = slice_Array(items, i64(count), sz)
+          Leaf(int64_to_Int(size_Array(kept)), kept)
         case Branch(height, _, prefix, children):
           cnt = size_Array(children)
-          if cnt.eq_Int(0):
+          if eq_Int64(cnt, i64(0)):
             empty
           else:
-            match choose_child(prefix, count, 0, cnt.sub(1), cnt.add(4)):
+            match choose_child(prefix, count, i64(0), sub_Int64(cnt, i64(1)), int64_to_Int(cnt).add(4)):
               case None:
                 empty
               case Some(child_idx):
-                prev = get_or_Array(prefix, child_idx.sub(1), _ -> 0)
+                prev = get_or_Array(prefix, sub_Int64(child_idx, i64(1)), _ -> 0)
                 local_count = count.sub(prev)
                 child = get_or_Array(children, child_idx, _ -> empty)
                 child_kept = if local_count.eq_Int(0):
                   child
                 else:
                   drop_with_fuel(child, local_count, fuel.sub(1))
-                right_children = slice_Array(children, child_idx.add(1), cnt)
+                right_children = slice_Array(children, add_Int64(child_idx, i64(1)), cnt)
                 kept_children = if child_kept.size().eq_Int(0):
                   right_children
                 else:
@@ -929,9 +926,9 @@ def eq_chunk(eq_item: Eq[a], left_items: Array[a], left_idx: Int, right_items: A
     case _ if cmp_Int(rem, 0) matches LT | EQ:
       True
     case _:
-      match get_Array(left_items, left_idx):
+      match get_Array(left_items, i64(left_idx)):
         case Some(left_item):
-          match get_Array(right_items, right_idx):
+          match get_Array(right_items, i64(right_idx)):
             case Some(right_item):
               if eq_Eq(eq_item, left_item, right_item):
                 eq_chunk(eq_item, left_items, left_idx.add(1), right_items, right_idx.add(1), rem.sub(1))
@@ -947,9 +944,9 @@ def cmp_chunk(ord_item: Ord[a], left_items: Array[a], left_idx: Int, right_items
     case _ if cmp_Int(rem, 0) matches LT | EQ:
       EQ
     case _:
-      match get_Array(left_items, left_idx):
+      match get_Array(left_items, i64(left_idx)):
         case Some(left_item):
-          match get_Array(right_items, right_idx):
+          match get_Array(right_items, i64(right_idx)):
             case Some(right_item):
               head_cmp = cmp_Ord(ord_item, left_item, right_item)
               if head_cmp matches EQ:
@@ -966,7 +963,7 @@ def hash_chunk(hash_item: Hash[a], items: Array[a], idx: Int, rem: Int, acc: Int
     case _ if cmp_Int(rem, 0) matches LT | EQ:
       acc
     case _:
-      match get_Array(items, idx):
+      match get_Array(items, i64(idx)):
         case Some(item):
           next_acc = mix_61(acc, hash_Hash(hash_item, item))
           hash_chunk(hash_item, items, idx.add(1), rem.sub(1), next_acc)
@@ -997,8 +994,8 @@ def eq_Vector_items(eq_item: Eq[a], left: Vector[a], right: Vector[a]) -> Bool:
             right_ready = ready_leaf(right_stack, right_curr, right_leaf_fuel)
             match (left_ready, right_ready):
               case (Some(((left_items, left_idx), next_left_stack)), Some(((right_items, right_idx), next_right_stack))):
-                left_avail = size_Array(left_items).sub(left_idx)
-                right_avail = size_Array(right_items).sub(right_idx)
+                left_avail = int64_to_Int(sub_Int64(size_Array(left_items), i64(left_idx)))
+                right_avail = int64_to_Int(sub_Int64(size_Array(right_items), i64(right_idx)))
                 step = min_Int(rem, min_Int(left_avail, right_avail))
                 if cmp_Int(step, 0) matches LT | EQ:
                   False
@@ -1006,11 +1003,11 @@ def eq_Vector_items(eq_item: Eq[a], left: Vector[a], right: Vector[a]) -> Bool:
                   if eq_chunk(eq_item, left_items, left_idx, right_items, right_idx, step):
                     next_left_idx = left_idx.add(step)
                     next_right_idx = right_idx.add(step)
-                    next_left_curr = if next_left_idx.eq_Int(size_Array(left_items)):
+                    next_left_curr = if next_left_idx.eq_Int(int64_to_Int(size_Array(left_items))):
                       None
                     else:
                       Some((left_items, next_left_idx))
-                    next_right_curr = if next_right_idx.eq_Int(size_Array(right_items)):
+                    next_right_curr = if next_right_idx.eq_Int(int64_to_Int(size_Array(right_items))):
                       None
                     else:
                       Some((right_items, next_right_idx))
@@ -1047,8 +1044,8 @@ def cmp_Vector_items(ord_item: Ord[a], left: Vector[a], right: Vector[a]) -> Com
           right_ready = ready_leaf(right_stack, right_curr, right_leaf_fuel)
           match (left_ready, right_ready):
             case (Some(((left_items, left_idx), next_left_stack)), Some(((right_items, right_idx), next_right_stack))):
-              left_avail = size_Array(left_items).sub(left_idx)
-              right_avail = size_Array(right_items).sub(right_idx)
+              left_avail = int64_to_Int(sub_Int64(size_Array(left_items), i64(left_idx)))
+              right_avail = int64_to_Int(sub_Int64(size_Array(right_items), i64(right_idx)))
               step = min_Int(rem, min_Int(left_avail, right_avail))
               if cmp_Int(step, 0) matches LT | EQ:
                 EQ
@@ -1057,11 +1054,11 @@ def cmp_Vector_items(ord_item: Ord[a], left: Vector[a], right: Vector[a]) -> Com
                 if head_cmp matches EQ:
                   next_left_idx = left_idx.add(step)
                   next_right_idx = right_idx.add(step)
-                  next_left_curr = if next_left_idx.eq_Int(size_Array(left_items)):
+                  next_left_curr = if next_left_idx.eq_Int(int64_to_Int(size_Array(left_items))):
                     None
                   else:
                     Some((left_items, next_left_idx))
-                  next_right_curr = if next_right_idx.eq_Int(size_Array(right_items)):
+                  next_right_curr = if next_right_idx.eq_Int(int64_to_Int(size_Array(right_items))):
                     None
                   else:
                     Some((right_items, next_right_idx))
@@ -1094,14 +1091,14 @@ def hash_Vector_items(hash_item: Hash[a], vec: Vector[a]) -> Int:
           case None:
             finish_61(acc, processed, hash_tag_vector)
           case Some(((items, idx), next_stack)):
-            avail = size_Array(items).sub(idx)
+            avail = int64_to_Int(sub_Int64(size_Array(items), i64(idx)))
             step = min_Int(rem, avail)
             if cmp_Int(step, 0) matches LT | EQ:
               finish_61(acc, processed, hash_tag_vector)
             else:
               next_acc = hash_chunk(hash_item, items, idx, step, acc)
               next_idx = idx.add(step)
-              next_curr = if next_idx.eq_Int(size_Array(items)):
+              next_curr = if next_idx.eq_Int(int64_to_Int(size_Array(items))):
                 None
               else:
                 Some((items, next_idx))
@@ -1125,11 +1122,11 @@ def zip_chunk_with_fuel(left_items: Array[a], left_idx: Int, right_items: Array[
     case _ if cmp_Int(rem, 0) matches LT | EQ:
       (left_idx, right_idx, rev_pairs)
     case _:
-      match get_Array(left_items, left_idx):
+      match get_Array(left_items, i64(left_idx)):
         case None:
           (left_idx, right_idx, rev_pairs)
         case Some(left_item):
-          match get_Array(right_items, right_idx):
+          match get_Array(right_items, i64(right_idx)):
             case None:
               (left_idx, right_idx, rev_pairs)
             case Some(right_item):
@@ -1171,8 +1168,8 @@ def zip_rev_with_fuel(left_stack: List[Vector[a]], right_stack: List[Vector[b]],
 
       match (left_ready, right_ready):
         case (Some(((left_items, left_idx), next_left_stack)), Some(((right_items, right_idx), next_right_stack))):
-          left_avail = size_Array(left_items).sub(left_idx)
-          right_avail = size_Array(right_items).sub(right_idx)
+          left_avail = int64_to_Int(sub_Int64(size_Array(left_items), i64(left_idx)))
+          right_avail = int64_to_Int(sub_Int64(size_Array(right_items), i64(right_idx)))
           step = min_Int(rem, min_Int(left_avail, right_avail))
           if cmp_Int(step, 0) matches LT | EQ:
             rev_pairs
@@ -1180,11 +1177,11 @@ def zip_rev_with_fuel(left_stack: List[Vector[a]], right_stack: List[Vector[b]],
             (next_left_idx, next_right_idx, rev_pairs_next) = zip_chunk_with_fuel(
               left_items, left_idx, right_items, right_idx, step, rev_pairs
             )
-            next_left_curr = if next_left_idx.eq_Int(size_Array(left_items)):
+            next_left_curr = if next_left_idx.eq_Int(int64_to_Int(size_Array(left_items))):
               None
             else:
               Some((left_items, next_left_idx))
-            next_right_curr = if next_right_idx.eq_Int(size_Array(right_items)):
+            next_right_curr = if next_right_idx.eq_Int(int64_to_Int(size_Array(right_items))):
               None
             else:
               Some((right_items, next_right_idx))
@@ -1208,10 +1205,10 @@ def append(vec: Vector[a], item: a) -> Vector[a]:
     case None:
       nodes = append_nodes_with_fuel(vec, item, height(vec).add(8))
       cnt = size_Array(nodes)
-      if cnt.eq_Int(0):
+      if eq_Int64(cnt, i64(0)):
         vec
-      elif cnt.eq_Int(1):
-        get_or_Array(nodes, 0, _ -> vec)
+      elif eq_Int64(cnt, i64(1)):
+        get_or_Array(nodes, i64(0), _ -> vec)
       else:
         make_branch(height(vec).add(1), nodes)
 
@@ -1219,10 +1216,10 @@ def append(vec: Vector[a], item: a) -> Vector[a]:
 def prepend(vec: Vector[a], item: a) -> Vector[a]:
   nodes = prepend_nodes_with_fuel(vec, item, height(vec).add(8))
   cnt = size_Array(nodes)
-  if cnt.eq_Int(0):
+  if eq_Int64(cnt, i64(0)):
     vec
-  elif cnt.eq_Int(1):
-    get_or_Array(nodes, 0, _ -> vec)
+  elif eq_Int64(cnt, i64(1)):
+    get_or_Array(nodes, i64(0), _ -> vec)
   else:
     make_branch(height(vec).add(1), nodes)
 
@@ -1410,7 +1407,7 @@ def eq_Int_pair(left: (Int, Int), right: (Int, Int)) -> Bool:
 
 def slice_list_model(list: List[Int], start: Int, end: Int) -> List[Int]:
   arr = from_List_Array(list)
-  to_List_Array(slice_Array(arr, start, end))
+  to_List_Array(slice_Array(arr, i64(start), i64(end)))
 
 def take_list_model(list: List[Int], count: Int) -> List[Int]:
   slice_list_model(list, 0, count)
@@ -1423,7 +1420,7 @@ def split_list_model(list: List[Int], count: Int) -> (List[Int], List[Int]):
 
 def updated_list_model(list: List[Int], idx: Int, item: Int) -> List[Int]:
   arr = from_List_Array(list)
-  to_List_Array(set_or_self_Array(arr, idx, item))
+  to_List_Array(set_or_self_Array(arr, i64(idx), item))
 
 int_add_semigroup = semigroup_from_combine(add)
 int_add_monoid = monoid_from_combine(0, add)
