@@ -18,9 +18,10 @@ from Bosatsu/IO/Error import (
 )
 from Bosatsu/Collection/Array import (
   Array,
-  foldl_Array,
+  dotf_Array,
+  foldl_with_index_Array,
   from_List_Array,
-  get_or_Array,
+  sumsqf_Array,
   size_Array,
   tabulate_Array,
   to_List_Array,
@@ -29,10 +30,17 @@ from Bosatsu/Num/Float64 import (
   abs,
   addf,
   divf,
-  int_to_Float64,
   mulf,
   sqrt,
   subf,
+)
+from Bosatsu/Num/Int64 import (
+  Int64,
+  int64_to_Float64,
+  int_low_bits_to_Int64 as i64,
+  operator +,
+  operator *,
+  operator /,
 )
 from Zafu/Control/Result import (
   Ok,
@@ -59,23 +67,24 @@ exposes Bosatsu/Prog
 
 power_iterations_count = 10
 
-def eval_A(i: Int, j: Int) -> Float64:
-  ij = i.add(j)
-  denominator = ij.mul(ij.add(1)).div(2).add(i).add(1)
-  divf(1.0, int_to_Float64(denominator))
+def eval_A(i: Int64, j: Int64) -> Float64:
+  ij = i + j
+  denominator = ((ij * (ij + i64(1))) / i64(2)) + i + i64(1)
+  divf(1.0, int64_to_Float64(denominator))
 
-def sum_indexed_products(values: Array[Float64], fn: Int -> Float64) -> Float64:
-  (_, sum) = foldl_Array(values, (0, 0.0), ((col_index, acc), item) -> (
-    next_acc = addf(acc, mulf(fn(col_index), item))
-    (col_index.add(1), next_acc)
-  ))
-  sum
+def sum_A_row(row_index: Int64, values: Array[Float64]) -> Float64:
+  foldl_with_index_Array(
+    values,
+    0.0,
+    (acc, item, col_index) -> addf(acc, mulf(eval_A(row_index, col_index), item)),
+  )
 
-def sum_A_row(row_index: Int, values: Array[Float64]) -> Float64:
-  sum_indexed_products(values, col_index -> eval_A(row_index, col_index))
-
-def sum_At_row(row_index: Int, values: Array[Float64]) -> Float64:
-  sum_indexed_products(values, col_index -> eval_A(col_index, row_index))
+def sum_At_row(row_index: Int64, values: Array[Float64]) -> Float64:
+  foldl_with_index_Array(
+    values,
+    0.0,
+    (acc, item, col_index) -> addf(acc, mulf(eval_A(col_index, row_index), item)),
+  )
 
 def eval_A_times_u(values: Array[Float64]) -> Array[Float64]:
   size = size_Array(values)
@@ -102,24 +111,14 @@ def power_iterations(values: Array[Float64], rounds: Int) -> (Array[Float64], Ar
 
   go(rounds, values, values)
 
-def dot(left: Array[Float64], right: Array[Float64]) -> Float64:
-  (_, sum) = foldl_Array(left, (0, 0.0), ((index, acc), left_item) -> (
-    right_item = get_or_Array(right, index, _ -> 0.0)
-    next_acc = addf(acc, mulf(left_item, right_item))
-    (index.add(1), next_acc)
-  ))
-  sum
-
-def square_sum(values: Array[Float64]) -> Float64:
-  foldl_Array(values, 0.0, (sum, value) -> addf(sum, mulf(value, value)))
-
 def spectral_norm(size: Int) -> Float64:
   if cmp_Int(size, 0) matches LT | EQ:
     0.0
   else:
-    initial = tabulate_Array(size, _ -> 1.0)
+    size64 = i64(size)
+    initial = tabulate_Array(size64, _ -> 1.0)
     (u, v) = power_iterations(initial, power_iterations_count)
-    sqrt(divf(dot(u, v), square_sum(v)))
+    sqrt(divf(dotf_Array(u, v), sumsqf_Array(v)))
 
 def render_spectral_norm_output(size: Int) -> String:
   render_text_output([render_fixed_9(spectral_norm(size))])
@@ -170,8 +169,8 @@ def vector3_within(actual: Array[Float64], expected0: Float64, expected1: Float6
       False
 
 tests = TestSuite("spectral-norm benchmark", [
-  Assertion(within_tolerance(eval_A(0, 0), 1.0, vector_tolerance), "A(0,0)"),
-  Assertion(within_tolerance(eval_A(1, 2), 0.125, vector_tolerance), "A(1,2)"),
+  Assertion(within_tolerance(eval_A(i64(0), i64(0)), 1.0, vector_tolerance), "A(0,0)"),
+  Assertion(within_tolerance(eval_A(i64(1), i64(2)), 0.125, vector_tolerance), "A(1,2)"),
   Assertion(
     vector3_within(
       eval_A_times_u(small_vector),

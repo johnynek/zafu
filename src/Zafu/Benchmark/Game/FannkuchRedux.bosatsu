@@ -2,12 +2,22 @@ package Zafu/Benchmark/Game/FannkuchRedux
 
 from Bosatsu/Collection/Array import (
   Array,
+  concat_all_Array,
   from_List_Array,
   get_or_Array,
   set_or_self_Array,
   size_Array,
+  slice_Array,
   tabulate_Array,
   to_List_Array,
+)
+from Bosatsu/Num/Int64 import (
+  Int64,
+  add_Int64,
+  cmp_Int64,
+  int64_to_Int,
+  int_low_bits_to_Int64 as i64,
+  sub_Int64,
 )
 from Bosatsu/Prog import (
   Main,
@@ -52,10 +62,12 @@ exposes Bosatsu/Prog
 
 struct FannkuchResult(checksum: Int, max_flips: Int)
 
+struct FlipView(base: Array[Int], rev_prefixes: List[Int64])
+
 struct PermutationState(
   perm: Array[Int],
   counts: Array[Int],
-  index: Int,
+  index: Int64,
   odd: Bool,
 )
 
@@ -73,86 +85,6 @@ def max_Int(a: Int, b: Int) -> Int:
     case GT | EQ:
       a
 
-def rotate_prefix_left_array(values: Array[Int], last_idx: Int) -> Array[Int]:
-  size = size_Array(values)
-  if cmp_Int(size, 1) matches LT | EQ:
-    values
-  else:
-    effective_last = min_Int(last_idx, size.sub(1))
-    if cmp_Int(effective_last, 0) matches LT | EQ:
-      values
-    else:
-      head = get_or_Array(values, 0, _ -> 0)
-      tabulate_Array(size, idx -> (
-        if cmp_Int(idx, effective_last) matches LT:
-          get_or_Array(values, idx.add(1), _ -> head)
-        elif idx.eq_Int(effective_last):
-          head
-        else:
-          get_or_Array(values, idx, _ -> head)
-      ))
-
-def reverse_prefix_array(values: Array[Int], last_idx: Int) -> Array[Int]:
-  size = size_Array(values)
-  if cmp_Int(size, 1) matches LT | EQ:
-    values
-  else:
-    effective_last = min_Int(last_idx, size.sub(1))
-    if cmp_Int(effective_last, 0) matches LT | EQ:
-      values
-    else:
-      # Arrays are immutable here, so a prefix reversal still needs one
-      # replacement array. Keep it to a single tabulation over the source.
-      tabulate_Array(size, idx -> (
-        if cmp_Int(idx, effective_last) matches GT:
-          get_or_Array(values, idx, _ -> 0)
-        else:
-          get_or_Array(values, effective_last.sub(idx), _ -> 0)
-      ))
-
-def flip_count_array(values: Array[Int]) -> Int:
-  n_size = size_Array(values)
-  fuel0 = n_size.mul(n_size).add(1)
-
-  def go(curr: Array[Int], flips: Int, fuel: Int) -> Int:
-    loop fuel:
-      case _ if cmp_Int(fuel, 0) matches LT | EQ:
-        flips
-      case _:
-        first = get_or_Array(curr, 0, _ -> 0)
-        if first.eq_Int(0):
-          flips
-        else:
-          go(reverse_prefix_array(curr, first), flips.add(1), fuel.sub(1))
-
-  go(values, 0, fuel0)
-
-def flip_score_array(values: Array[Int]) -> Int:
-  first = get_or_Array(values, 0, _ -> 0)
-  if first.eq_Int(0):
-    0
-  elif get_or_Array(values, first, _ -> -1).eq_Int(0):
-    1
-  else:
-    flip_count_array(values)
-
-def rotate_prefix_left(values: List[Int], last_idx: Int) -> List[Int]:
-  to_List_Array(rotate_prefix_left_array(from_List_Array(values), last_idx))
-
-def flip_count(values: List[Int]) -> Int:
-  flip_count_array(from_List_Array(values))
-
-def flip_score(values: List[Int]) -> Int:
-  flip_score_array(from_List_Array(values))
-
-def initial_state(n: Int) -> PermutationState:
-  PermutationState(
-    tabulate_Array(n, idx -> idx),
-    tabulate_Array(n, _ -> 0),
-    0,
-    False,
-  )
-
 def factorial(n: Int) -> Int:
   def go(rem: Int, next: Int, acc: Int) -> Int:
     loop rem:
@@ -163,25 +95,108 @@ def factorial(n: Int) -> Int:
 
   go(n, 1, 1)
 
+def rotate_prefix_left_array(values: Array[Int], last_idx: Int64) -> Array[Int]:
+  size = size_Array(values)
+  if cmp_Int64(size, i64(1)) matches LT | EQ:
+    values
+  else:
+    max_last = sub_Int64(size, i64(1))
+    effective_last = if cmp_Int64(last_idx, max_last) matches GT:
+      max_last
+    else:
+      last_idx
+    if cmp_Int64(effective_last, i64(0)) matches LT | EQ:
+      values
+    else:
+      prefix_end = add_Int64(effective_last, i64(1))
+      concat_all_Array([
+        slice_Array(values, i64(1), prefix_end),
+        slice_Array(values, i64(0), i64(1)),
+        slice_Array(values, prefix_end, size),
+      ])
+
+def resolve_flip_index(rev_prefixes: List[Int64], idx: Int64) -> Int64:
+  def go(current: Int64, remaining: List[Int64]) -> Int64:
+    loop remaining:
+      case []:
+        current
+      case [last_idx, *tail]:
+        next = if cmp_Int64(current, last_idx) matches GT:
+          current
+        else:
+          sub_Int64(last_idx, current)
+        go(next, tail)
+
+  go(idx, rev_prefixes)
+
+def flip_count_array(values: Array[Int]) -> Int:
+  n_size = int64_to_Int(size_Array(values))
+  fuel0 = n_size.mul(n_size).add(1)
+  first0 = get_or_Array(values, i64(0), _ -> 0)
+  view0 = FlipView(values, [])
+
+  def go(curr: FlipView, first: Int, flips: Int, fuel: Int) -> Int:
+    loop fuel:
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        flips
+      case _:
+        if first.eq_Int(0):
+          flips
+        else:
+          FlipView(base, rev_prefixes) = curr
+          next_first = get_or_Array(base, resolve_flip_index(rev_prefixes, i64(first)), _ -> 0)
+          next_view = FlipView(base, [i64(first), *rev_prefixes])
+          go(next_view, next_first, flips.add(1), fuel.sub(1))
+
+  go(view0, first0, 0, fuel0)
+
+def flip_score_array(values: Array[Int]) -> Int:
+  first = get_or_Array(values, i64(0), _ -> 0)
+  if first.eq_Int(0):
+    0
+  elif get_or_Array(values, i64(first), _ -> -1).eq_Int(0):
+    1
+  else:
+    flip_count_array(values)
+
+def rotate_prefix_left(values: List[Int], last_idx: Int) -> List[Int]:
+  to_List_Array(rotate_prefix_left_array(from_List_Array(values), i64(last_idx)))
+
+def flip_count(values: List[Int]) -> Int:
+  flip_count_array(from_List_Array(values))
+
+def flip_score(values: List[Int]) -> Int:
+  flip_score_array(from_List_Array(values))
+
+def initial_state(n: Int) -> PermutationState:
+  PermutationState(
+    tabulate_Array(i64(n), idx -> int64_to_Int(idx)),
+    tabulate_Array(i64(n), _ -> 0),
+    i64(0),
+    False,
+  )
+
 def next_permutation_state(n: Int, state: PermutationState) -> Option[PermutationState]:
   PermutationState(perm0, counts0, index0, odd0) = state
+  n64 = i64(n)
 
-  def go(perm: Array[Int], counts: Array[Int], index: Int, odd: Bool, fuel: Int) -> Option[PermutationState]:
+  def go(perm: Array[Int], counts: Array[Int], index: Int64, odd: Bool, fuel: Int) -> Option[PermutationState]:
     loop fuel:
       case _ if cmp_Int(fuel, 0) matches LT | EQ:
         None
       case _:
-        if cmp_Int(index, n) matches GT | EQ:
+        if cmp_Int64(index, n64) matches GT | EQ:
           None
         else:
           rotated = rotate_prefix_left_array(perm, index)
           count_at = get_or_Array(counts, index, _ -> 0)
-          if cmp_Int(count_at, index) matches GT | EQ:
+          index_int = int64_to_Int(index)
+          if cmp_Int(count_at, index_int) matches GT | EQ:
             next_counts = set_or_self_Array(counts, index, 0)
-            go(rotated, next_counts, index.add(1), odd, fuel.sub(1))
+            go(rotated, next_counts, add_Int64(index, i64(1)), odd, fuel.sub(1))
           else:
             next_counts = set_or_self_Array(counts, index, count_at.add(1))
-            Some(PermutationState(rotated, next_counts, 1, not(odd)))
+            Some(PermutationState(rotated, next_counts, i64(1), not(odd)))
 
   go(perm0, counts0, index0, odd0, n.add(1))
 

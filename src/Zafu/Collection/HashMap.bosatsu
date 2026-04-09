@@ -12,6 +12,13 @@ from Bosatsu/Collection/Array import (
   concat_all_Array,
   slice_Array
 )
+from Bosatsu/Num/Int64 import (
+  Int64,
+  add_Int64,
+  eq_Int64,
+  int64_to_Int,
+  int_low_bits_to_Int64 as i64,
+)
 from Zafu/Testing/HedgeHog import (
   Gen,
   Prop,
@@ -128,22 +135,22 @@ def bitpos(fragment: Int) -> Int:
 def has_bit(bitmap: Int, bit: Int) -> Bool:
   cmp_Int(bitmap & bit, 0) matches GT
 
-def bitmap_index(bitmap: Int, bit: Int) -> Int:
-  popcount_Int(bitmap & (bit - 1))
+def bitmap_index(bitmap: Int, bit: Int) -> Int64:
+  i64(popcount_Int(bitmap & (bit - 1)))
 
 def singleton_Array(item: a) -> Array[a]:
   from_List_Array([item])
 
-def array_insert(items: Array[a], idx: Int, value: a) -> Array[a]:
+def array_insert(items: Array[a], idx: Int64, value: a) -> Array[a]:
   cnt = size_Array(items)
-  left = slice_Array(items, 0, idx)
+  left = slice_Array(items, i64(0), idx)
   right = slice_Array(items, idx, cnt)
   concat_all_Array([left, singleton_Array(value), right])
 
-def array_remove(items: Array[a], idx: Int) -> Array[a]:
+def array_remove(items: Array[a], idx: Int64) -> Array[a]:
   cnt = size_Array(items)
-  left = slice_Array(items, 0, idx)
-  right = slice_Array(items, idx + 1, cnt)
+  left = slice_Array(items, i64(0), idx)
+  right = slice_Array(items, add_Int64(idx, i64(1)), cnt)
   concat_all_Array([left, right])
 
 def map_hash_key(map: HashMap[k, v]) -> Hash[k]:
@@ -160,14 +167,14 @@ def single_entry_node(entry: Entry[k, v], shift: Int) -> Node[k, v]:
 def collapse_indexed(data_bitmap: Int, entries: Array[Entry[k, v]], node_bitmap: Int, children: Array[Node[k, v]]) -> Option[Node[k, v]]:
   entry_cnt = size_Array(entries)
   child_cnt = size_Array(children)
-  if and(entry_cnt.eq_Int(0), child_cnt.eq_Int(0)):
+  if and(eq_Int64(entry_cnt, i64(0)), eq_Int64(child_cnt, i64(0))):
     None
   else:
     Some(Indexed(data_bitmap, entries, node_bitmap, children))
 
-def find_entry_index(entries: Array[Entry[k, v]], key_hash: Int, key: k, eq_key: Eq[k]) -> Option[Int]:
+def find_entry_index(entries: Array[Entry[k, v]], key_hash: Int, key: k, eq_key: Eq[k]) -> Option[Int64]:
   cnt = size_Array(entries)
-  def go(rem: Int, idx: Int) -> Option[Int]:
+  def go(rem: Int, idx: Int64) -> Option[Int64]:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         None
@@ -177,10 +184,10 @@ def find_entry_index(entries: Array[Entry[k, v]], key_hash: Int, key: k, eq_key:
             if and(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
               Some(idx)
             else:
-              go(rem - 1, idx + 1)
+              go(rem.sub(1), add_Int64(idx, i64(1)))
           case None:
-            go(rem - 1, idx + 1)
-  go(cnt, 0)
+            go(rem.sub(1), add_Int64(idx, i64(1)))
+  go(int64_to_Int(cnt), i64(0))
 
 def merge_two_entries_with_fuel(left: Entry[k, v], right: Entry[k, v], shift: Int, fuel: Int) -> Node[k, v]:
   recur fuel:
@@ -258,13 +265,13 @@ def insert_entry_node_fuel(node: Node[k, v], entry: Entry[k, v], eq_key: Eq[k], 
               case None:
                 (Collision(collision_hash, concat_all_Array([entries, singleton_Array(entry)])), 1)
           else:
-            match get_Array(entries, 0):
+            match get_Array(entries, i64(0)):
               case None:
                 (single_entry_node(entry, shift), 1)
               case Some(first):
                 base = merge_two_entries(first, entry, shift)
                 cnt = size_Array(entries)
-                rest_entries = slice_Array(entries, 1, cnt)
+                rest_entries = slice_Array(entries, i64(1), cnt)
                 final_node = foldl_Array(rest_entries, base, (acc, item) -> (
                   (next_acc, _) = insert_entry_node_fuel(acc, item, eq_key, shift, fuel.sub(1))
                   next_acc
@@ -327,10 +334,10 @@ def remove_entry_node_fuel(node: Node[k, v], key_hash: Int, key: k, eq_key: Eq[k
               case Some(idx):
                 next_entries = array_remove(entries, idx)
                 next_cnt = size_Array(next_entries)
-                if next_cnt.eq_Int(0):
+                if eq_Int64(next_cnt, i64(0)):
                   (None, 1)
-                elif next_cnt.eq_Int(1):
-                  match get_Array(next_entries, 0):
+                elif eq_Int64(next_cnt, i64(1)):
+                  match get_Array(next_entries, i64(0)):
                     case Some(entry):
                       (Some(single_entry_node(entry, shift)), 1)
                     case None:

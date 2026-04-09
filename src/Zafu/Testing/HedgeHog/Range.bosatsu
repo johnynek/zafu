@@ -5,6 +5,10 @@ from Bosatsu/Collection/Array import (
   size_Array,
   get_or_Array,
 )
+from Bosatsu/Num/Int64 import (
+  int64_to_Int,
+  int_low_bits_to_Int64 as i64,
+)
 
 from Zafu/Testing/HedgeHog/Seed import (
   Seed,
@@ -98,10 +102,10 @@ def sample_Int(range: Range, size: Size, seed: Seed) -> (Seed, Int):
 # Build a size-aware sampler that chooses one of several ranges uniformly first.
 def one_of_Int(first: Range, rest: List[Range]) -> (Size, Seed) -> (Seed, Int):
   ranges = from_List_Array([first, *rest])
-  last_idx = size_Array(ranges).sub(1)
+  last_idx = int64_to_Int(size_Array(ranges)).sub(1)
   (size, seed) -> (
     (seed1, idx) = choose_Int(seed, 0, last_idx)
-    range = get_or_Array(ranges, idx, _ -> first)
+    range = get_or_Array(ranges, i64(idx), _ -> first)
     sample_Int(range, size, seed1)
   )
 
