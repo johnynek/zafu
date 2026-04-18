@@ -67,9 +67,10 @@ A type-only migration would not be enough. If `Hash[a]` changes to `Int64` while
 1. Keep the existing modulus `M = 2^61 - 1` and the existing seed and tag domain-separation strategy. Move those constants to `Int64` so downstream hash builders stay in one representation.
 2. Preserve the canonical exported invariant that every public hash lies in `[0, M)`.
 3. Implement an internal `reduce_61_i64` helper using the Mersenne identity `2^61 ≡ 1 (mod M)`. For bounded non-negative intermediates, fold high bits back into the low 61 bits and subtract `M` when needed.
-4. Implement a dedicated multiply-reduce helper for `mix_61` that stays Int64-first. It should use `Int64` limb decomposition and reduction rather than widening the hot path back to arbitrary-precision `Int`.
-5. Keep `normalize_61` as the compatibility adapter for arbitrary `Int` inputs, but Hash internals and collection internals should prefer Int64-native reduction helpers once data is in the canonical domain.
-6. Validate the Int64 arithmetic against a clearer `Int`-based oracle in tests so the subtle math stays explainable and checkable.
+4. Introduce a dedicated multiply-reduce helper behind `mix_61`, but treat the exact implementation as benchmark-gated. The leading candidate is an Int64 limb-decomposition strategy so the hot path can stay in `Int64`, but the helper boundary should also permit an `Int` multiply plus single reduction fallback if benchmarking shows the simpler path is as fast or faster on supported backends.
+5. If the Int64-first helper uses limb decomposition, implement it with fixed-width chunks small enough to avoid hidden overflow inside each partial product and reduction step.
+6. Keep `normalize_61` as the compatibility adapter for arbitrary `Int` inputs, but Hash internals and collection internals should prefer Int64-native reduction helpers once data is in the canonical domain.
+7. Validate the arithmetic against a clearer `Int`-based oracle in tests, then benchmark the selected `mix_61` helper on representative hash-heavy workloads (`HashMap`, `HashSet`, and collection-hash construction) before locking in the implementation choice.
 
 ### HashMap and HashSet Internals
 1. In `src/Zafu/Collection/HashMap.bosatsu` and `src/Zafu/Collection/HashSet.bosatsu`, change cached `Entry.hash` and `Collision.hash` from `Int` to `Int64`.
@@ -126,7 +127,7 @@ A type-only migration would not be enough. If `Hash[a]` changes to `Int64` while
 ## Acceptance Criteria
 1. `docs/design/207-migrate-hash-typeclass-to-use-int64-not-int.md` lands and serves as the planned milestone for issue #207.
 2. `Hash[a]` and `hash(inst, value)` are Int64-backed, and the repo still has a supported constructor path for both Int64-native hash builders and simple Int projections.
-3. The 61-bit helper pipeline is Int64-first in the hot path, including an overflow-safe multiply-reduce strategy for `mix_61`.
+3. The 61-bit helper pipeline has an explicit, benchmarked `mix_61` multiply-reduce strategy. The preferred outcome is an Int64-first hot path, but the design allows a deliberate `Int` multiply plus reduction fallback inside that helper if it proves faster on supported backends.
 4. All exported hash helpers continue to enforce the canonical `[0, 2^61 - 1)` range.
 5. `Predef` hash instances and composite hash builders compile and emit `Int64` hashes.
 6. `HashMap` and `HashSet` store cached hashes and HAMT bitmaps as `Int64`, while preserving existing public behavior.
@@ -136,9 +137,9 @@ A type-only migration would not be enough. If `Hash[a]` changes to `Int64` while
 10. `./bosatsu lib check`, `./bosatsu lib test`, and `scripts/test.sh` pass on the full migration branch.
 
 ## Risks and Rollout Notes
-1. Risk: the Int64 multiply-reduce helper is subtle and easy to get wrong. Mitigation: isolate it in `Hash`, validate it against a simpler `Int`-based oracle, and add targeted boundary tests in addition to randomized coverage.
+1. Risk: the Int64 multiply-reduce helper is subtle and easy to get wrong. Mitigation: isolate it in `Hash`, validate it against a simpler `Int`-based oracle, add targeted boundary tests in addition to randomized coverage, and keep the helper boundary narrow enough that an `Int` multiply plus reduction fallback remains possible if the limb implementation is not worth the complexity.
 2. Risk: mixed `Int` and `Int64` conversions in HAMT code reintroduce fragment or bitmap bugs. Mitigation: keep the type split explicit, strengthen invariants, and search specifically for Int-specific hash comparisons and leftover narrowing paths during the sweep.
-3. Risk: the migration achieves the public type change but leaves performance on the table if hot loops still widen back to `Int`. Mitigation: keep cached hashes, bitmaps, fragment helpers, and unordered collection-hash accumulators Int64-first, and treat any remaining `Int` arithmetic as a deliberate boundary or compatibility path.
+3. Risk: the migration achieves the public type change but leaves performance on the table if hot loops still widen back to `Int`, or it pays extra complexity for an Int64 limb path that does not actually win. Mitigation: keep cached hashes, bitmaps, fragment helpers, and unordered collection-hash accumulators Int64-first, but require benchmark evidence before committing to the `mix_61` multiply-reduce implementation and treat any remaining `Int` arithmetic as a deliberate, measured boundary rather than an accidental fallback.
 4. Risk: downstream callers or inline tests depend on the old raw hash type. Mitigation: land the code change atomically, preserve a supported Int-adapter constructor path, and update tests to talk about coherence and invariants rather than `Int`-specific helper APIs.
 5. The design doc merge is the planned milestone for this lane. Implementation can continue afterward from the same child issue without reopening design.
 6. The implementation branch should stay close to `main` while this migration is in flight, because there is no useful long-lived mixed `Int` and `Int64` state for `Hash`.
