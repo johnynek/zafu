@@ -1,0 +1,64 @@
+# Code Plan #208
+
+> Generated from code plan JSON.
+> Edit the `.json` file, not this `.md` file.
+
+## Metadata
+
+- Flow: `small_job`
+- Issue: `#208` Use release mode in C runtime
+- Pending steps: `2`
+- Completed steps: `0`
+- Total steps: `2`
+
+## Summary
+
+Make the repo-owned native bootstrap treat release-mode C runtime installs as an explicit contract, not an implicit upstream default, and cover that contract in `scripts/test.sh`.
+
+## Current State
+
+All repo bootstrap paths (`scripts/test.sh`, benchmark scripts, and GitHub workflows) go through `./bosatsu --fetch`. In Bosatsu 0.0.65, upstream `c-runtime install` defaults to the `release` profile, so zafu is already likely exercising release-mode native builds today. However, the repo-local launcher does not spell that out, and the required test gate has no regression that proves the bootstrap path stays release-pinned.
+
+## Problem
+
+Issue #208 wants release-mode C runtime coverage to be intentional. Today that intent is satisfied only indirectly through an external default. That leaves two risk families unguarded: launcher-default drift if Bosatsu changes its default profile, and gate blind spots because `scripts/test.sh` would keep passing without telling reviewers whether the C runtime was installed in release mode. The repo should make the release choice explicit in its own launcher path and fail the required gate if that contract regresses.
+
+## Steps
+
+1. [ ] `pin-release-bootstrap` Make the implicit native bootstrap explicitly select release mode
+
+Update the repo-local `bosatsu` launcher so the no-args `./bosatsu --fetch` convenience path delegates to `c-runtime install --profile release` instead of relying on the upstream default. Keep the existing fetch behavior, `--artifact` override flow, repo-root detection, and passthrough semantics for explicit trailing subcommands unchanged. Add a short comment near the auto-install branch explaining that zafu intentionally validates the optimized C runtime profile.
+
+#### Invariants
+
+- `./bosatsu --fetch` with no trailing subcommand still bootstraps both the CLI artifact and the C runtime from the repo root.
+- The implicit C runtime install path always includes `--profile release`.
+- If the user supplies explicit trailing args after `--fetch`, the launcher passes only those args through and does not append the auto-install subcommand.
+
+#### Property Tests
+
+- None recorded.
+
+#### Assertion Tests
+
+- Launcher regression case: with a stub installed artifact and `--fetch` only, the wrapped executable receives `c-runtime install --profile release`.
+- Passthrough regression case: with a stub installed artifact and an explicit subcommand such as `--fetch version`, the wrapped executable receives only the explicit user args.
+
+2. [ ] `gate-bootstrap-contract` Cover the launcher contract in the required test gate
+
+Add a fast repo-local regression script under `scripts/` that creates a temporary throwaway repo, uses `--artifact` to avoid network and real compiler downloads, and asserts the launcher's implicit bootstrap command line stays pinned to release mode. Wire that script into `scripts/test.sh` so the configured `required_tests` gate fails if the launcher stops selecting the release-mode C runtime.
+
+#### Invariants
+
+- `scripts/test.sh` remains the single required pre-PR gate and now covers the native bootstrap profile contract.
+- The new regression runs without downloading the real Bosatsu CLI or building the real C runtime.
+- The regression cleans up its temporary repo and leaves no persistent workspace state behind.
+
+#### Property Tests
+
+- None recorded.
+
+#### Assertion Tests
+
+- The new wrapper regression script fails if `--profile release` is missing, reordered incorrectly, or omitted from the implicit bootstrap path.
+- `scripts/test.sh` invokes the new wrapper regression alongside the existing check/test, tool, benchmark, and publish-dry-run validations.
