@@ -8,6 +8,9 @@ ulimit -S -s 16384 2>/dev/null || true
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Pin the wrapper contract before the heavier bootstrap and build checks run.
+scripts/test_bosatsu_launcher.sh
+
 ./bosatsu --fetch > /dev/null
 ./bosatsu fetch
 ./bosatsu check
