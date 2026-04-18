@@ -15,7 +15,7 @@ touch_paths:
   - src/Zafu/Collection/NonEmptyChain.bosatsu
 depends_on: []
 estimated_size: M
-generated_at: 2026-04-18T18:22:35Z
+generated_at: 2026-04-18T21:33:22Z
 ---
 
 # Design: migrate Hash typeclass to use Int64 not Int
@@ -30,7 +30,7 @@ Plan the Hash Int64 migration, move HashMap and HashSet hot-path internals onto 
 `Zafu/Abstract/Hash` currently stores `hash_fn: a -> Int`, and the public helpers in `Hash`, `Predef`, `HashMap`, `HashSet`, and downstream adapters assume `Int`-typed hashes.
 `HashMap` and `HashSet` already use `Int64` for array indexing, but their cached entry hashes, collision hashes, HAMT bitmaps, and unordered collection-hash accumulators still use `Int`.
 Issue #207 asks for two related changes: move the `Hash` typeclass itself to `Int64`, and audit `HashMap` and `HashSet` so the hot path uses `Int64` wherever the Bosatsu `Int64` API makes that practical.
-The Bosatsu `Int64` docs provide the operations needed for this sweep: arithmetic and bitwise operators, `mod_Int64`, `popcount_Int64`, `shift_right_unsigned_Int64`, and explicit conversions such as `int_to_Int64` and `int_low_bits_to_Int64`.
+The [Bosatsu Int64 docs](https://johnynek.github.io/bosatsu/generated/core_alpha/Bosatsu/Num/Int64.html) provide the operations needed for this sweep: arithmetic and bitwise operators, `mod_Int64`, `popcount_Int64`, `shift_right_unsigned_Int64`, and explicit conversions such as `int_to_Int64` and `int_low_bits_to_Int64`.
 Merging this design doc is the planned milestone for this lane. Implementation may continue afterward on the same child issue.
 
 ## Problem
