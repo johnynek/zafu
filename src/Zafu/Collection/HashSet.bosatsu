@@ -605,23 +605,27 @@ def eq_fn(left: HashSet[k], right: HashSet[k]) -> Bool:
 # Equality adapter for sets.
 eq: forall k. Eq[HashSet[k]] = eq_from_fn(eq_fn)
 
-def hash_entry(entry: Entry[k]) -> Int64:
-  finish_61(entry_hash(entry), 1, hash_tag_entry)
+def hash_entry(hash_item: Hash[k], entry: Entry[k]) -> Int64:
+  # Public set hashing must ignore cached HAMT hashes and instead re-hash each
+  # item with the caller's dictionary so equal sets stay coherent across
+  # different internal hash dictionaries.
+  finish_61(hash_Hash(hash_item, entry_key(entry)), 1, hash_tag_entry)
 
-def hash_fn(set: HashSet[k]) -> Int64:
+def hash_fn(hash_item: Hash[k], set: HashSet[k]) -> Int64:
   match set:
     case Empty(_):
       finish_61(hash_seed_set, 0, hash_tag_set)
     case Root(_, sz, root):
       (sum_acc, xor_acc) = fold_entries_node(root, (hash_seed_set, empty_i64), (state, entry) -> (
         (sum_acc, xor_acc) = state
-        item_hash = hash_entry(entry)
+        item_hash = hash_entry(hash_item, entry)
         (sum_61_i64(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
       ))
       finish_61(mix_61(sum_acc, xor_acc), sz, hash_tag_set)
 
 # Hash adapter for sets.
-hash: forall k. Hash[HashSet[k]] = hash_specialized(hash_fn, eq)
+def hash(hash_item: Hash[k]) -> Hash[HashSet[k]]:
+  hash_specialized(set -> hash_fn(hash_item, set), eq)
 
 ############################
 # Invariants and model (tests)
@@ -970,13 +974,31 @@ adapter_prop: Prop = forall_Prop(
     left_model = model_from_items(left_items)
     right_model = model_from_items(right_items)
     set_eq = eq
-    set_hash = hash
+    set_hash = hash(hash_Int)
     equal = eq_Eq(set_eq, left, right)
     coherent = if equal:
       hash_Hash(set_hash, left).eq_Int64(hash_Hash(set_hash, right))
     else:
       True
     Assertion(and(coherent, eq_Bool(equal, model_eq(left_model, right_model))), "adapter coherence")
+  ))
+
+cross_hash_adapter_prop: Prop = forall_Prop(
+  rand_item_list,
+  "equal sets hash the same across differing internal hash dictionaries",
+  items -> (
+    model = model_from_items(items)
+    left = from_List(hash_Int, model)
+    right = from_List(hash_int_shifted, model.reverse())
+    set_eq = eq
+    set_hash = hash(hash_Int)
+    Assertion(
+      and(
+        and(eq_Eq(set_eq, left, right), eq_Int64(hash_Hash(set_hash, left), hash_Hash(set_hash, right))),
+        and(invariants_ok(left), invariants_ok(right))
+      ),
+      "cross-hash adapter coherence"
+    )
   ))
 
 permutation_hash_prop: Prop = forall_Prop(
@@ -987,7 +1009,7 @@ permutation_hash_prop: Prop = forall_Prop(
     left = from_List(hash_Int, model)
     right = from_List(hash_Int, model.reverse())
     set_eq = eq
-    set_hash = hash
+    set_hash = hash(hash_Int)
     Assertion(
       and(
         and(eq_Eq(set_eq, left, right), eq_Int64(hash_Hash(set_hash, left), hash_Hash(set_hash, right))),
@@ -1005,6 +1027,7 @@ hashset_props: Prop = suite_Prop(
     union_cross_hash_prop,
     intersection_difference_prop,
     adapter_prop,
+    cross_hash_adapter_prop,
     permutation_hash_prop,
   ])
 

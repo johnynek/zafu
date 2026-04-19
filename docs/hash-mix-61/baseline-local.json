@@ -1,9 +1,20 @@
 {
   "run_metadata": {
-    "format_version": 1,
-    "generated_at_utc": "2026-04-19T20:20:25Z",
-    "git_sha": "fdbb027c98a9311cc8462a432caaee755c089d6a-dirty",
-    "git_dirty": true,
+    "format_version": 2,
+    "generated_at_utc": "2026-04-19T21:01:32Z",
+    "source_provenance": {
+      "kind": "source_fingerprint",
+      "algorithm": "sha256",
+      "files": [
+        "scripts/benchmark_hash_mix61.py",
+        "src/Zafu/Abstract/Internal/Hash61.bosatsu",
+        "src/Zafu/Abstract/Hash.bosatsu",
+        "src/Zafu/Benchmark/HashMix61.bosatsu",
+        "src/Zafu/Collection/HashMap.bosatsu",
+        "src/Zafu/Collection/HashSet.bosatsu"
+      ],
+      "digest": "f3e1c9042957159e6ce5ac048df91a1f1f2b63a326fb61bdb1f4481f90c41377"
+    },
     "bosatsu_version": "0.0.65",
     "java_version": "openjdk version \"25.0.2\" 2026-01-20",
     "gcc_version": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
@@ -40,49 +51,49 @@
         "target": "bosatsu_jvm",
         "workload": "collection_hash",
         "winner": "int_fallback",
-        "int_fallback_mean_ops_per_us": 0.4959606463955282,
-        "int64_limb_31_mean_ops_per_us": 0.12173031070157266,
-        "int_fallback_over_candidate_ratio": 4.074257623570831
+        "int_fallback_mean_ops_per_us": 0.6715394355900889,
+        "int64_limb_31_mean_ops_per_us": 0.1749859979266297,
+        "int_fallback_over_candidate_ratio": 3.8376752628610906
       },
       {
         "target": "bosatsu_jvm",
         "workload": "hash_map_hash",
         "winner": "int_fallback",
-        "int_fallback_mean_ops_per_us": 0.25547780585630386,
-        "int64_limb_31_mean_ops_per_us": 0.09985880850529909,
-        "int_fallback_over_candidate_ratio": 2.558390288051021
+        "int_fallback_mean_ops_per_us": 0.38988163559794453,
+        "int64_limb_31_mean_ops_per_us": 0.1446352754130359,
+        "int_fallback_over_candidate_ratio": 2.695619270503389
       },
       {
         "target": "bosatsu_jvm",
         "workload": "hash_set_hash",
         "winner": "int_fallback",
-        "int_fallback_mean_ops_per_us": 0.2288046611487464,
-        "int64_limb_31_mean_ops_per_us": 0.1023606932006467,
-        "int_fallback_over_candidate_ratio": 2.235278542909485
+        "int_fallback_mean_ops_per_us": 0.3167724200460192,
+        "int64_limb_31_mean_ops_per_us": 0.13397025524733114,
+        "int_fallback_over_candidate_ratio": 2.364498145212944
       },
       {
         "target": "bosatsu_c",
         "workload": "collection_hash",
         "winner": "int64_limb_31",
-        "int_fallback_mean_ops_per_us": 1.9593216026626927,
-        "int64_limb_31_mean_ops_per_us": 15.452714875083354,
-        "int_fallback_over_candidate_ratio": 0.12679465184606428
+        "int_fallback_mean_ops_per_us": 2.265567224935809,
+        "int64_limb_31_mean_ops_per_us": 22.76451141787918,
+        "int_fallback_over_candidate_ratio": 0.09952189104117733
       },
       {
         "target": "bosatsu_c",
         "workload": "hash_map_hash",
         "winner": "int64_limb_31",
-        "int_fallback_mean_ops_per_us": 1.380037242516597,
-        "int64_limb_31_mean_ops_per_us": 11.499435720273098,
-        "int_fallback_over_candidate_ratio": 0.12000912706382977
+        "int_fallback_mean_ops_per_us": 2.37293855860114,
+        "int64_limb_31_mean_ops_per_us": 15.800843211420384,
+        "int_fallback_over_candidate_ratio": 0.15017797005200645
       },
       {
         "target": "bosatsu_c",
         "workload": "hash_set_hash",
         "winner": "int64_limb_31",
-        "int_fallback_mean_ops_per_us": 0.8754335577184176,
-        "int64_limb_31_mean_ops_per_us": 7.772604002506435,
-        "int_fallback_over_candidate_ratio": 0.11263066501729872
+        "int_fallback_mean_ops_per_us": 2.1784142674781615,
+        "int64_limb_31_mean_ops_per_us": 13.769059245603987,
+        "int_fallback_over_candidate_ratio": 0.15821082825056898
       }
     ]
   },
@@ -92,44 +103,44 @@
       "workload": "collection_hash",
       "strategy": "int_fallback",
       "size": 64,
-      "iterations": 2048,
-      "ops": 137216,
-      "elapsed_us": 378402,
-      "ops_per_us": 0.36261964788769613,
-      "sink": "592580224372874761617"
+      "iterations": 4096,
+      "ops": 274432,
+      "elapsed_us": 389877,
+      "ops_per_us": 0.703893792144702,
+      "sink": "1185160448753902042854"
     },
     {
       "target": "bosatsu_jvm",
       "workload": "collection_hash",
       "strategy": "int64_limb_31",
       "size": 64,
-      "iterations": 512,
-      "ops": 34304,
-      "elapsed_us": 318196,
-      "ops_per_us": 0.10780776628241713,
-      "sink": "148145056100742333824"
+      "iterations": 1024,
+      "ops": 68608,
+      "elapsed_us": 400844,
+      "ops_per_us": 0.17115885481633752,
+      "sink": "296290112170132572621"
     },
     {
       "target": "bosatsu_jvm",
       "workload": "hash_map_hash",
       "strategy": "int_fallback",
       "size": 64,
-      "iterations": 256,
-      "ops": 50176,
-      "elapsed_us": 271120,
-      "ops_per_us": 0.18506934198878724,
-      "sink": "371131502831618008534"
+      "iterations": 512,
+      "ops": 100352,
+      "elapsed_us": 257311,
+      "ops_per_us": 0.39000275930683104,
+      "sink": "742263005660453113216"
     },
     {
       "target": "bosatsu_jvm",
       "workload": "hash_map_hash",
       "strategy": "int64_limb_31",
       "size": 64,
-      "iterations": 128,
-      "ops": 25088,
-      "elapsed_us": 256337,
-      "ops_per_us": 0.09787116179092367,
-      "sink": "185565751416300079844"
+      "iterations": 256,
+      "ops": 50176,
+      "elapsed_us": 355413,
+      "ops_per_us": 0.14117660299426302,
+      "sink": "371131502831618008534"
     },
     {
       "target": "bosatsu_jvm",
@@ -138,8 +149,8 @@
       "size": 64,
       "iterations": 512,
       "ops": 67584,
-      "elapsed_us": 403276,
-      "ops_per_us": 0.16758745871313938,
+      "elapsed_us": 209907,
+      "ops_per_us": 0.3219711586559762,
       "sink": "741967438646335146368"
     },
     {
@@ -147,33 +158,33 @@
       "workload": "hash_set_hash",
       "strategy": "int64_limb_31",
       "size": 64,
-      "iterations": 128,
-      "ops": 16896,
-      "elapsed_us": 187532,
-      "ops_per_us": 0.09009662350958769,
-      "sink": "185491859662770588132"
+      "iterations": 256,
+      "ops": 33792,
+      "elapsed_us": 255311,
+      "ops_per_us": 0.13235622436949446,
+      "sink": "370983719324559025110"
     },
     {
       "target": "bosatsu_jvm",
       "workload": "collection_hash",
       "strategy": "int_fallback",
       "size": 512,
-      "iterations": 256,
-      "ops": 131840,
-      "elapsed_us": 255800,
-      "ops_per_us": 0.5154026583268179,
-      "sink": "521580389073123906149"
+      "iterations": 512,
+      "ops": 263680,
+      "elapsed_us": 397220,
+      "ops_per_us": 0.6638135038517698,
+      "sink": "1043160778125052860614"
     },
     {
       "target": "bosatsu_jvm",
       "workload": "collection_hash",
       "strategy": "int64_limb_31",
       "size": 512,
-      "iterations": 64,
-      "ops": 32960,
-      "elapsed_us": 328200,
-      "ops_per_us": 0.10042656916514321,
-      "sink": "130395097269670161513"
+      "iterations": 128,
+      "ops": 65920,
+      "elapsed_us": 373724,
+      "ops_per_us": 0.1763868523295266,
+      "sink": "260790194532077128838"
     },
     {
       "target": "bosatsu_jvm",
@@ -182,8 +193,8 @@
       "size": 512,
       "iterations": 64,
       "ops": 98560,
-      "elapsed_us": 343373,
-      "ops_per_us": 0.2870347988921668,
+      "elapsed_us": 253813,
+      "ops_per_us": 0.38831738327036047,
       "sink": "102997642685844650409"
     },
     {
@@ -191,11 +202,11 @@
       "workload": "hash_map_hash",
       "strategy": "int64_limb_31",
       "size": 512,
-      "iterations": 8,
-      "ops": 12320,
-      "elapsed_us": 154986,
-      "ops_per_us": 0.0794910508045888,
-      "sink": "12874705333996293763"
+      "iterations": 32,
+      "ops": 49280,
+      "elapsed_us": 337385,
+      "ops_per_us": 0.14606458496969338,
+      "sink": "51498821337970391719"
     },
     {
       "target": "bosatsu_jvm",
@@ -204,8 +215,8 @@
       "size": 512,
       "iterations": 64,
       "ops": 65792,
-      "elapsed_us": 296768,
-      "ops_per_us": 0.22169506146215226,
+      "elapsed_us": 204540,
+      "ops_per_us": 0.32165835533392,
       "sink": "74028031640920586857"
     },
     {
@@ -215,8 +226,8 @@
       "size": 512,
       "iterations": 32,
       "ops": 32896,
-      "elapsed_us": 324981,
-      "ops_per_us": 0.10122437927140356,
+      "elapsed_us": 242142,
+      "ops_per_us": 0.1358541682153447,
       "sink": "37014015815508359943"
     },
     {
@@ -224,22 +235,22 @@
       "workload": "collection_hash",
       "strategy": "int_fallback",
       "size": 4096,
-      "iterations": 32,
-      "ops": 131168,
-      "elapsed_us": 215079,
-      "ops_per_us": 0.6098596329720707,
-      "sink": "26069525864836455812"
+      "iterations": 64,
+      "ops": 262336,
+      "elapsed_us": 405521,
+      "ops_per_us": 0.6469110107737946,
+      "sink": "52139051729341282885"
     },
     {
       "target": "bosatsu_jvm",
       "workload": "collection_hash",
       "strategy": "int64_limb_31",
       "size": 4096,
-      "iterations": 8,
-      "ops": 32792,
-      "elapsed_us": 208924,
-      "ops_per_us": 0.15695659665715764,
-      "sink": "6517381465288363868"
+      "iterations": 16,
+      "ops": 65584,
+      "elapsed_us": 369670,
+      "ops_per_us": 0.17741228663402495,
+      "sink": "13034762930454379635"
     },
     {
       "target": "bosatsu_jvm",
@@ -248,8 +259,8 @@
       "size": 4096,
       "iterations": 8,
       "ops": 98336,
-      "elapsed_us": 334102,
-      "ops_per_us": 0.29432927668795755,
+      "elapsed_us": 251290,
+      "ops_per_us": 0.39132476421664214,
       "sink": "6602944890463656100"
     },
     {
@@ -259,8 +270,8 @@
       "size": 4096,
       "iterations": 4,
       "ops": 49168,
-      "elapsed_us": 402310,
-      "ops_per_us": 0.12221421292038477,
+      "elapsed_us": 335241,
+      "ops_per_us": 0.1466646382751513,
       "sink": "3301472445700121884"
     },
     {
@@ -270,8 +281,8 @@
       "size": 4096,
       "iterations": 8,
       "ops": 65568,
-      "elapsed_us": 220670,
-      "ops_per_us": 0.2971314632709476,
+      "elapsed_us": 213794,
+      "ops_per_us": 0.3066877461481613,
       "sink": "6585595175574440372"
     },
     {
@@ -281,8 +292,8 @@
       "size": 4096,
       "iterations": 4,
       "ops": 32784,
-      "elapsed_us": 283204,
-      "ops_per_us": 0.11576107682094885,
+      "elapsed_us": 245205,
+      "ops_per_us": 0.13370037315715422,
       "sink": "3292797588255514020"
     },
     {
@@ -292,8 +303,8 @@
       "size": 64,
       "iterations": 8192,
       "ops": 548864,
-      "elapsed_us": 219685,
-      "ops_per_us": 2.4984136377085373,
+      "elapsed_us": 204885,
+      "ops_per_us": 2.6788881567708716,
       "sink": "2370320897496608040790"
     },
     {
@@ -301,11 +312,11 @@
       "workload": "collection_hash",
       "strategy": "int64_limb_31",
       "size": 64,
-      "iterations": 65536,
-      "ops": 4390912,
-      "elapsed_us": 276378,
-      "ops_per_us": 15.887342697320337,
-      "sink": "18962567180444891225618"
+      "iterations": 131072,
+      "ops": 8781824,
+      "elapsed_us": 395494,
+      "ops_per_us": 22.20469589930568,
+      "sink": "37925134360832499709591"
     },
     {
       "target": "bosatsu_c",
@@ -314,8 +325,8 @@
       "size": 64,
       "iterations": 4096,
       "ops": 802816,
-      "elapsed_us": 502912,
-      "ops_per_us": 1.5963349452786968,
+      "elapsed_us": 319113,
+      "ops_per_us": 2.515773409419234,
       "sink": "5938104045231588277990"
     },
     {
@@ -323,11 +334,11 @@
       "workload": "hash_map_hash",
       "strategy": "int64_limb_31",
       "size": 64,
-      "iterations": 16384,
-      "ops": 3211264,
-      "elapsed_us": 202361,
-      "ops_per_us": 15.868986613033144,
-      "sink": "23752416180958308732112"
+      "iterations": 32768,
+      "ops": 6422528,
+      "elapsed_us": 371551,
+      "ops_per_us": 17.285723897930566,
+      "sink": "47504832362010919935809"
     },
     {
       "target": "bosatsu_c",
@@ -336,8 +347,8 @@
       "size": 64,
       "iterations": 4096,
       "ops": 540672,
-      "elapsed_us": 468885,
-      "ops_per_us": 1.1531015067660513,
+      "elapsed_us": 223364,
+      "ops_per_us": 2.420587023871349,
       "sink": "5935739509118644543206"
     },
     {
@@ -345,11 +356,11 @@
       "workload": "hash_set_hash",
       "strategy": "int64_limb_31",
       "size": 64,
-      "iterations": 16384,
-      "ops": 2162688,
-      "elapsed_us": 176703,
-      "ops_per_us": 12.239113088063021,
-      "sink": "23742958036506533792976"
+      "iterations": 32768,
+      "ops": 4325376,
+      "elapsed_us": 275072,
+      "ops_per_us": 15.724523033969287,
+      "sink": "47485916073107370057537"
     },
     {
       "target": "bosatsu_c",
@@ -358,8 +369,8 @@
       "size": 512,
       "iterations": 1024,
       "ops": 527360,
-      "elapsed_us": 228061,
-      "ops_per_us": 2.31236379740508,
+      "elapsed_us": 208443,
+      "ops_per_us": 2.529996209995059,
       "sink": "2086321556237998949495"
     },
     {
@@ -369,8 +380,8 @@
       "size": 512,
       "iterations": 16384,
       "ops": 8437760,
-      "elapsed_us": 439189,
-      "ops_per_us": 19.212138737536687,
+      "elapsed_us": 369230,
+      "ops_per_us": 22.85231427565474,
       "sink": "33381144900041711182233"
     },
     {
@@ -380,8 +391,8 @@
       "size": 512,
       "iterations": 512,
       "ops": 788480,
-      "elapsed_us": 451003,
-      "ops_per_us": 1.7482810535628366,
+      "elapsed_us": 316977,
+      "ops_per_us": 2.487499092994129,
       "sink": "823981141454448771782"
     },
     {
@@ -389,11 +400,11 @@
       "workload": "hash_map_hash",
       "strategy": "int64_limb_31",
       "size": 512,
-      "iterations": 2048,
-      "ops": 3153920,
-      "elapsed_us": 236936,
-      "ops_per_us": 13.31127393051288,
-      "sink": "3295924565803172924436"
+      "iterations": 4096,
+      "ops": 6307840,
+      "elapsed_us": 364184,
+      "ops_per_us": 17.320475364101664,
+      "sink": "6591849131657188261855"
     },
     {
       "target": "bosatsu_c",
@@ -402,8 +413,8 @@
       "size": 512,
       "iterations": 512,
       "ops": 526336,
-      "elapsed_us": 549822,
-      "ops_per_us": 0.9572843574829673,
+      "elapsed_us": 211361,
+      "ops_per_us": 2.4902228888016236,
       "sink": "592224253095056263366"
     },
     {
@@ -411,22 +422,22 @@
       "workload": "hash_set_hash",
       "strategy": "int64_limb_31",
       "size": 512,
-      "iterations": 2048,
-      "ops": 2105344,
-      "elapsed_us": 292033,
-      "ops_per_us": 7.209267445802358,
-      "sink": "2368897012365602890772"
+      "iterations": 4096,
+      "ops": 4210688,
+      "elapsed_us": 287180,
+      "ops_per_us": 14.662190960373286,
+      "sink": "4737794024782048194527"
     },
     {
       "target": "bosatsu_c",
       "workload": "collection_hash",
       "strategy": "int_fallback",
       "size": 4096,
-      "iterations": 64,
-      "ops": 262336,
-      "elapsed_us": 245820,
-      "ops_per_us": 1.067187372874461,
-      "sink": "52139051729341282885"
+      "iterations": 128,
+      "ops": 524672,
+      "elapsed_us": 330436,
+      "ops_per_us": 1.5878173080414968,
+      "sink": "104278103448801214862"
     },
     {
       "target": "bosatsu_c",
@@ -435,8 +446,8 @@
       "size": 4096,
       "iterations": 1024,
       "ops": 4197376,
-      "elapsed_us": 372813,
-      "ops_per_us": 11.258663190393039,
+      "elapsed_us": 180637,
+      "ops_per_us": 23.236524078677125,
       "sink": "834224827588557773266"
     },
     {
@@ -444,44 +455,44 @@
       "workload": "hash_map_hash",
       "strategy": "int_fallback",
       "size": 4096,
-      "iterations": 16,
-      "ops": 196672,
-      "elapsed_us": 247232,
-      "ops_per_us": 0.7954957287082578,
-      "sink": "13205889780804964099"
+      "iterations": 64,
+      "ops": 786688,
+      "elapsed_us": 371861,
+      "ops_per_us": 2.115543173390057,
+      "sink": "52823559130743620741"
     },
     {
       "target": "bosatsu_c",
       "workload": "hash_map_hash",
       "strategy": "int64_limb_31",
       "size": 4096,
-      "iterations": 128,
-      "ops": 1573376,
-      "elapsed_us": 295856,
-      "ops_per_us": 5.318046617273268,
-      "sink": "105647118251605890574"
+      "iterations": 512,
+      "ops": 6293504,
+      "elapsed_us": 491821,
+      "ops_per_us": 12.79633037222892,
+      "sink": "422588473008657867993"
     },
     {
       "target": "bosatsu_c",
       "workload": "hash_set_hash",
       "strategy": "int_fallback",
       "size": 4096,
-      "iterations": 32,
-      "ops": 262272,
-      "elapsed_us": 508363,
-      "ops_per_us": 0.5159148089062343,
-      "sink": "26342380705980761828"
+      "iterations": 64,
+      "ops": 524544,
+      "elapsed_us": 322909,
+      "ops_per_us": 1.6244328897615117,
+      "sink": "52684761411629894917"
     },
     {
       "target": "bosatsu_c",
       "workload": "hash_set_hash",
       "strategy": "int64_limb_31",
       "size": 4096,
-      "iterations": 128,
-      "ops": 1049088,
-      "elapsed_us": 271122,
-      "ops_per_us": 3.869431473653927,
-      "sink": "105369522813378438926"
+      "iterations": 512,
+      "ops": 4196352,
+      "elapsed_us": 384265,
+      "ops_per_us": 10.920463742469389,
+      "sink": "421478091255748061401"
     }
   ]
 }

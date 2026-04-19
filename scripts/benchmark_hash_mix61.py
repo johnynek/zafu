@@ -1,5 +1,6 @@
 import argparse
 import csv
+import hashlib
 import json
 import pathlib
 import platform
@@ -18,6 +19,14 @@ TARGETS = ("bosatsu_jvm", "bosatsu_c")
 STRATEGIES = ("int_fallback", "int64_limb_31")
 WORKLOADS = ("collection_hash", "hash_map_hash", "hash_set_hash")
 WIN_THRESHOLD = 1.02
+BENCH_SOURCE_PATHS = (
+    pathlib.Path("scripts/benchmark_hash_mix61.py"),
+    pathlib.Path("src/Zafu/Abstract/Internal/Hash61.bosatsu"),
+    pathlib.Path("src/Zafu/Abstract/Hash.bosatsu"),
+    pathlib.Path("src/Zafu/Benchmark/HashMix61.bosatsu"),
+    pathlib.Path("src/Zafu/Collection/HashMap.bosatsu"),
+    pathlib.Path("src/Zafu/Collection/HashSet.bosatsu"),
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -55,12 +64,14 @@ def run_version_command(command: list[str]) -> str:
     return completed.stdout.strip().splitlines()[0]
 
 
-def git_sha_with_dirty_suffix() -> tuple[str, bool]:
-    head = run_checked(["git", "rev-parse", "HEAD"], capture_stdout=True).strip()
-    dirty = bool(run_checked(["git", "status", "--porcelain"], capture_stdout=True).strip())
-    if dirty:
-        return (f"{head}-dirty", True)
-    return (head, False)
+def benchmark_source_fingerprint(paths: tuple[pathlib.Path, ...]) -> str:
+    hasher = hashlib.sha256()
+    for rel_path in paths:
+        hasher.update(rel_path.as_posix().encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update((REPO_ROOT / rel_path).read_bytes())
+        hasher.update(b"\0")
+    return hasher.hexdigest()
 
 
 def parse_benchmark_csv(raw_csv: str, target: str) -> list[dict[str, object]]:
@@ -165,6 +176,7 @@ def write_csv(path: pathlib.Path, results: list[dict[str, object]]) -> None:
                 "ops_per_us",
                 "sink",
             ],
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(results)
@@ -198,14 +210,18 @@ def main() -> int:
 
     results = [*jvm_rows, *c_rows]
     strategy_summary = build_strategy_summary(results)
-    git_sha, git_dirty = git_sha_with_dirty_suffix()
+    source_fingerprint = benchmark_source_fingerprint(BENCH_SOURCE_PATHS)
 
     artifact = {
         "run_metadata": {
-            "format_version": 1,
+            "format_version": 2,
             "generated_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-            "git_sha": git_sha,
-            "git_dirty": git_dirty,
+            "source_provenance": {
+                "kind": "source_fingerprint",
+                "algorithm": "sha256",
+                "files": [path.as_posix() for path in BENCH_SOURCE_PATHS],
+                "digest": source_fingerprint,
+            },
             "bosatsu_version": (REPO_ROOT / ".bosatsu_version").read_text(encoding="utf-8").strip(),
             "java_version": run_version_command(["java", "-version"]),
             "gcc_version": run_version_command(["gcc", "--version"]),

@@ -8,6 +8,11 @@ Artifacts:
 - `baseline-local.json`: metadata plus grouped strategy comparisons.
 - `baseline-local.csv`: flat per-case measurements.
 
+The checked-in JSON records a deterministic SHA-256 source fingerprint over the
+benchmark-relevant Bosatsu and harness files instead of a git SHA. That keeps
+the evidence reviewable from the checked-in tree itself, and
+`scripts/hash_mix_benchmark_test.py` rejects stale fingerprints.
+
 Regenerate the local baseline with:
 
 ```bash
@@ -25,6 +30,11 @@ The benchmark package and the shipped unordered collection hashers both import
 `hash_set_hash` measurements exercise the same `sum_61_i64` reducer that
 `Zafu/Collection/HashMap` and `Zafu/Collection/HashSet` use in production.
 
+The public `HashMap.hash` and `HashSet.hash` adapters re-hash keys/items with
+their caller-supplied dictionaries, so the benchmark's synthetic key/item hash
+inputs measure the shipped public hash path rather than the collections'
+internal HAMT cache dictionaries.
+
 Strategies:
 
 - `int_fallback`: the Int conversion multiply + canonical reduction fallback.
@@ -35,7 +45,7 @@ Decision:
 - `baseline-local.json` currently selects `int64_limb_31`.
 - On the recorded macOS arm64 local run, `int_fallback` won the JVM cases, but
   `int64_limb_31` won every native `bosatsu_c` case by a much larger margin
-  (roughly 8.7x to 10.5x faster).
+  (roughly 6.3x to 10.1x faster).
 - The merged design allows the fallback only if it is competitive on supported
   backends. These measurements do not support keeping the fallback as the public
   `mix_61` implementation, so `src/Zafu/Abstract/Hash.bosatsu` uses the

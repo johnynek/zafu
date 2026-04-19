@@ -1,4 +1,5 @@
 import json
+import hashlib
 import pathlib
 import unittest
 
@@ -14,6 +15,24 @@ HASH_PATH = REPO_ROOT / "src/Zafu/Abstract/Hash.bosatsu"
 HASHMAP_PATH = REPO_ROOT / "src/Zafu/Collection/HashMap.bosatsu"
 HASHSET_PATH = REPO_ROOT / "src/Zafu/Collection/HashSet.bosatsu"
 BENCH_PATH = REPO_ROOT / "src/Zafu/Benchmark/HashMix61.bosatsu"
+BENCH_SOURCE_PATHS = [
+    pathlib.Path("scripts/benchmark_hash_mix61.py"),
+    pathlib.Path("src/Zafu/Abstract/Internal/Hash61.bosatsu"),
+    pathlib.Path("src/Zafu/Abstract/Hash.bosatsu"),
+    pathlib.Path("src/Zafu/Benchmark/HashMix61.bosatsu"),
+    pathlib.Path("src/Zafu/Collection/HashMap.bosatsu"),
+    pathlib.Path("src/Zafu/Collection/HashSet.bosatsu"),
+]
+
+
+def benchmark_source_fingerprint(paths: list[pathlib.Path]) -> str:
+    hasher = hashlib.sha256()
+    for rel_path in paths:
+        hasher.update(rel_path.as_posix().encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update((REPO_ROOT / rel_path).read_bytes())
+        hasher.update(b"\0")
+    return hasher.hexdigest()
 
 
 class HashMix61BenchmarkTests(unittest.TestCase):
@@ -24,10 +43,21 @@ class HashMix61BenchmarkTests(unittest.TestCase):
 
     def test_baseline_artifact_covers_required_workloads_and_decision(self) -> None:
         artifact = json.loads(JSON_PATH.read_text(encoding="utf-8"))
+        metadata = artifact["run_metadata"]
+        source = metadata["source_provenance"]
 
         summary = artifact["strategy_summary"]
         self.assertEqual(summary["chosen_strategy"], "int64_limb_31")
         self.assertEqual(summary["candidate_strategy"], "int64_limb_31")
+        self.assertNotIn("git_sha", metadata)
+        self.assertNotIn("git_dirty", metadata)
+        self.assertEqual(source["kind"], "source_fingerprint")
+        self.assertEqual(source["algorithm"], "sha256")
+        self.assertEqual(source["files"], [path.as_posix() for path in BENCH_SOURCE_PATHS])
+        self.assertEqual(
+            source["digest"],
+            benchmark_source_fingerprint(BENCH_SOURCE_PATHS),
+        )
 
         comparisons = summary["comparisons"]
         self.assertEqual(
