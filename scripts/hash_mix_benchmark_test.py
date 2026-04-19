@@ -9,6 +9,11 @@ JSON_PATH = BASELINE_DIR / "baseline-local.json"
 CSV_PATH = BASELINE_DIR / "baseline-local.csv"
 NOTE_PATH = BASELINE_DIR / "README.md"
 README_PATH = REPO_ROOT / "README.md"
+HASH61_PATH = REPO_ROOT / "src/Zafu/Abstract/Internal/Hash61.bosatsu"
+HASH_PATH = REPO_ROOT / "src/Zafu/Abstract/Hash.bosatsu"
+HASHMAP_PATH = REPO_ROOT / "src/Zafu/Collection/HashMap.bosatsu"
+HASHSET_PATH = REPO_ROOT / "src/Zafu/Collection/HashSet.bosatsu"
+BENCH_PATH = REPO_ROOT / "src/Zafu/Benchmark/HashMix61.bosatsu"
 
 
 class HashMix61BenchmarkTests(unittest.TestCase):
@@ -53,6 +58,27 @@ class HashMix61BenchmarkTests(unittest.TestCase):
 
         self.assertIn("int_fallback", note)
         self.assertIn("int64_limb_31", note)
+        self.assertIn("Zafu/Abstract/Internal/Hash61", note)
+
+    def test_benchmark_and_production_share_the_same_hash61_helpers(self) -> None:
+        hash61 = HASH61_PATH.read_text(encoding="utf-8")
+        hash_impl = HASH_PATH.read_text(encoding="utf-8")
+        hash_map = HASHMAP_PATH.read_text(encoding="utf-8")
+        hash_set = HASHSET_PATH.read_text(encoding="utf-8")
+        benchmark = BENCH_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("package Zafu/Abstract/Internal/Hash61", hash61)
+        self.assertIn("sum_61_i64", hash61)
+        self.assertIn("mix_61_limb_31", hash61)
+
+        self.assertIn("from Zafu/Abstract/Internal/Hash61 import (", hash_impl)
+        self.assertIn("from Zafu/Abstract/Internal/Hash61 import (", hash_map)
+        self.assertIn("from Zafu/Abstract/Internal/Hash61 import (", hash_set)
+        self.assertIn("from Zafu/Abstract/Internal/Hash61 import (", benchmark)
+
+        old_sum = "normalize_61(int64_to_Int(add_Int64(left, right)))"
+        self.assertNotIn(old_sum, hash_map)
+        self.assertNotIn(old_sum, hash_set)
 
 
 if __name__ == "__main__":

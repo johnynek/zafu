@@ -54,6 +54,10 @@ from Zafu/Abstract/Hash import (
   mix_61,
   finish_61
 )
+from Zafu/Abstract/Internal/Hash61 import (
+  in_range_61_i64,
+  sum_61_i64,
+)
 from Zafu/Abstract/Instances/Predef import (
   eq_Int as eq_Int_inst,
   eq_Option,
@@ -696,12 +700,6 @@ def eq_fn(eq_value: Eq[v], left: HashMap[k, v], right: HashMap[k, v]) -> Bool:
 def eq(eq_value: Eq[v]) -> Eq[HashMap[k, v]]:
   eq_from_fn((left, right) -> eq_fn(eq_value, left, right))
 
-def sum_61(left: Int64, right: Int64) -> Int64:
-  normalize_61(int64_to_Int(add_Int64(left, right)))
-
-def hash_in_range_61(value: Int64) -> Bool:
-  eq_Int64(value, normalize_61(int64_to_Int(value)))
-
 def hash_entry(hash_value: Hash[v], entry: Entry[k, v]) -> Int64:
   value_hash = hash_Hash(hash_value, entry_value(entry))
   finish_61(mix_61(entry_hash(entry), value_hash), 2, hash_tag_entry)
@@ -715,7 +713,7 @@ def hash_fn(hash_value: Hash[v], map: HashMap[k, v]) -> Int64:
         (sum_acc, xor_acc) = state
         item_hash = hash_entry(hash_value, entry)
         # XOR is commutative, so this preserves entropy while making map hashing independent of entry traversal order.
-        (sum_61(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
+        (sum_61_i64(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
       ))
       finish_61(mix_61(sum_acc, xor_acc), sz, hash_tag_map)
 
@@ -765,7 +763,7 @@ def indexed_entries_ok(entries: Array[Entry[k, v]], data_bitmap: Int64, hash_key
         match (bitmap_bit_at(data_bitmap, idx), get_Array(entries, idx)):
           case (Some(expected_bit), Some(entry)):
             cached_hash_ok = eq_Int64(entry_hash(entry), hash_Hash(hash_key, entry_key(entry)))
-            range_ok = hash_in_range_61(entry_hash(entry))
+            range_ok = in_range_61_i64(entry_hash(entry))
             bit_ok = eq_Int64(bitpos(fragment(entry_hash(entry), shift)), expected_bit)
             if and(and(cached_hash_ok, range_ok), bit_ok):
               go(rem.sub(1), add_Int64(idx, one_i64))
@@ -789,7 +787,7 @@ def collision_entries_ok(entries: Array[Entry[k, v]], collision_hash: Int64, has
             case Some(entry):
               cached_hash_ok = eq_Int64(entry_hash(entry), hash_Hash(hash_key, entry_key(entry)))
               same_hash_ok = eq_Int64(entry_hash(entry), collision_hash)
-              range_ok = and(hash_in_range_61(collision_hash), hash_in_range_61(entry_hash(entry)))
+              range_ok = and(in_range_61_i64(collision_hash), in_range_61_i64(entry_hash(entry)))
               if and(and(cached_hash_ok, same_hash_ok), range_ok):
                 go(rem.sub(1), add_Int64(idx, one_i64))
               else:

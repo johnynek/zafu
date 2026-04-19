@@ -23,16 +23,9 @@ from Bosatsu/Num/Float64 import (
 )
 from Bosatsu/Num/Int64 import (
   Int64,
-  add_Int64,
-  and_Int64,
-  cmp_Int64,
   eq_Int64,
   int64_to_Int,
   int_low_bits_to_Int64 as i64,
-  mul_Int64,
-  shift_left_Int64,
-  shift_right_unsigned_Int64,
-  sub_Int64,
   xor_Int64,
 )
 from Bosatsu/Predef import (
@@ -48,6 +41,14 @@ from Bosatsu/Prog import (
 from Zafu/Abstract/Hash import (
   mix_61,
   normalize_61,
+)
+from Zafu/Abstract/Internal/Hash61 import (
+  hash_modulus_int,
+  mix_prime_int,
+  mix_add_int,
+  sum_61_i64,
+  mix_61_int_fallback,
+  mix_61_limb_31,
 )
 from Zafu/Testing/HedgeHog import (
   Gen,
@@ -88,12 +89,6 @@ struct TimedResult(
   elapsed_nanos: Int,
 )
 
-hash_modulus_int: Int = 2305843009213693951
-hash_modulus: Int64 = i64(hash_modulus_int)
-mix_prime: Int64 = i64(1099511628211)
-mix_add: Int64 = i64(1469598103934665603)
-hash_mask_31: Int64 = i64(2147483647)
-hash_mask_30: Int64 = i64(1073741823)
 hash_seed_collection: Int64 = i64(1123)
 hash_tag_collection: Int64 = i64(1129)
 hash_seed_map: Int64 = i64(1601)
@@ -166,60 +161,8 @@ def prepare_input(size: Int) -> BenchInput:
     build_hash_values(size, size.add(43)),
   )
 
-def reduce_61_i64(value: Int64) -> Int64:
-  folded = add_Int64(and_Int64(value, hash_modulus), shift_right_unsigned_Int64(value, 61))
-  match cmp_Int64(folded, hash_modulus):
-    case LT:
-      folded
-    case EQ:
-      empty_i64
-    case GT:
-      sub_Int64(folded, hash_modulus)
-
-def sum_61(left: Int64, right: Int64) -> Int64:
-  reduce_61_i64(add_Int64(left, right))
-
 def finish_61_with(mix_fn: (Int64, Int64) -> Int64, acc: Int64, size: Int, tag: Int64) -> Int64:
   mix_fn(mix_fn(acc, normalize_61(size)), tag)
-
-def mix_61_int_fallback(acc: Int64, next: Int64) -> Int64:
-  normalize_61(int64_to_Int(acc).mul(int64_to_Int(mix_prime)).add(int64_to_Int(next)).add(int64_to_Int(mix_add)))
-
-def mul_mod_61_limb_31(left: Int64, right: Int64) -> Int64:
-  left_lo = and_Int64(left, hash_mask_31)
-  left_hi = shift_right_unsigned_Int64(left, 31)
-  right_lo = and_Int64(right, hash_mask_31)
-  right_hi = shift_right_unsigned_Int64(right, 31)
-
-  prod_lo = mul_Int64(left_lo, right_lo)
-  prod_mid = add_Int64(mul_Int64(left_lo, right_hi), mul_Int64(left_hi, right_lo))
-  prod_hi = mul_Int64(left_hi, right_hi)
-
-  prod_lo_folded = and_Int64(prod_lo, hash_modulus)
-  prod_lo_carry = shift_right_unsigned_Int64(prod_lo, 61)
-
-  prod_mid_lo = and_Int64(prod_mid, hash_mask_30)
-  prod_mid_hi = shift_right_unsigned_Int64(prod_mid, 30)
-
-  # Split the 31-bit cross term so 2^61 folds back into the low bits.
-  total = add_Int64(
-    prod_lo_folded,
-    add_Int64(
-      prod_lo_carry,
-      add_Int64(
-        prod_mid_hi,
-        add_Int64(
-          shift_left_Int64(prod_mid_lo, 31),
-          shift_left_Int64(prod_hi, 1),
-        ),
-      ),
-    ),
-  )
-  reduce_61_i64(total)
-
-def mix_61_limb_31(acc: Int64, next: Int64) -> Int64:
-  product = mul_mod_61_limb_31(acc, mix_prime)
-  reduce_61_i64(add_Int64(add_Int64(product, next), mix_add))
 
 def hash_collection_with(items: Array[Int64], mix_fn: (Int64, Int64) -> Int64) -> Int64:
   acc = foldl_Array(items, hash_seed_collection, mix_fn)
@@ -234,7 +177,7 @@ def hash_map_with(entries: Array[HashPair], mix_fn: (Int64, Int64) -> Int64) -> 
   (sum_acc, xor_acc) = foldl_Array(entries, (hash_seed_map, empty_i64), (state, entry) -> (
     (sum_acc, xor_acc) = state
     item_hash = hash_map_entry_with(entry, mix_fn)
-    (sum_61(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
+    (sum_61_i64(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
   ))
   finish_61_with(mix_fn, mix_fn(sum_acc, xor_acc), cnt, hash_tag_map)
 
@@ -246,7 +189,7 @@ def hash_set_with(items: Array[Int64], mix_fn: (Int64, Int64) -> Int64) -> Int64
   (sum_acc, xor_acc) = foldl_Array(items, (hash_seed_set, empty_i64), (state, item_hash) -> (
     (sum_acc, xor_acc) = state
     entry_hash = hash_set_entry_with(item_hash, mix_fn)
-    (sum_61(sum_acc, entry_hash), xor_Int64(xor_acc, entry_hash))
+    (sum_61_i64(sum_acc, entry_hash), xor_Int64(xor_acc, entry_hash))
   ))
   finish_61_with(mix_fn, mix_fn(sum_acc, xor_acc), cnt, hash_tag_set)
 
@@ -403,7 +346,7 @@ def run_benchmark() -> Prog[IOError, Int]:
 rand_canonical_hash: Gen[Int] = int_between_Gen(0, hash_modulus_int.sub(1))
 
 def mix_61_oracle(acc: Int, next: Int) -> Int64:
-  normalize_61(acc.mul(int64_to_Int(mix_prime)).add(next).add(int64_to_Int(mix_add)))
+  normalize_61(acc.mul(mix_prime_int).add(next).add(mix_add_int))
 
 hash_mix_props: Prop = suite_Prop("HashMix61 props", [
   forall_Prop(

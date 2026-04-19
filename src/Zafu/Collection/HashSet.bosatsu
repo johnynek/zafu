@@ -53,6 +53,10 @@ from Zafu/Abstract/Hash import (
   mix_61,
   finish_61
 )
+from Zafu/Abstract/Internal/Hash61 import (
+  in_range_61_i64,
+  sum_61_i64,
+)
 from Zafu/Abstract/Instances/Predef import (
   eq_Int as eq_Int_inst,
   hash_Int
@@ -601,12 +605,6 @@ def eq_fn(left: HashSet[k], right: HashSet[k]) -> Bool:
 # Equality adapter for sets.
 eq: forall k. Eq[HashSet[k]] = eq_from_fn(eq_fn)
 
-def sum_61(left: Int64, right: Int64) -> Int64:
-  normalize_61(int64_to_Int(add_Int64(left, right)))
-
-def hash_in_range_61(value: Int64) -> Bool:
-  eq_Int64(value, normalize_61(int64_to_Int(value)))
-
 def hash_entry(entry: Entry[k]) -> Int64:
   finish_61(entry_hash(entry), 1, hash_tag_entry)
 
@@ -618,7 +616,7 @@ def hash_fn(set: HashSet[k]) -> Int64:
       (sum_acc, xor_acc) = fold_entries_node(root, (hash_seed_set, empty_i64), (state, entry) -> (
         (sum_acc, xor_acc) = state
         item_hash = hash_entry(entry)
-        (sum_61(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
+        (sum_61_i64(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
       ))
       finish_61(mix_61(sum_acc, xor_acc), sz, hash_tag_set)
 
@@ -666,7 +664,7 @@ def indexed_entries_ok(entries: Array[Entry[k]], data_bitmap: Int64, hash_item: 
         match (bitmap_bit_at(data_bitmap, idx), get_Array(entries, idx)):
           case (Some(expected_bit), Some(entry)):
             cached_hash_ok = eq_Int64(entry_hash(entry), hash_Hash(hash_item, entry_key(entry)))
-            range_ok = hash_in_range_61(entry_hash(entry))
+            range_ok = in_range_61_i64(entry_hash(entry))
             bit_ok = eq_Int64(bitpos(fragment(entry_hash(entry), shift)), expected_bit)
             if and(and(cached_hash_ok, range_ok), bit_ok):
               go(rem.sub(1), add_Int64(idx, one_i64))
@@ -690,7 +688,7 @@ def collision_entries_ok(entries: Array[Entry[k]], collision_hash: Int64, hash_i
             case Some(entry):
               cached_hash_ok = eq_Int64(entry_hash(entry), hash_Hash(hash_item, entry_key(entry)))
               same_hash_ok = eq_Int64(entry_hash(entry), collision_hash)
-              range_ok = and(hash_in_range_61(collision_hash), hash_in_range_61(entry_hash(entry)))
+              range_ok = and(in_range_61_i64(collision_hash), in_range_61_i64(entry_hash(entry)))
               if and(and(cached_hash_ok, same_hash_ok), range_ok):
                 go(rem.sub(1), add_Int64(idx, one_i64))
               else:

@@ -20,6 +20,11 @@ Workloads:
 - `hash_map_hash`: unordered `HashMap` entry hashing plus map-hash accumulation.
 - `hash_set_hash`: unordered `HashSet` entry hashing plus set-hash accumulation.
 
+The benchmark package and the shipped unordered collection hashers both import
+`Zafu/Abstract/Internal/Hash61`, so the recorded `hash_map_hash` and
+`hash_set_hash` measurements exercise the same `sum_61_i64` reducer that
+`Zafu/Collection/HashMap` and `Zafu/Collection/HashSet` use in production.
+
 Strategies:
 
 - `int_fallback`: the Int conversion multiply + canonical reduction fallback.
