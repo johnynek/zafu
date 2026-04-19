@@ -20,6 +20,7 @@
     "Zafu/Benchmark/Game/Mandelbrot",
     "Zafu/Benchmark/Game/NBody",
     "Zafu/Benchmark/Game/SpectralNorm",
+    "Zafu/Benchmark/HashMix61",
     "Zafu/Benchmark/Vector",
     "Zafu/Collection/Chain",
     "Zafu/Collection/Deque",

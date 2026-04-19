@@ -55,6 +55,24 @@ The benchmark prints CSV with header:
 
 `ops_per_us` is most useful for comparing runs of the same `case` across different sizes.
 
+## Benchmarking `mix_61`
+
+Regenerate the checked-in local `mix_61` strategy baseline with:
+
+```bash
+scripts/benchmark_hash_mix61.sh
+```
+
+The current local benchmark artifacts live at:
+
+- `docs/hash-mix-61/baseline-local.json`
+- `docs/hash-mix-61/baseline-local.csv`
+
+The summary note in `docs/hash-mix-61/README.md` explains the recorded tradeoff:
+the Int fallback wins on the JVM cases, but the 31-bit Int64 limb strategy wins
+decisively on the native `bosatsu_c` workloads, so `Hash.mix_61` follows the
+benchmarked Int64 limb path.
+
 ## Benchmarksgame compare harness
 
 Phase-1 cross-language comparison needs Python 3.9+, `curl`, `java`, `javac`, and `gcc` in addition to the Bosatsu wrapper setup.

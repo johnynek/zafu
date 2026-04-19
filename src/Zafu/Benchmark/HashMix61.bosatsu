@@ -1,0 +1,469 @@
+package Zafu/Benchmark/HashMix61
+
+from Bosatsu/Collection/Array import (
+  Array,
+  from_List_Array,
+  size_Array,
+  foldl_Array,
+)
+from Bosatsu/IO/Core import (
+  duration_to_nanos,
+  now_mono,
+  stdout,
+  write_utf8,
+)
+from Bosatsu/IO/Error import (
+  IOError,
+  error_to_String,
+)
+from Bosatsu/Num/Float64 import (
+  divf,
+  float64_to_String,
+  int_to_Float64,
+)
+from Bosatsu/Num/Int64 import (
+  Int64,
+  add_Int64,
+  and_Int64,
+  cmp_Int64,
+  eq_Int64,
+  int64_to_Int,
+  int_low_bits_to_Int64 as i64,
+  mul_Int64,
+  shift_left_Int64,
+  shift_right_unsigned_Int64,
+  sub_Int64,
+  xor_Int64,
+)
+from Bosatsu/Predef import (
+  int_to_String,
+)
+from Bosatsu/Prog import (
+  Main,
+  Prog,
+  await,
+  pure,
+  recover,
+)
+from Zafu/Abstract/Hash import (
+  mix_61,
+  normalize_61,
+)
+from Zafu/Testing/HedgeHog import (
+  Gen,
+  Prop,
+  forall_Prop,
+  int_between_Gen,
+  run_Prop,
+  suite_Prop,
+  tuple2_Gen,
+)
+
+export (
+  main,
+)
+
+exposes Bosatsu/Prog
+struct HashPair(
+  key_hash: Int64,
+  value_hash: Int64,
+)
+
+struct BenchInput(
+  collection_hashes: Array[Int64],
+  map_entries: Array[HashPair],
+  set_hashes: Array[Int64],
+)
+
+struct BenchCase(
+  workload: String,
+  strategy: String,
+  size: Int,
+  ops_per_iteration: Int,
+  run_once: Int -> Int,
+)
+
+struct TimedResult(
+  sink: Int,
+  elapsed_nanos: Int,
+)
+
+hash_modulus_int: Int = 2305843009213693951
+hash_modulus: Int64 = i64(hash_modulus_int)
+mix_prime: Int64 = i64(1099511628211)
+mix_add: Int64 = i64(1469598103934665603)
+hash_mask_31: Int64 = i64(2147483647)
+hash_mask_30: Int64 = i64(1073741823)
+hash_seed_collection: Int64 = i64(1123)
+hash_tag_collection: Int64 = i64(1129)
+hash_seed_map: Int64 = i64(1601)
+hash_tag_map_entry: Int64 = i64(1607)
+hash_tag_map: Int64 = i64(1609)
+hash_seed_set: Int64 = i64(1709)
+hash_tag_set_entry: Int64 = i64(1721)
+hash_tag_set: Int64 = i64(1723)
+empty_i64: Int64 = i64(0)
+
+warmup_iterations = 3
+target_elapsed_nanos = 200000000
+min_measure_iterations = 1
+max_measure_iterations = 131072
+max_calibration_rounds = 24
+
+lcg_multiplier = 1103515245
+lcg_increment = 12345
+lcg_modulus = 2147483647
+
+def min_Int(a: Int, b: Int) -> Int:
+  match cmp_Int(a, b):
+    case LT | EQ:
+      a
+    case GT:
+      b
+
+def max_Int(a: Int, b: Int) -> Int:
+  match cmp_Int(a, b):
+    case LT:
+      b
+    case GT | EQ:
+      a
+
+def advance_seed(seed: Int) -> Int:
+  raw = mod_Int(seed.mul(lcg_multiplier).add(lcg_increment), lcg_modulus)
+  if cmp_Int(raw, 0) matches LT | EQ:
+    raw.add(lcg_modulus)
+  else:
+    raw
+
+def build_hash_values(count: Int, start_seed: Int) -> Array[Int64]:
+  def go(rem: Int, seed: Int, rev: List[Int64]) -> Array[Int64]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        from_List_Array(rev.reverse())
+      case _:
+        next_seed = advance_seed(seed)
+        raw = next_seed.mul(2147483629).add(seed.mul(7919)).add(rem.mul(97))
+        go(rem.sub(1), next_seed, [normalize_61(raw), *rev])
+  go(count, start_seed, [])
+
+def build_hash_pairs(count: Int, start_seed: Int) -> Array[HashPair]:
+  def go(rem: Int, seed: Int, rev: List[HashPair]) -> Array[HashPair]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        from_List_Array(rev.reverse())
+      case _:
+        key_seed = advance_seed(seed)
+        value_seed = advance_seed(key_seed)
+        key_hash = normalize_61(key_seed.mul(2147483629).add(rem.mul(193)))
+        value_hash = normalize_61(value_seed.mul(2147483587).add(rem.mul(389)))
+        go(rem.sub(1), value_seed, [HashPair(key_hash, value_hash), *rev])
+  go(count, start_seed, [])
+
+def prepare_input(size: Int) -> BenchInput:
+  BenchInput(
+    build_hash_values(size, size.add(17)),
+    build_hash_pairs(size, size.add(29)),
+    build_hash_values(size, size.add(43)),
+  )
+
+def reduce_61_i64(value: Int64) -> Int64:
+  folded = add_Int64(and_Int64(value, hash_modulus), shift_right_unsigned_Int64(value, 61))
+  match cmp_Int64(folded, hash_modulus):
+    case LT:
+      folded
+    case EQ:
+      empty_i64
+    case GT:
+      sub_Int64(folded, hash_modulus)
+
+def sum_61(left: Int64, right: Int64) -> Int64:
+  reduce_61_i64(add_Int64(left, right))
+
+def finish_61_with(mix_fn: (Int64, Int64) -> Int64, acc: Int64, size: Int, tag: Int64) -> Int64:
+  mix_fn(mix_fn(acc, normalize_61(size)), tag)
+
+def mix_61_int_fallback(acc: Int64, next: Int64) -> Int64:
+  normalize_61(int64_to_Int(acc).mul(int64_to_Int(mix_prime)).add(int64_to_Int(next)).add(int64_to_Int(mix_add)))
+
+def mul_mod_61_limb_31(left: Int64, right: Int64) -> Int64:
+  left_lo = and_Int64(left, hash_mask_31)
+  left_hi = shift_right_unsigned_Int64(left, 31)
+  right_lo = and_Int64(right, hash_mask_31)
+  right_hi = shift_right_unsigned_Int64(right, 31)
+
+  prod_lo = mul_Int64(left_lo, right_lo)
+  prod_mid = add_Int64(mul_Int64(left_lo, right_hi), mul_Int64(left_hi, right_lo))
+  prod_hi = mul_Int64(left_hi, right_hi)
+
+  prod_lo_folded = and_Int64(prod_lo, hash_modulus)
+  prod_lo_carry = shift_right_unsigned_Int64(prod_lo, 61)
+
+  prod_mid_lo = and_Int64(prod_mid, hash_mask_30)
+  prod_mid_hi = shift_right_unsigned_Int64(prod_mid, 30)
+
+  # Split the 31-bit cross term so 2^61 folds back into the low bits.
+  total = add_Int64(
+    prod_lo_folded,
+    add_Int64(
+      prod_lo_carry,
+      add_Int64(
+        prod_mid_hi,
+        add_Int64(
+          shift_left_Int64(prod_mid_lo, 31),
+          shift_left_Int64(prod_hi, 1),
+        ),
+      ),
+    ),
+  )
+  reduce_61_i64(total)
+
+def mix_61_limb_31(acc: Int64, next: Int64) -> Int64:
+  product = mul_mod_61_limb_31(acc, mix_prime)
+  reduce_61_i64(add_Int64(add_Int64(product, next), mix_add))
+
+def hash_collection_with(items: Array[Int64], mix_fn: (Int64, Int64) -> Int64) -> Int64:
+  acc = foldl_Array(items, hash_seed_collection, mix_fn)
+  finish_61_with(mix_fn, acc, int64_to_Int(size_Array(items)), hash_tag_collection)
+
+def hash_map_entry_with(entry: HashPair, mix_fn: (Int64, Int64) -> Int64) -> Int64:
+  HashPair(key_hash, value_hash) = entry
+  finish_61_with(mix_fn, mix_fn(key_hash, value_hash), 2, hash_tag_map_entry)
+
+def hash_map_with(entries: Array[HashPair], mix_fn: (Int64, Int64) -> Int64) -> Int64:
+  cnt = int64_to_Int(size_Array(entries))
+  (sum_acc, xor_acc) = foldl_Array(entries, (hash_seed_map, empty_i64), (state, entry) -> (
+    (sum_acc, xor_acc) = state
+    item_hash = hash_map_entry_with(entry, mix_fn)
+    (sum_61(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
+  ))
+  finish_61_with(mix_fn, mix_fn(sum_acc, xor_acc), cnt, hash_tag_map)
+
+def hash_set_entry_with(item_hash: Int64, mix_fn: (Int64, Int64) -> Int64) -> Int64:
+  finish_61_with(mix_fn, item_hash, 1, hash_tag_set_entry)
+
+def hash_set_with(items: Array[Int64], mix_fn: (Int64, Int64) -> Int64) -> Int64:
+  cnt = int64_to_Int(size_Array(items))
+  (sum_acc, xor_acc) = foldl_Array(items, (hash_seed_set, empty_i64), (state, item_hash) -> (
+    (sum_acc, xor_acc) = state
+    entry_hash = hash_set_entry_with(item_hash, mix_fn)
+    (sum_61(sum_acc, entry_hash), xor_Int64(xor_acc, entry_hash))
+  ))
+  finish_61_with(mix_fn, mix_fn(sum_acc, xor_acc), cnt, hash_tag_set)
+
+def sink_hash(mix_fn: (Int64, Int64) -> Int64, value: Int64, iter_seed: Int) -> Int:
+  int64_to_Int(mix_fn(value, normalize_61(iter_seed)))
+
+def run_iterations(iterations: Int, seed0: Int, run_once: Int -> Int) -> Prog[IOError, Int]:
+  def go(rem: Int, seed: Int, sink: Int) -> Prog[IOError, Int]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        pure(sink)
+      case _:
+        value = run_once(seed)
+        go(rem.sub(1), advance_seed(seed), sink.add(value))
+  go(iterations, seed0, 0)
+
+def time_iterations(iterations: Int, seed0: Int, run_once: Int -> Int) -> Prog[IOError, TimedResult]:
+  start <- now_mono.await()
+  sink <- run_iterations(iterations, seed0, run_once).await()
+  end <- now_mono.await()
+  start_nanos = duration_to_nanos(start)
+  end_nanos = duration_to_nanos(end)
+  elapsed_nanos = max_Int(1, end_nanos.sub(start_nanos))
+  pure(TimedResult(sink, elapsed_nanos))
+
+def calibrate_iterations(seed0: Int, run_once: Int -> Int) -> Prog[IOError, Int]:
+  def go(rounds_left: Int, iterations: Int) -> Prog[IOError, Int]:
+    recur rounds_left:
+      case _ if cmp_Int(rounds_left, 0) matches LT | EQ:
+        pure(max_Int(min_measure_iterations, min_Int(iterations, max_measure_iterations)))
+      case _:
+        timed <- time_iterations(iterations, seed0, run_once).await()
+        TimedResult(_, elapsed_nanos) = timed
+        if cmp_Int(elapsed_nanos, target_elapsed_nanos) matches GT | EQ:
+          pure(max_Int(min_measure_iterations, min_Int(iterations, max_measure_iterations)))
+        elif cmp_Int(iterations, max_measure_iterations) matches GT | EQ:
+          pure(max_measure_iterations)
+        else:
+          next_iterations = min_Int(max_measure_iterations, iterations.mul(2))
+          if next_iterations.eq_Int(iterations):
+            pure(iterations)
+          else:
+            go(rounds_left.sub(1), next_iterations)
+  go(max_calibration_rounds, min_measure_iterations)
+
+def format_row(
+  workload: String,
+  strategy: String,
+  size: Int,
+  iterations: Int,
+  total_ops: Int,
+  elapsed_us: Int,
+  ops_per_us: Float64,
+  sink: Int,
+) -> String:
+  "${workload},${strategy},${int_to_String(size)},${int_to_String(iterations)},${int_to_String(total_ops)},${int_to_String(elapsed_us)},${float64_to_String(ops_per_us)},${int_to_String(sink)}"
+
+def write_line(line: String) -> Prog[IOError, Unit]:
+  write_utf8(stdout, "${line}\n")
+
+def run_case(bench_case: BenchCase) -> Prog[IOError, Unit]:
+  BenchCase(workload, strategy, size, ops_per_iteration, run_once) = bench_case
+
+  warmup_seed = size.add(11)
+  _ <- run_iterations(warmup_iterations, warmup_seed, run_once).await()
+
+  measure_iterations <- calibrate_iterations(warmup_seed.add(97), run_once).await()
+  timed <- time_iterations(measure_iterations, warmup_seed.add(193), run_once).await()
+  TimedResult(sink, elapsed_nanos) = timed
+
+  elapsed_us = max_Int(1, elapsed_nanos.div(1000))
+  total_ops = ops_per_iteration.mul(measure_iterations)
+  ops_per_us = divf(int_to_Float64(total_ops), int_to_Float64(elapsed_us))
+  row = format_row(workload, strategy, size, measure_iterations, total_ops, elapsed_us, ops_per_us, sink)
+  write_line(row)
+
+def cases_for_size(size: Int) -> List[BenchCase]:
+  input = prepare_input(size)
+  BenchInput(collection_hashes, map_entries, set_hashes) = input
+
+  collection_fallback = BenchCase(
+    "collection_hash",
+    "int_fallback",
+    size,
+    size.add(3),
+    iter_seed -> sink_hash(mix_61_int_fallback, hash_collection_with(collection_hashes, mix_61_int_fallback), iter_seed),
+  )
+  collection_limb = BenchCase(
+    "collection_hash",
+    "int64_limb_31",
+    size,
+    size.add(3),
+    iter_seed -> sink_hash(mix_61_limb_31, hash_collection_with(collection_hashes, mix_61_limb_31), iter_seed),
+  )
+
+  map_fallback = BenchCase(
+    "hash_map_hash",
+    "int_fallback",
+    size,
+    size.mul(3).add(4),
+    iter_seed -> sink_hash(mix_61_int_fallback, hash_map_with(map_entries, mix_61_int_fallback), iter_seed),
+  )
+  map_limb = BenchCase(
+    "hash_map_hash",
+    "int64_limb_31",
+    size,
+    size.mul(3).add(4),
+    iter_seed -> sink_hash(mix_61_limb_31, hash_map_with(map_entries, mix_61_limb_31), iter_seed),
+  )
+
+  set_fallback = BenchCase(
+    "hash_set_hash",
+    "int_fallback",
+    size,
+    size.mul(2).add(4),
+    iter_seed -> sink_hash(mix_61_int_fallback, hash_set_with(set_hashes, mix_61_int_fallback), iter_seed),
+  )
+  set_limb = BenchCase(
+    "hash_set_hash",
+    "int64_limb_31",
+    size,
+    size.mul(2).add(4),
+    iter_seed -> sink_hash(mix_61_limb_31, hash_set_with(set_hashes, mix_61_limb_31), iter_seed),
+  )
+
+  [
+    collection_fallback,
+    collection_limb,
+    map_fallback,
+    map_limb,
+    set_fallback,
+    set_limb,
+  ]
+
+benchmark_cases = [
+  *cases_for_size(64),
+  *cases_for_size(512),
+  *cases_for_size(4096),
+]
+
+def run_all_cases(cases: List[BenchCase]) -> Prog[IOError, Unit]:
+  recur cases:
+    case []:
+      pure(Unit)
+    case [head, *tail]:
+      _ <- run_case(head).await()
+      run_all_cases(tail)
+
+def run_benchmark() -> Prog[IOError, Int]:
+  _ <- write_line("workload,strategy,size,iterations,ops,elapsed_us,ops_per_us,sink").await()
+  _ <- run_all_cases(benchmark_cases).await()
+  pure(0)
+
+rand_canonical_hash: Gen[Int] = int_between_Gen(0, hash_modulus_int.sub(1))
+
+def mix_61_oracle(acc: Int, next: Int) -> Int64:
+  normalize_61(acc.mul(int64_to_Int(mix_prime)).add(next).add(int64_to_Int(mix_add)))
+
+hash_mix_props: Prop = suite_Prop("HashMix61 props", [
+  forall_Prop(
+    tuple2_Gen(rand_canonical_hash, rand_canonical_hash),
+    "int fallback strategy agrees with the Int oracle",
+    ((acc, next)) -> (
+      acc64 = i64(acc)
+      next64 = i64(next)
+      Assertion(eq_Int64(mix_61_int_fallback(acc64, next64), mix_61_oracle(acc, next)), "fallback oracle")
+    )
+  ),
+  forall_Prop(
+    tuple2_Gen(rand_canonical_hash, rand_canonical_hash),
+    "31-bit limb candidate agrees with the Int oracle",
+    ((acc, next)) -> (
+      acc64 = i64(acc)
+      next64 = i64(next)
+      Assertion(eq_Int64(mix_61_limb_31(acc64, next64), mix_61_oracle(acc, next)), "limb oracle")
+    )
+  ),
+  forall_Prop(
+    tuple2_Gen(rand_canonical_hash, rand_canonical_hash),
+    "public mix_61 matches the chosen limb strategy",
+    ((acc, next)) -> (
+      acc64 = i64(acc)
+      next64 = i64(next)
+      Assertion(eq_Int64(mix_61(acc64, next64), mix_61_limb_31(acc64, next64)), "public mix uses limb")
+    )
+  ),
+])
+
+tests = TestSuite("HashMix61 tests", [
+  (
+    hashes = build_hash_values(64, 123)
+    Assertion(
+      eq_Int64(hash_collection_with(hashes, mix_61_int_fallback), hash_collection_with(hashes, mix_61_limb_31)),
+      "collection hash strategies agree",
+    )
+  ),
+  (
+    pairs = build_hash_pairs(64, 321)
+    Assertion(
+      eq_Int64(hash_map_with(pairs, mix_61_int_fallback), hash_map_with(pairs, mix_61_limb_31)),
+      "map hash strategies agree",
+    )
+  ),
+  (
+    hashes = build_hash_values(64, 456)
+    Assertion(
+      eq_Int64(hash_set_with(hashes, mix_61_int_fallback), hash_set_with(hashes, mix_61_limb_31)),
+      "set hash strategies agree",
+    )
+  ),
+  run_Prop(hash_mix_props, 200, 20260419),
+])
+
+main: Main = Main(_ -> (
+  recover(run_benchmark(), err -> (
+    err_msg = "hash mix benchmark failed: ${error_to_String(err)}"
+    _ <- recover(write_line(err_msg), _ -> pure(Unit)).await()
+    pure(1)
+  ))
+))
