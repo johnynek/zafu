@@ -389,27 +389,33 @@ def rank_Comparison(value: Comparison) -> Int:
 def cmp_Comparison(left: Comparison, right: Comparison) -> Comparison:
   cmp_Int(rank_Comparison(left), rank_Comparison(right))
 
-hash_tag_unit: Int = 1009
-hash_tag_bool_false: Int = 1013
-hash_tag_bool_true: Int = 1019
-hash_seed_comparison: Int = 1031
-hash_tag_comparison: Int = 1033
-hash_float64_nan: Int = 1039
-hash_float64_zero: Int = 1049
-hash_seed_string: Int = 1061
-hash_tag_string: Int = 1063
-hash_seed_option_none: Int = 1091
-hash_tag_option_none: Int = 1093
-hash_seed_option_some: Int = 1097
-hash_tag_option_some: Int = 1103
-hash_seed_list: Int = 1123
-hash_tag_list: Int = 1129
-hash_tuple_seed_base: Int = 1201
-hash_tuple_tag_base: Int = 1301
-hash_tag_dict: Int = 1409
+hash_tag_unit: Int64 = i64(1009)
+hash_tag_bool_false: Int64 = i64(1013)
+hash_tag_bool_true: Int64 = i64(1019)
+hash_seed_comparison: Int64 = i64(1031)
+hash_tag_comparison: Int64 = i64(1033)
+hash_float64_nan: Int64 = i64(1039)
+hash_float64_zero: Int64 = i64(1049)
+hash_seed_string: Int64 = i64(1061)
+hash_tag_string: Int64 = i64(1063)
+hash_seed_option_none: Int64 = i64(1091)
+hash_tag_option_none: Int64 = i64(1093)
+hash_seed_option_some: Int64 = i64(1097)
+hash_tag_option_some: Int64 = i64(1103)
+hash_seed_list: Int64 = i64(1123)
+hash_tag_list: Int64 = i64(1129)
+hash_tuple_seed_base_raw: Int = 1201
+hash_tuple_tag_base_raw: Int = 1301
+hash_tag_dict: Int64 = i64(1409)
 
-def hash_list(hash_item: Hash[a], seed: Int, tag: Int, value: List[a]) -> Int:
-  def go(rem: List[a], acc: Int, size: Int) -> Int:
+def hash_tuple_seed(arity: Int) -> Int64:
+  normalize_61(hash_tuple_seed_base_raw.add(arity))
+
+def hash_tuple_tag(arity: Int) -> Int64:
+  normalize_61(hash_tuple_tag_base_raw.add(arity))
+
+def hash_list(hash_item: Hash[a], seed: Int64, tag: Int64, value: List[a]) -> Int64:
+  def go(rem: List[a], acc: Int64, size: Int) -> Int64:
     loop rem:
       case []:
         finish_61(acc, size, tag)
@@ -417,7 +423,7 @@ def hash_list(hash_item: Hash[a], seed: Int, tag: Int, value: List[a]) -> Int:
         go(tail, mix_61(acc, hash_Hash(hash_item, head)), size.add(1))
   go(value, seed, 0)
 
-def hash_string_value(value: String) -> Int:
+def hash_string_value(value: String) -> Int64:
   # Eq/String compares UTF-8 byte sequences, so hashing bytes preserves coherence.
   bytes = utf8_bytes_from_String(value)
   mixed = foldl_Bytes(bytes, hash_seed_string, (acc, byte) -> mix_61(acc, normalize_61(byte)))
@@ -1310,17 +1316,17 @@ def ord_Tuple32(ord1: Ord[a1], ord2: Ord[a2], ord3: Ord[a3], ord4: Ord[a4], ord5
 def hash_Tuple1(hash1: Hash[a1]) -> Hash[Tuple1[a1]]:
   eq1 = hash_to_Eq(hash1)
   hash_specialized(((Tuple1(value1)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(1), hash_Hash(hash1, value1))
-    finish_61(acc1, 1, hash_tuple_tag_base.add(1))
+    acc1 = mix_61(hash_tuple_seed(1), hash_Hash(hash1, value1))
+    finish_61(acc1, 1, hash_tuple_tag(1))
   )), eq_Tuple1(eq1))
 
 def hash_Tuple2(hash1: Hash[a1], hash2: Hash[a2]) -> Hash[Tuple2[a1, a2]]:
   eq1 = hash_to_Eq(hash1)
   eq2 = hash_to_Eq(hash2)
   hash_specialized(((Tuple2(value1, value2)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(2), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(2), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
-    finish_61(acc2, 2, hash_tuple_tag_base.add(2))
+    finish_61(acc2, 2, hash_tuple_tag(2))
   )), eq_Tuple2(eq1, eq2))
 
 def hash_Tuple3(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3]) -> Hash[Tuple3[a1, a2, a3]]:
@@ -1328,10 +1334,10 @@ def hash_Tuple3(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3]) -> Hash[Tuple
   eq2 = hash_to_Eq(hash2)
   eq3 = hash_to_Eq(hash3)
   hash_specialized(((Tuple3(value1, value2, value3)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(3), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(3), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
-    finish_61(acc3, 3, hash_tuple_tag_base.add(3))
+    finish_61(acc3, 3, hash_tuple_tag(3))
   )), eq_Tuple3(eq1, eq2, eq3))
 
 def hash_Tuple4(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4]) -> Hash[Tuple4[a1, a2, a3, a4]]:
@@ -1340,11 +1346,11 @@ def hash_Tuple4(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a
   eq3 = hash_to_Eq(hash3)
   eq4 = hash_to_Eq(hash4)
   hash_specialized(((Tuple4(value1, value2, value3, value4)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(4), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(4), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
-    finish_61(acc4, 4, hash_tuple_tag_base.add(4))
+    finish_61(acc4, 4, hash_tuple_tag(4))
   )), eq_Tuple4(eq1, eq2, eq3, eq4))
 
 def hash_Tuple5(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5]) -> Hash[Tuple5[a1, a2, a3, a4, a5]]:
@@ -1354,12 +1360,12 @@ def hash_Tuple5(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a
   eq4 = hash_to_Eq(hash4)
   eq5 = hash_to_Eq(hash5)
   hash_specialized(((Tuple5(value1, value2, value3, value4, value5)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(5), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(5), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
     acc5 = mix_61(acc4, hash_Hash(hash5, value5))
-    finish_61(acc5, 5, hash_tuple_tag_base.add(5))
+    finish_61(acc5, 5, hash_tuple_tag(5))
   )), eq_Tuple5(eq1, eq2, eq3, eq4, eq5))
 
 def hash_Tuple6(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6]) -> Hash[Tuple6[a1, a2, a3, a4, a5, a6]]:
@@ -1370,13 +1376,13 @@ def hash_Tuple6(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a
   eq5 = hash_to_Eq(hash5)
   eq6 = hash_to_Eq(hash6)
   hash_specialized(((Tuple6(value1, value2, value3, value4, value5, value6)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(6), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(6), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
     acc5 = mix_61(acc4, hash_Hash(hash5, value5))
     acc6 = mix_61(acc5, hash_Hash(hash6, value6))
-    finish_61(acc6, 6, hash_tuple_tag_base.add(6))
+    finish_61(acc6, 6, hash_tuple_tag(6))
   )), eq_Tuple6(eq1, eq2, eq3, eq4, eq5, eq6))
 
 def hash_Tuple7(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7]) -> Hash[Tuple7[a1, a2, a3, a4, a5, a6, a7]]:
@@ -1388,14 +1394,14 @@ def hash_Tuple7(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a
   eq6 = hash_to_Eq(hash6)
   eq7 = hash_to_Eq(hash7)
   hash_specialized(((Tuple7(value1, value2, value3, value4, value5, value6, value7)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(7), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(7), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
     acc5 = mix_61(acc4, hash_Hash(hash5, value5))
     acc6 = mix_61(acc5, hash_Hash(hash6, value6))
     acc7 = mix_61(acc6, hash_Hash(hash7, value7))
-    finish_61(acc7, 7, hash_tuple_tag_base.add(7))
+    finish_61(acc7, 7, hash_tuple_tag(7))
   )), eq_Tuple7(eq1, eq2, eq3, eq4, eq5, eq6, eq7))
 
 def hash_Tuple8(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8]) -> Hash[Tuple8[a1, a2, a3, a4, a5, a6, a7, a8]]:
@@ -1408,7 +1414,7 @@ def hash_Tuple8(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a
   eq7 = hash_to_Eq(hash7)
   eq8 = hash_to_Eq(hash8)
   hash_specialized(((Tuple8(value1, value2, value3, value4, value5, value6, value7, value8)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(8), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(8), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1416,7 +1422,7 @@ def hash_Tuple8(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a
     acc6 = mix_61(acc5, hash_Hash(hash6, value6))
     acc7 = mix_61(acc6, hash_Hash(hash7, value7))
     acc8 = mix_61(acc7, hash_Hash(hash8, value8))
-    finish_61(acc8, 8, hash_tuple_tag_base.add(8))
+    finish_61(acc8, 8, hash_tuple_tag(8))
   )), eq_Tuple8(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8))
 
 def hash_Tuple9(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9]) -> Hash[Tuple9[a1, a2, a3, a4, a5, a6, a7, a8, a9]]:
@@ -1430,7 +1436,7 @@ def hash_Tuple9(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a
   eq8 = hash_to_Eq(hash8)
   eq9 = hash_to_Eq(hash9)
   hash_specialized(((Tuple9(value1, value2, value3, value4, value5, value6, value7, value8, value9)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(9), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(9), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1439,7 +1445,7 @@ def hash_Tuple9(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a
     acc7 = mix_61(acc6, hash_Hash(hash7, value7))
     acc8 = mix_61(acc7, hash_Hash(hash8, value8))
     acc9 = mix_61(acc8, hash_Hash(hash9, value9))
-    finish_61(acc9, 9, hash_tuple_tag_base.add(9))
+    finish_61(acc9, 9, hash_tuple_tag(9))
   )), eq_Tuple9(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9))
 
 def hash_Tuple10(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10]) -> Hash[Tuple10[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]]:
@@ -1454,7 +1460,7 @@ def hash_Tuple10(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq9 = hash_to_Eq(hash9)
   eq10 = hash_to_Eq(hash10)
   hash_specialized(((Tuple10(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(10), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(10), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1464,7 +1470,7 @@ def hash_Tuple10(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc8 = mix_61(acc7, hash_Hash(hash8, value8))
     acc9 = mix_61(acc8, hash_Hash(hash9, value9))
     acc10 = mix_61(acc9, hash_Hash(hash10, value10))
-    finish_61(acc10, 10, hash_tuple_tag_base.add(10))
+    finish_61(acc10, 10, hash_tuple_tag(10))
   )), eq_Tuple10(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10))
 
 def hash_Tuple11(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11]) -> Hash[Tuple11[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]]:
@@ -1480,7 +1486,7 @@ def hash_Tuple11(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq10 = hash_to_Eq(hash10)
   eq11 = hash_to_Eq(hash11)
   hash_specialized(((Tuple11(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(11), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(11), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1491,7 +1497,7 @@ def hash_Tuple11(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc9 = mix_61(acc8, hash_Hash(hash9, value9))
     acc10 = mix_61(acc9, hash_Hash(hash10, value10))
     acc11 = mix_61(acc10, hash_Hash(hash11, value11))
-    finish_61(acc11, 11, hash_tuple_tag_base.add(11))
+    finish_61(acc11, 11, hash_tuple_tag(11))
   )), eq_Tuple11(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11))
 
 def hash_Tuple12(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12]) -> Hash[Tuple12[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12]]:
@@ -1508,7 +1514,7 @@ def hash_Tuple12(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq11 = hash_to_Eq(hash11)
   eq12 = hash_to_Eq(hash12)
   hash_specialized(((Tuple12(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(12), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(12), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1520,7 +1526,7 @@ def hash_Tuple12(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc10 = mix_61(acc9, hash_Hash(hash10, value10))
     acc11 = mix_61(acc10, hash_Hash(hash11, value11))
     acc12 = mix_61(acc11, hash_Hash(hash12, value12))
-    finish_61(acc12, 12, hash_tuple_tag_base.add(12))
+    finish_61(acc12, 12, hash_tuple_tag(12))
   )), eq_Tuple12(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12))
 
 def hash_Tuple13(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13]) -> Hash[Tuple13[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13]]:
@@ -1538,7 +1544,7 @@ def hash_Tuple13(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq12 = hash_to_Eq(hash12)
   eq13 = hash_to_Eq(hash13)
   hash_specialized(((Tuple13(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(13), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(13), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1551,7 +1557,7 @@ def hash_Tuple13(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc11 = mix_61(acc10, hash_Hash(hash11, value11))
     acc12 = mix_61(acc11, hash_Hash(hash12, value12))
     acc13 = mix_61(acc12, hash_Hash(hash13, value13))
-    finish_61(acc13, 13, hash_tuple_tag_base.add(13))
+    finish_61(acc13, 13, hash_tuple_tag(13))
   )), eq_Tuple13(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13))
 
 def hash_Tuple14(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14]) -> Hash[Tuple14[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14]]:
@@ -1570,7 +1576,7 @@ def hash_Tuple14(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq13 = hash_to_Eq(hash13)
   eq14 = hash_to_Eq(hash14)
   hash_specialized(((Tuple14(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(14), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(14), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1584,7 +1590,7 @@ def hash_Tuple14(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc12 = mix_61(acc11, hash_Hash(hash12, value12))
     acc13 = mix_61(acc12, hash_Hash(hash13, value13))
     acc14 = mix_61(acc13, hash_Hash(hash14, value14))
-    finish_61(acc14, 14, hash_tuple_tag_base.add(14))
+    finish_61(acc14, 14, hash_tuple_tag(14))
   )), eq_Tuple14(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14))
 
 def hash_Tuple15(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15]) -> Hash[Tuple15[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15]]:
@@ -1604,7 +1610,7 @@ def hash_Tuple15(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq14 = hash_to_Eq(hash14)
   eq15 = hash_to_Eq(hash15)
   hash_specialized(((Tuple15(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(15), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(15), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1619,7 +1625,7 @@ def hash_Tuple15(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc13 = mix_61(acc12, hash_Hash(hash13, value13))
     acc14 = mix_61(acc13, hash_Hash(hash14, value14))
     acc15 = mix_61(acc14, hash_Hash(hash15, value15))
-    finish_61(acc15, 15, hash_tuple_tag_base.add(15))
+    finish_61(acc15, 15, hash_tuple_tag(15))
   )), eq_Tuple15(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15))
 
 def hash_Tuple16(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16]) -> Hash[Tuple16[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16]]:
@@ -1640,7 +1646,7 @@ def hash_Tuple16(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq15 = hash_to_Eq(hash15)
   eq16 = hash_to_Eq(hash16)
   hash_specialized(((Tuple16(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(16), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(16), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1656,7 +1662,7 @@ def hash_Tuple16(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc14 = mix_61(acc13, hash_Hash(hash14, value14))
     acc15 = mix_61(acc14, hash_Hash(hash15, value15))
     acc16 = mix_61(acc15, hash_Hash(hash16, value16))
-    finish_61(acc16, 16, hash_tuple_tag_base.add(16))
+    finish_61(acc16, 16, hash_tuple_tag(16))
   )), eq_Tuple16(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16))
 
 def hash_Tuple17(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17]) -> Hash[Tuple17[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17]]:
@@ -1678,7 +1684,7 @@ def hash_Tuple17(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq16 = hash_to_Eq(hash16)
   eq17 = hash_to_Eq(hash17)
   hash_specialized(((Tuple17(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(17), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(17), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1695,7 +1701,7 @@ def hash_Tuple17(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc15 = mix_61(acc14, hash_Hash(hash15, value15))
     acc16 = mix_61(acc15, hash_Hash(hash16, value16))
     acc17 = mix_61(acc16, hash_Hash(hash17, value17))
-    finish_61(acc17, 17, hash_tuple_tag_base.add(17))
+    finish_61(acc17, 17, hash_tuple_tag(17))
   )), eq_Tuple17(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17))
 
 def hash_Tuple18(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18]) -> Hash[Tuple18[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18]]:
@@ -1718,7 +1724,7 @@ def hash_Tuple18(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq17 = hash_to_Eq(hash17)
   eq18 = hash_to_Eq(hash18)
   hash_specialized(((Tuple18(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(18), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(18), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1736,7 +1742,7 @@ def hash_Tuple18(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc16 = mix_61(acc15, hash_Hash(hash16, value16))
     acc17 = mix_61(acc16, hash_Hash(hash17, value17))
     acc18 = mix_61(acc17, hash_Hash(hash18, value18))
-    finish_61(acc18, 18, hash_tuple_tag_base.add(18))
+    finish_61(acc18, 18, hash_tuple_tag(18))
   )), eq_Tuple18(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18))
 
 def hash_Tuple19(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19]) -> Hash[Tuple19[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19]]:
@@ -1760,7 +1766,7 @@ def hash_Tuple19(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq18 = hash_to_Eq(hash18)
   eq19 = hash_to_Eq(hash19)
   hash_specialized(((Tuple19(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(19), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(19), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1779,7 +1785,7 @@ def hash_Tuple19(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc17 = mix_61(acc16, hash_Hash(hash17, value17))
     acc18 = mix_61(acc17, hash_Hash(hash18, value18))
     acc19 = mix_61(acc18, hash_Hash(hash19, value19))
-    finish_61(acc19, 19, hash_tuple_tag_base.add(19))
+    finish_61(acc19, 19, hash_tuple_tag(19))
   )), eq_Tuple19(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19))
 
 def hash_Tuple20(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20]) -> Hash[Tuple20[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20]]:
@@ -1804,7 +1810,7 @@ def hash_Tuple20(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq19 = hash_to_Eq(hash19)
   eq20 = hash_to_Eq(hash20)
   hash_specialized(((Tuple20(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(20), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(20), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1824,7 +1830,7 @@ def hash_Tuple20(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc18 = mix_61(acc17, hash_Hash(hash18, value18))
     acc19 = mix_61(acc18, hash_Hash(hash19, value19))
     acc20 = mix_61(acc19, hash_Hash(hash20, value20))
-    finish_61(acc20, 20, hash_tuple_tag_base.add(20))
+    finish_61(acc20, 20, hash_tuple_tag(20))
   )), eq_Tuple20(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20))
 
 def hash_Tuple21(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20], hash21: Hash[a21]) -> Hash[Tuple21[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21]]:
@@ -1850,7 +1856,7 @@ def hash_Tuple21(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq20 = hash_to_Eq(hash20)
   eq21 = hash_to_Eq(hash21)
   hash_specialized(((Tuple21(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(21), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(21), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1871,7 +1877,7 @@ def hash_Tuple21(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc19 = mix_61(acc18, hash_Hash(hash19, value19))
     acc20 = mix_61(acc19, hash_Hash(hash20, value20))
     acc21 = mix_61(acc20, hash_Hash(hash21, value21))
-    finish_61(acc21, 21, hash_tuple_tag_base.add(21))
+    finish_61(acc21, 21, hash_tuple_tag(21))
   )), eq_Tuple21(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21))
 
 def hash_Tuple22(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20], hash21: Hash[a21], hash22: Hash[a22]) -> Hash[Tuple22[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22]]:
@@ -1898,7 +1904,7 @@ def hash_Tuple22(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq21 = hash_to_Eq(hash21)
   eq22 = hash_to_Eq(hash22)
   hash_specialized(((Tuple22(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(22), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(22), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1920,7 +1926,7 @@ def hash_Tuple22(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc20 = mix_61(acc19, hash_Hash(hash20, value20))
     acc21 = mix_61(acc20, hash_Hash(hash21, value21))
     acc22 = mix_61(acc21, hash_Hash(hash22, value22))
-    finish_61(acc22, 22, hash_tuple_tag_base.add(22))
+    finish_61(acc22, 22, hash_tuple_tag(22))
   )), eq_Tuple22(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21, eq22))
 
 def hash_Tuple23(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20], hash21: Hash[a21], hash22: Hash[a22], hash23: Hash[a23]) -> Hash[Tuple23[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23]]:
@@ -1948,7 +1954,7 @@ def hash_Tuple23(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq22 = hash_to_Eq(hash22)
   eq23 = hash_to_Eq(hash23)
   hash_specialized(((Tuple23(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(23), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(23), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -1971,7 +1977,7 @@ def hash_Tuple23(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc21 = mix_61(acc20, hash_Hash(hash21, value21))
     acc22 = mix_61(acc21, hash_Hash(hash22, value22))
     acc23 = mix_61(acc22, hash_Hash(hash23, value23))
-    finish_61(acc23, 23, hash_tuple_tag_base.add(23))
+    finish_61(acc23, 23, hash_tuple_tag(23))
   )), eq_Tuple23(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21, eq22, eq23))
 
 def hash_Tuple24(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20], hash21: Hash[a21], hash22: Hash[a22], hash23: Hash[a23], hash24: Hash[a24]) -> Hash[Tuple24[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24]]:
@@ -2000,7 +2006,7 @@ def hash_Tuple24(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq23 = hash_to_Eq(hash23)
   eq24 = hash_to_Eq(hash24)
   hash_specialized(((Tuple24(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(24), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(24), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -2024,7 +2030,7 @@ def hash_Tuple24(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc22 = mix_61(acc21, hash_Hash(hash22, value22))
     acc23 = mix_61(acc22, hash_Hash(hash23, value23))
     acc24 = mix_61(acc23, hash_Hash(hash24, value24))
-    finish_61(acc24, 24, hash_tuple_tag_base.add(24))
+    finish_61(acc24, 24, hash_tuple_tag(24))
   )), eq_Tuple24(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21, eq22, eq23, eq24))
 
 def hash_Tuple25(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20], hash21: Hash[a21], hash22: Hash[a22], hash23: Hash[a23], hash24: Hash[a24], hash25: Hash[a25]) -> Hash[Tuple25[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25]]:
@@ -2054,7 +2060,7 @@ def hash_Tuple25(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq24 = hash_to_Eq(hash24)
   eq25 = hash_to_Eq(hash25)
   hash_specialized(((Tuple25(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(25), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(25), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -2079,7 +2085,7 @@ def hash_Tuple25(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc23 = mix_61(acc22, hash_Hash(hash23, value23))
     acc24 = mix_61(acc23, hash_Hash(hash24, value24))
     acc25 = mix_61(acc24, hash_Hash(hash25, value25))
-    finish_61(acc25, 25, hash_tuple_tag_base.add(25))
+    finish_61(acc25, 25, hash_tuple_tag(25))
   )), eq_Tuple25(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21, eq22, eq23, eq24, eq25))
 
 def hash_Tuple26(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20], hash21: Hash[a21], hash22: Hash[a22], hash23: Hash[a23], hash24: Hash[a24], hash25: Hash[a25], hash26: Hash[a26]) -> Hash[Tuple26[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26]]:
@@ -2110,7 +2116,7 @@ def hash_Tuple26(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq25 = hash_to_Eq(hash25)
   eq26 = hash_to_Eq(hash26)
   hash_specialized(((Tuple26(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(26), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(26), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -2136,7 +2142,7 @@ def hash_Tuple26(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc24 = mix_61(acc23, hash_Hash(hash24, value24))
     acc25 = mix_61(acc24, hash_Hash(hash25, value25))
     acc26 = mix_61(acc25, hash_Hash(hash26, value26))
-    finish_61(acc26, 26, hash_tuple_tag_base.add(26))
+    finish_61(acc26, 26, hash_tuple_tag(26))
   )), eq_Tuple26(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21, eq22, eq23, eq24, eq25, eq26))
 
 def hash_Tuple27(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20], hash21: Hash[a21], hash22: Hash[a22], hash23: Hash[a23], hash24: Hash[a24], hash25: Hash[a25], hash26: Hash[a26], hash27: Hash[a27]) -> Hash[Tuple27[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27]]:
@@ -2168,7 +2174,7 @@ def hash_Tuple27(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq26 = hash_to_Eq(hash26)
   eq27 = hash_to_Eq(hash27)
   hash_specialized(((Tuple27(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26, value27)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(27), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(27), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -2195,7 +2201,7 @@ def hash_Tuple27(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc25 = mix_61(acc24, hash_Hash(hash25, value25))
     acc26 = mix_61(acc25, hash_Hash(hash26, value26))
     acc27 = mix_61(acc26, hash_Hash(hash27, value27))
-    finish_61(acc27, 27, hash_tuple_tag_base.add(27))
+    finish_61(acc27, 27, hash_tuple_tag(27))
   )), eq_Tuple27(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21, eq22, eq23, eq24, eq25, eq26, eq27))
 
 def hash_Tuple28(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20], hash21: Hash[a21], hash22: Hash[a22], hash23: Hash[a23], hash24: Hash[a24], hash25: Hash[a25], hash26: Hash[a26], hash27: Hash[a27], hash28: Hash[a28]) -> Hash[Tuple28[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28]]:
@@ -2228,7 +2234,7 @@ def hash_Tuple28(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq27 = hash_to_Eq(hash27)
   eq28 = hash_to_Eq(hash28)
   hash_specialized(((Tuple28(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26, value27, value28)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(28), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(28), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -2256,7 +2262,7 @@ def hash_Tuple28(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc26 = mix_61(acc25, hash_Hash(hash26, value26))
     acc27 = mix_61(acc26, hash_Hash(hash27, value27))
     acc28 = mix_61(acc27, hash_Hash(hash28, value28))
-    finish_61(acc28, 28, hash_tuple_tag_base.add(28))
+    finish_61(acc28, 28, hash_tuple_tag(28))
   )), eq_Tuple28(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21, eq22, eq23, eq24, eq25, eq26, eq27, eq28))
 
 def hash_Tuple29(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20], hash21: Hash[a21], hash22: Hash[a22], hash23: Hash[a23], hash24: Hash[a24], hash25: Hash[a25], hash26: Hash[a26], hash27: Hash[a27], hash28: Hash[a28], hash29: Hash[a29]) -> Hash[Tuple29[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29]]:
@@ -2290,7 +2296,7 @@ def hash_Tuple29(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq28 = hash_to_Eq(hash28)
   eq29 = hash_to_Eq(hash29)
   hash_specialized(((Tuple29(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26, value27, value28, value29)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(29), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(29), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -2319,7 +2325,7 @@ def hash_Tuple29(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc27 = mix_61(acc26, hash_Hash(hash27, value27))
     acc28 = mix_61(acc27, hash_Hash(hash28, value28))
     acc29 = mix_61(acc28, hash_Hash(hash29, value29))
-    finish_61(acc29, 29, hash_tuple_tag_base.add(29))
+    finish_61(acc29, 29, hash_tuple_tag(29))
   )), eq_Tuple29(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21, eq22, eq23, eq24, eq25, eq26, eq27, eq28, eq29))
 
 def hash_Tuple30(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20], hash21: Hash[a21], hash22: Hash[a22], hash23: Hash[a23], hash24: Hash[a24], hash25: Hash[a25], hash26: Hash[a26], hash27: Hash[a27], hash28: Hash[a28], hash29: Hash[a29], hash30: Hash[a30]) -> Hash[Tuple30[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30]]:
@@ -2354,7 +2360,7 @@ def hash_Tuple30(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq29 = hash_to_Eq(hash29)
   eq30 = hash_to_Eq(hash30)
   hash_specialized(((Tuple30(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26, value27, value28, value29, value30)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(30), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(30), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -2384,7 +2390,7 @@ def hash_Tuple30(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc28 = mix_61(acc27, hash_Hash(hash28, value28))
     acc29 = mix_61(acc28, hash_Hash(hash29, value29))
     acc30 = mix_61(acc29, hash_Hash(hash30, value30))
-    finish_61(acc30, 30, hash_tuple_tag_base.add(30))
+    finish_61(acc30, 30, hash_tuple_tag(30))
   )), eq_Tuple30(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21, eq22, eq23, eq24, eq25, eq26, eq27, eq28, eq29, eq30))
 
 def hash_Tuple31(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20], hash21: Hash[a21], hash22: Hash[a22], hash23: Hash[a23], hash24: Hash[a24], hash25: Hash[a25], hash26: Hash[a26], hash27: Hash[a27], hash28: Hash[a28], hash29: Hash[a29], hash30: Hash[a30], hash31: Hash[a31]) -> Hash[Tuple31[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31]]:
@@ -2420,7 +2426,7 @@ def hash_Tuple31(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq30 = hash_to_Eq(hash30)
   eq31 = hash_to_Eq(hash31)
   hash_specialized(((Tuple31(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26, value27, value28, value29, value30, value31)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(31), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(31), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -2451,7 +2457,7 @@ def hash_Tuple31(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc29 = mix_61(acc28, hash_Hash(hash29, value29))
     acc30 = mix_61(acc29, hash_Hash(hash30, value30))
     acc31 = mix_61(acc30, hash_Hash(hash31, value31))
-    finish_61(acc31, 31, hash_tuple_tag_base.add(31))
+    finish_61(acc31, 31, hash_tuple_tag(31))
   )), eq_Tuple31(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21, eq22, eq23, eq24, eq25, eq26, eq27, eq28, eq29, eq30, eq31))
 
 def hash_Tuple32(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[a4], hash5: Hash[a5], hash6: Hash[a6], hash7: Hash[a7], hash8: Hash[a8], hash9: Hash[a9], hash10: Hash[a10], hash11: Hash[a11], hash12: Hash[a12], hash13: Hash[a13], hash14: Hash[a14], hash15: Hash[a15], hash16: Hash[a16], hash17: Hash[a17], hash18: Hash[a18], hash19: Hash[a19], hash20: Hash[a20], hash21: Hash[a21], hash22: Hash[a22], hash23: Hash[a23], hash24: Hash[a24], hash25: Hash[a25], hash26: Hash[a26], hash27: Hash[a27], hash28: Hash[a28], hash29: Hash[a29], hash30: Hash[a30], hash31: Hash[a31], hash32: Hash[a32]) -> Hash[Tuple32[a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a32]]:
@@ -2488,7 +2494,7 @@ def hash_Tuple32(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
   eq31 = hash_to_Eq(hash31)
   eq32 = hash_to_Eq(hash32)
   hash_specialized(((Tuple32(value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15, value16, value17, value18, value19, value20, value21, value22, value23, value24, value25, value26, value27, value28, value29, value30, value31, value32)) -> (
-    acc1 = mix_61(hash_tuple_seed_base.add(32), hash_Hash(hash1, value1))
+    acc1 = mix_61(hash_tuple_seed(32), hash_Hash(hash1, value1))
     acc2 = mix_61(acc1, hash_Hash(hash2, value2))
     acc3 = mix_61(acc2, hash_Hash(hash3, value3))
     acc4 = mix_61(acc3, hash_Hash(hash4, value4))
@@ -2520,7 +2526,7 @@ def hash_Tuple32(hash1: Hash[a1], hash2: Hash[a2], hash3: Hash[a3], hash4: Hash[
     acc30 = mix_61(acc29, hash_Hash(hash30, value30))
     acc31 = mix_61(acc30, hash_Hash(hash31, value31))
     acc32 = mix_61(acc31, hash_Hash(hash32, value32))
-    finish_61(acc32, 32, hash_tuple_tag_base.add(32))
+    finish_61(acc32, 32, hash_tuple_tag(32))
   )), eq_Tuple32(eq1, eq2, eq3, eq4, eq5, eq6, eq7, eq8, eq9, eq10, eq11, eq12, eq13, eq14, eq15, eq16, eq17, eq18, eq19, eq20, eq21, eq22, eq23, eq24, eq25, eq26, eq27, eq28, eq29, eq30, eq31, eq32))
 
 def semigroup_Tuple1(semigroup1: Semigroup[a1]) -> Semigroup[Tuple1[a1]]:
@@ -3385,7 +3391,7 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   ),
   Assertion(eq_Eq(eq_Int, 1, 1), "eq_Int"),
   Assertion(cmp_Ord(ord_Int, 1, 2) matches LT, "ord_Int"),
-  Assertion(eq_Eq(eq_Int, hash_Hash(hash_Int, -1), normalize_61(-1)), "hash_Int"),
+  Assertion(eq_Int64(hash_Hash(hash_Int, -1), normalize_61(-1)), "hash_Int"),
   (
     opt_eq = eq_Option(eq_Int)
     Assertion(eq_Eq(opt_eq, Some(1), Some(1)), "eq_Option")
@@ -3393,7 +3399,7 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   (
     opt_hash = hash_Option(hash_Int)
     Assertion(
-      if eq_Eq(eq_Int, hash_Hash(opt_hash, None), hash_Hash(opt_hash, Some(0))):
+      if eq_Int64(hash_Hash(opt_hash, None), hash_Hash(opt_hash, Some(0))):
         False
       else:
         True,
@@ -3407,7 +3413,7 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   (
     pair_hash = hash_Tuple2(hash_Int, hash_Int)
     Assertion(
-      if eq_Eq(eq_Int, hash_Hash(pair_hash, Tuple2(1, 2)), hash_Hash(pair_hash, Tuple2(2, 1))):
+      if eq_Int64(hash_Hash(pair_hash, Tuple2(1, 2)), hash_Hash(pair_hash, Tuple2(2, 1))):
         False
       else:
         True,
@@ -3421,7 +3427,7 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
   (
     list_hash = hash_List(hash_Int)
     Assertion(
-      if eq_Eq(eq_Int, hash_Hash(list_hash, [1, 2]), hash_Hash(list_hash, [2, 1])):
+      if eq_Int64(hash_Hash(list_hash, [1, 2]), hash_Hash(list_hash, [2, 1])):
         False
       else:
         True,
@@ -3449,7 +3455,7 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
     nan1 = int_bits_to_Float64(9221120237041090561)
     nan2 = int_bits_to_Float64(9221120237041090562)
     Assertion(
-      eq_Eq(eq_Int, hash_Hash(hash_Float64, nan1), hash_Hash(hash_Float64, nan2)),
+      eq_Int64(hash_Hash(hash_Float64, nan1), hash_Hash(hash_Float64, nan2)),
       "hash_Float64 canonicalizes NaN payloads",
     )
   ),
@@ -3457,7 +3463,7 @@ tests = TestSuite("Predef Eq/Ord/Hash/Semigroup/Monoid/Foldable/Applicative inst
     neg_zero = int_bits_to_Float64(9223372036854775808)
     pos_zero = int_bits_to_Float64(0)
     Assertion(
-      eq_Eq(eq_Int, hash_Hash(hash_Float64, neg_zero), hash_Hash(hash_Float64, pos_zero)),
+      eq_Int64(hash_Hash(hash_Float64, neg_zero), hash_Hash(hash_Float64, pos_zero)),
       "hash_Float64 treats signed zero equally",
     )
   ),

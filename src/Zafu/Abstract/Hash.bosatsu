@@ -1,5 +1,25 @@
 package Zafu/Abstract/Hash
 
+from Bosatsu/Num/Int64 import (
+  Int64,
+  add_Int64,
+  and_Int64,
+  cmp_Int64,
+  eq_Int64,
+  int64_to_Int,
+  int_low_bits_to_Int64 as i64,
+  shift_right_unsigned_Int64,
+  sub_Int64,
+)
+from Zafu/Testing/HedgeHog import (
+  Gen,
+  Prop,
+  forall_Prop,
+  int_between_Gen,
+  run_Prop,
+  suite_Prop,
+  tuple2_Gen,
+)
 from Zafu/Abstract/Eq import (
   Eq,
   eq_by,
@@ -21,48 +41,67 @@ export (
   laws_Hash,
 )
 
-exposes Zafu/Abstract/Eq
+exposes (Bosatsu/Num/Int64, Zafu/Abstract/Eq)
 struct Hash[a](
-  hash_fn: a -> Int,
+  hash_fn: a -> Int64,
   eq_inst: Eq[a],
 )
 
 # 2^61 - 1, the Mersenne prime requested in issue #34.
-hash_modulus: Int = 2305843009213693951
+hash_modulus_int: Int = 2305843009213693951
+hash_modulus: Int64 = i64(hash_modulus_int)
 # 64-bit FNV constants used as fixed non-cryptographic mix parameters.
-mix_prime: Int = 1099511628211
-mix_add: Int = 1469598103934665603
+mix_prime_int: Int = 1099511628211
+mix_add_int: Int = 1469598103934665603
+mix_prime: Int64 = i64(mix_prime_int)
+mix_add: Int64 = i64(mix_add_int)
+hash_mask_61: Int64 = hash_modulus
 
-def in_range_61(value: Int) -> Bool:
-  non_negative = cmp_Int(value, 0) matches EQ | GT
-  below_modulus = cmp_Int(value, hash_modulus) matches LT
+def int_to_Int64_fit(value: Int) -> Int64:
+  i64(value)
+
+def in_range_61(value: Int64) -> Bool:
+  non_negative = cmp_Int64(value, i64(0)) matches EQ | GT
+  below_modulus = cmp_Int64(value, hash_modulus) matches LT
   and(non_negative, below_modulus)
 
-def normalize_61(raw: Int) -> Int:
-  modded = mod_Int(raw, hash_modulus)
+def normalize_61(raw: Int) -> Int64:
+  modded = mod_Int(raw, hash_modulus_int)
   if cmp_Int(modded, 0) matches LT:
-    modded.add(hash_modulus)
+    int_to_Int64_fit(modded.add(hash_modulus_int))
   else:
-    modded
+    int_to_Int64_fit(modded)
 
-def reduce_61(value: Int) -> Int:
-  normalize_61(value)
+def reduce_61_i64(value: Int64) -> Int64:
+  folded = add_Int64(and_Int64(value, hash_mask_61), shift_right_unsigned_Int64(value, 61))
+  match cmp_Int64(folded, hash_modulus):
+    case LT:
+      folded
+    case EQ:
+      i64(0)
+    case GT:
+      sub_Int64(folded, hash_modulus)
 
-def mix_61(acc: Int, next: Int) -> Int:
-  reduce_61(acc.mul(mix_prime).add(next).add(mix_add))
+def sum_61(left: Int64, right: Int64) -> Int64:
+  reduce_61_i64(add_Int64(left, right))
 
-def finish_61(acc: Int, size_or_arity: Int, tag: Int) -> Int:
-  mix_61(mix_61(acc, size_or_arity), tag)
+def mix_61(acc: Int64, next: Int64) -> Int64:
+  # Keep the multiply/reduce boundary narrow until benchmarking justifies an
+  # Int64 limb path over this simpler Int multiply plus canonical reduction.
+  normalize_61(int64_to_Int(acc).mul(int64_to_Int(mix_prime)).add(int64_to_Int(next)).add(int64_to_Int(mix_add)))
+
+def finish_61(acc: Int64, size_or_arity: Int, tag: Int64) -> Int64:
+  mix_61(mix_61(acc, normalize_61(size_or_arity)), tag)
 
 # Constructor for hash functions that already return 61-bit values.
-def hash_specialized(hash_fn: a -> Int, eq_inst: Eq[a]) -> Hash[a]:
+def hash_specialized(hash_fn: a -> Int64, eq_inst: Eq[a]) -> Hash[a]:
   Hash(hash_fn, eq_inst)
 
 # Constructor from a potentially out-of-range hash function.
 def hash_from_fn(hash_fn: a -> Int, eq_inst: Eq[a]) -> Hash[a]:
   hash_specialized((value) -> normalize_61(hash_fn(value)), eq_inst)
 
-def hash(inst: Hash[a], value: a) -> Int:
+def hash(inst: Hash[a], value: a) -> Int64:
   Hash(hash_fn, _) = inst
   hash_fn(value)
 
@@ -86,21 +125,21 @@ def laws_Hash(inst: Hash[a], x: a, y: a, z: a) -> Test:
   )
   coherent_xy = Assertion(
     if eq_Eq(eq_inst, x, y):
-      eq_Int(hx, hy)
+      eq_Int64(hx, hy)
     else:
       True,
     "coherent x y",
   )
   coherent_yz = Assertion(
     if eq_Eq(eq_inst, y, z):
-      eq_Int(hy, hz)
+      eq_Int64(hy, hz)
     else:
       True,
     "coherent y z",
   )
   coherent_xz = Assertion(
     if eq_Eq(eq_inst, x, z):
-      eq_Int(hx, hz)
+      eq_Int64(hx, hz)
     else:
       True,
     "coherent x z",
@@ -112,15 +151,52 @@ def tuple2_first(value: Tuple2[a, b]) -> a:
     case Tuple2(first, _):
       first
 
+rand_canonical_hash: Gen[Int] = int_between_Gen(0, hash_modulus_int.sub(1))
+
+def mix_61_oracle(acc: Int, next: Int) -> Int64:
+  normalize_61(acc.mul(mix_prime_int).add(next).add(mix_add_int))
+
+hash_props: Prop = suite_Prop("Hash arithmetic props", [
+  forall_Prop(
+    rand_canonical_hash,
+    "reduce_61_i64 is idempotent on canonical hashes",
+    value -> (
+      canonical = int_to_Int64_fit(value)
+      Assertion(eq_Int64(reduce_61_i64(canonical), canonical), "reduce idempotent")
+    )
+  ),
+  forall_Prop(
+    tuple2_Gen(rand_canonical_hash, rand_canonical_hash),
+    "sum_61 stays in the canonical range",
+    ((left, right)) -> (
+      summed = sum_61(int_to_Int64_fit(left), int_to_Int64_fit(right))
+      Assertion(in_range_61(summed), "sum in range")
+    )
+  ),
+  forall_Prop(
+    tuple2_Gen(rand_canonical_hash, rand_canonical_hash),
+    "mix_61 agrees with the Int oracle",
+    ((acc, next)) -> (
+      actual = mix_61(int_to_Int64_fit(acc), int_to_Int64_fit(next))
+      expected = mix_61_oracle(acc, next)
+      Assertion(eq_Int64(actual, expected), "mix oracle")
+    )
+  ),
+])
+
 tests = TestSuite("Hash tests", [
   (
     int_hash = hash_from_fn(x -> x, eq_from_fn(eq_Int))
-    Assertion(hash(int_hash, -1).eq_Int(hash_modulus.sub(1)), "hash_from_fn normalizes negatives")
+    Assertion(eq_Int64(hash(int_hash, -1), sub_Int64(hash_modulus, i64(1))), "hash_from_fn normalizes negatives")
   ),
   (
-    mixed = mix_61(hash_modulus.sub(1), hash_modulus.sub(1))
+    mixed = mix_61(sub_Int64(hash_modulus, i64(1)), sub_Int64(hash_modulus, i64(1)))
     Assertion(in_range_61(mixed), "mix_61 stays in range")
   ),
+  Assertion(eq_Int64(normalize_61(0), i64(0)), "normalize_61 zero"),
+  Assertion(eq_Int64(normalize_61(hash_modulus_int.sub(2)), sub_Int64(hash_modulus, i64(2))), "normalize_61 modulus minus two"),
+  Assertion(eq_Int64(normalize_61(hash_modulus_int.sub(1)), sub_Int64(hash_modulus, i64(1))), "normalize_61 modulus minus one"),
+  Assertion(eq_Int64(normalize_61(hash_modulus_int), i64(0)), "normalize_61 modulus wraps"),
   (
     int_hash = hash_from_fn(x -> x, eq_from_fn(eq_Int))
     laws_Hash(int_hash, 1, 1, 2)
@@ -129,8 +205,9 @@ tests = TestSuite("Hash tests", [
     int_hash = hash_from_fn(x -> x, eq_from_fn(eq_Int))
     first_hash = hash_by(int_hash, tuple2_first)
     Assertion(
-      eq_Int(hash(first_hash, Tuple2(1, "x")), hash(first_hash, Tuple2(1, "y"))),
+      eq_Int64(hash(first_hash, Tuple2(1, "x")), hash(first_hash, Tuple2(1, "y"))),
       "hash_by",
     )
   ),
+  run_Prop(hash_props, 200, 20260419),
 ])

@@ -14,9 +14,16 @@ from Bosatsu/Collection/Array import (
 from Bosatsu/Num/Int64 import (
   Int64,
   add_Int64,
+  and_Int64,
   eq_Int64,
   int64_to_Int,
   int_low_bits_to_Int64 as i64,
+  or_Int64,
+  popcount_Int64,
+  shift_left_Int64,
+  shift_right_unsigned_Int64,
+  sub_Int64,
+  xor_Int64,
 )
 from Zafu/Testing/HedgeHog import (
   Gen,
@@ -77,23 +84,21 @@ export (
 exposes Zafu/Abstract/Eq, Zafu/Abstract/Hash
 def operator +(a, b): a.add(b)
 def operator -(a, b): a.sub(b)
-def operator &(a, b): a.and_Int(b)
-def operator |(a, b): a.or_Int(b)
-def operator <<(a, b): a.shift_left_Int(b)
-def operator >>(a, b): a.shift_right_Int(b)
 
 fragment_bits: Int = 5
-fragment_mask: Int = 31
-hash_seed_set: Int = 1709
-hash_tag_entry: Int = 1721
-hash_tag_set: Int = 1723
+fragment_mask: Int64 = i64(31)
+hash_seed_set: Int64 = i64(1709)
+hash_tag_entry: Int64 = i64(1721)
+hash_tag_set: Int64 = i64(1723)
+empty_i64: Int64 = i64(0)
+one_i64: Int64 = i64(1)
 
 struct Entry(
-  hash: Int,
+  hash: Int64,
   key: k
 )
 
-def entry_hash(entry: Entry[k]) -> Int:
+def entry_hash(entry: Entry[k]) -> Int64:
   Entry(hash, _) = entry
   hash
 
@@ -102,8 +107,8 @@ def entry_key(entry: Entry[k]) -> k:
   key
 
 enum Node:
-  Indexed(data_bitmap: Int, entries: Array[Entry[k]], node_bitmap: Int, children: Array[Node[k]])
-  Collision(hash: Int, entries: Array[Entry[k]])
+  Indexed(data_bitmap: Int64, entries: Array[Entry[k]], node_bitmap: Int64, children: Array[Node[k]])
+  Collision(hash: Int64, entries: Array[Entry[k]])
 
 enum HashSet:
   Empty(hash_item: Hash[k])
@@ -115,17 +120,17 @@ def eq_Bool(left: Bool, right: Bool) -> Bool:
   else:
     not(right)
 
-def fragment(entry_hash: Int, shift: Int) -> Int:
-  (entry_hash >> shift) & fragment_mask
+def fragment(entry_hash: Int64, shift: Int) -> Int:
+  int64_to_Int(and_Int64(shift_right_unsigned_Int64(entry_hash, shift), fragment_mask))
 
-def bitpos(fragment: Int) -> Int:
-  1 << fragment
+def bitpos(fragment: Int) -> Int64:
+  shift_left_Int64(one_i64, fragment)
 
-def has_bit(bitmap: Int, bit: Int) -> Bool:
-  cmp_Int(bitmap & bit, 0) matches GT
+def has_bit(bitmap: Int64, bit: Int64) -> Bool:
+  eq_Int64(and_Int64(bitmap, bit), empty_i64) matches False
 
-def bitmap_index(bitmap: Int, bit: Int) -> Int64:
-  i64(popcount_Int(bitmap & (bit - 1)))
+def bitmap_index(bitmap: Int64, bit: Int64) -> Int64:
+  i64(popcount_Int64(and_Int64(bitmap, sub_Int64(bit, one_i64))))
 
 def singleton_Array(item: a) -> Array[a]:
   from_List_Array([item])
@@ -151,9 +156,9 @@ def set_hash_item(set: HashSet[k]) -> Hash[k]:
 
 def single_entry_node(entry: Entry[k], shift: Int) -> Node[k]:
   bit = bitpos(fragment(entry_hash(entry), shift))
-  Indexed(bit, singleton_Array(entry), 0, empty_Array)
+  Indexed(bit, singleton_Array(entry), empty_i64, empty_Array)
 
-def collapse_indexed(data_bitmap: Int, entries: Array[Entry[k]], node_bitmap: Int, children: Array[Node[k]]) -> Option[Node[k]]:
+def collapse_indexed(data_bitmap: Int64, entries: Array[Entry[k]], node_bitmap: Int64, children: Array[Node[k]]) -> Option[Node[k]]:
   entry_cnt = size_Array(entries)
   child_cnt = size_Array(children)
   if and(eq_Int64(entry_cnt, i64(0)), eq_Int64(child_cnt, i64(0))):
@@ -161,7 +166,7 @@ def collapse_indexed(data_bitmap: Int, entries: Array[Entry[k]], node_bitmap: In
   else:
     Some(Indexed(data_bitmap, entries, node_bitmap, children))
 
-def find_entry_index(entries: Array[Entry[k]], key_hash: Int, key: k, eq_key: Eq[k]) -> Option[Int64]:
+def find_entry_index(entries: Array[Entry[k]], key_hash: Int64, key: k, eq_key: Eq[k]) -> Option[Int64]:
   cnt = size_Array(entries)
   def go(rem: Int, idx: Int64) -> Option[Int64]:
     loop rem:
@@ -170,7 +175,7 @@ def find_entry_index(entries: Array[Entry[k]], key_hash: Int, key: k, eq_key: Eq
       case _:
         match get_Array(entries, idx):
           case Some(Entry(entry_hash, entry_key)):
-            if and(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key)):
+            if and(eq_Int64(entry_hash, key_hash), eq_Eq(eq_key, entry_key, key)):
               Some(idx)
             else:
               go(rem.sub(1), add_Int64(idx, i64(1)))
@@ -183,7 +188,7 @@ def merge_two_entries_with_fuel(left: Entry[k], right: Entry[k], shift: Int, fue
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       Collision(entry_hash(left), from_List_Array([left, right]))
     case _:
-      if entry_hash(left).eq_Int(entry_hash(right)):
+      if eq_Int64(entry_hash(left), entry_hash(right)):
         Collision(entry_hash(left), from_List_Array([left, right]))
       else:
         left_frag = fragment(entry_hash(left), shift)
@@ -191,16 +196,16 @@ def merge_two_entries_with_fuel(left: Entry[k], right: Entry[k], shift: Int, fue
         if left_frag.eq_Int(right_frag):
           bit = bitpos(left_frag)
           child = merge_two_entries_with_fuel(left, right, shift + fragment_bits, fuel.sub(1))
-          Indexed(0, empty_Array, bit, singleton_Array(child))
+          Indexed(empty_i64, empty_Array, bit, singleton_Array(child))
         else:
           left_bit = bitpos(left_frag)
           right_bit = bitpos(right_frag)
-          bitmap = left_bit | right_bit
+          bitmap = or_Int64(left_bit, right_bit)
           ordered_entries = if cmp_Int(left_frag, right_frag) matches LT:
             from_List_Array([left, right])
           else:
             from_List_Array([right, left])
-          Indexed(bitmap, ordered_entries, 0, empty_Array)
+          Indexed(bitmap, ordered_entries, empty_i64, empty_Array)
 
 def merge_two_entries(left: Entry[k], right: Entry[k], shift: Int) -> Node[k]:
   merge_two_entries_with_fuel(left, right, shift, 24)
@@ -218,20 +223,20 @@ def insert_entry_node_fuel(node: Node[k], entry: Entry[k], eq_key: Eq[k], shift:
             data_idx = bitmap_index(data_bitmap, bit)
             match get_Array(entries, data_idx):
               case Some(current):
-                same_key = and(entry_hash(current).eq_Int(entry_hash(entry)), eq_Eq(eq_key, entry_key(current), entry_key(entry)))
+                same_key = and(eq_Int64(entry_hash(current), entry_hash(entry)), eq_Eq(eq_key, entry_key(current), entry_key(entry)))
                 if same_key:
                   (Indexed(data_bitmap, set_or_self_Array(entries, data_idx, entry), node_bitmap, children), 0)
                 else:
                   merged_child = merge_two_entries(current, entry, shift + fragment_bits)
                   next_entries = array_remove(entries, data_idx)
-                  next_data_bitmap = data_bitmap.xor_Int(bit)
+                  next_data_bitmap = xor_Int64(data_bitmap, bit)
                   child_idx = bitmap_index(node_bitmap, bit)
                   next_children = array_insert(children, child_idx, merged_child)
-                  (Indexed(next_data_bitmap, next_entries, node_bitmap | bit, next_children), 1)
+                  (Indexed(next_data_bitmap, next_entries, or_Int64(node_bitmap, bit), next_children), 1)
               case None:
                 insert_idx = bitmap_index(data_bitmap, bit)
                 next_entries = array_insert(entries, insert_idx, entry)
-                (Indexed(data_bitmap | bit, next_entries, node_bitmap, children), 1)
+                (Indexed(or_Int64(data_bitmap, bit), next_entries, node_bitmap, children), 1)
           else:
             if has_bit(node_bitmap, bit):
               child_idx = bitmap_index(node_bitmap, bit)
@@ -241,13 +246,13 @@ def insert_entry_node_fuel(node: Node[k], entry: Entry[k], eq_key: Eq[k], shift:
                   (Indexed(data_bitmap, entries, node_bitmap, set_or_self_Array(children, child_idx, next_child)), delta)
                 case None:
                   fallback_child = single_entry_node(entry, shift + fragment_bits)
-                  (Indexed(data_bitmap, entries, node_bitmap | bit, array_insert(children, child_idx, fallback_child)), 1)
+                  (Indexed(data_bitmap, entries, or_Int64(node_bitmap, bit), array_insert(children, child_idx, fallback_child)), 1)
             else:
               insert_idx = bitmap_index(data_bitmap, bit)
               next_entries = array_insert(entries, insert_idx, entry)
-              (Indexed(data_bitmap | bit, next_entries, node_bitmap, children), 1)
+              (Indexed(or_Int64(data_bitmap, bit), next_entries, node_bitmap, children), 1)
         case Collision(collision_hash, entries):
-          if collision_hash.eq_Int(entry_hash(entry)):
+          if eq_Int64(collision_hash, entry_hash(entry)):
             match find_entry_index(entries, entry_hash(entry), entry_key(entry), eq_key):
               case Some(idx):
                 (Collision(collision_hash, set_or_self_Array(entries, idx, entry)), 0)
@@ -270,7 +275,7 @@ def insert_entry_node_fuel(node: Node[k], entry: Entry[k], eq_key: Eq[k], shift:
 def insert_entry_node(node: Node[k], entry: Entry[k], eq_key: Eq[k], shift: Int) -> (Node[k], Int):
   insert_entry_node_fuel(node, entry, eq_key, shift, 4096)
 
-def remove_entry_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shift: Int, fuel: Int) -> (Option[Node[k]], Int):
+def remove_entry_node_fuel(node: Node[k], key_hash: Int64, key: k, eq_key: Eq[k], shift: Int, fuel: Int) -> (Option[Node[k]], Int):
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       (Some(node), 0)
@@ -284,10 +289,10 @@ def remove_entry_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], 
             data_idx = bitmap_index(data_bitmap, bit)
             match get_Array(entries, data_idx):
               case Some(current):
-                same_key = and(entry_hash(current).eq_Int(key_hash), eq_Eq(eq_key, entry_key(current), key))
+                same_key = and(eq_Int64(entry_hash(current), key_hash), eq_Eq(eq_key, entry_key(current), key))
                 if same_key:
                   next_entries = array_remove(entries, data_idx)
-                  next_data_bitmap = data_bitmap.xor_Int(bit)
+                  next_data_bitmap = xor_Int64(data_bitmap, bit)
                   (collapse_indexed(next_data_bitmap, next_entries, node_bitmap, children), 1)
                 else:
                   (Some(current_node), 0)
@@ -307,7 +312,7 @@ def remove_entry_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], 
                     match next_child_opt:
                       case None:
                         next_children = array_remove(children, child_idx)
-                        next_node_bitmap = node_bitmap.xor_Int(bit)
+                        next_node_bitmap = xor_Int64(node_bitmap, bit)
                         (collapse_indexed(data_bitmap, entries, next_node_bitmap, next_children), 1)
                       case Some(next_child):
                         next_children = set_or_self_Array(children, child_idx, next_child)
@@ -316,7 +321,7 @@ def remove_entry_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], 
               (Some(current_node), 0)
         case Collision(collision_hash, entries):
           current_node = Collision(collision_hash, entries)
-          if collision_hash.eq_Int(key_hash):
+          if eq_Int64(collision_hash, key_hash):
             match find_entry_index(entries, key_hash, key, eq_key):
               case None:
                 (Some(current_node), 0)
@@ -336,10 +341,10 @@ def remove_entry_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], 
           else:
             (Some(current_node), 0)
 
-def remove_entry_node(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shift: Int) -> (Option[Node[k]], Int):
+def remove_entry_node(node: Node[k], key_hash: Int64, key: k, eq_key: Eq[k], shift: Int) -> (Option[Node[k]], Int):
   remove_entry_node_fuel(node, key_hash, key, eq_key, shift, 4096)
 
-def contains_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shift: Int, fuel: Int) -> Bool:
+def contains_node_fuel(node: Node[k], key_hash: Int64, key: k, eq_key: Eq[k], shift: Int, fuel: Int) -> Bool:
   loop fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
       False
@@ -352,7 +357,7 @@ def contains_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shif
             data_idx = bitmap_index(data_bitmap, bit)
             match get_Array(entries, data_idx):
               case Some(Entry(entry_hash, entry_key)):
-                and(entry_hash.eq_Int(key_hash), eq_Eq(eq_key, entry_key, key))
+                and(eq_Int64(entry_hash, key_hash), eq_Eq(eq_key, entry_key, key))
               case None:
                 False
           else:
@@ -366,15 +371,15 @@ def contains_node_fuel(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shif
             else:
               False
         case Collision(collision_hash, entries):
-          if collision_hash.eq_Int(key_hash):
+          if eq_Int64(collision_hash, key_hash):
             find_entry_index(entries, key_hash, key, eq_key) matches Some(_)
           else:
             False
 
-def contains_node(node: Node[k], key_hash: Int, key: k, eq_key: Eq[k], shift: Int) -> Bool:
+def contains_node(node: Node[k], key_hash: Int64, key: k, eq_key: Eq[k], shift: Int) -> Bool:
   contains_node_fuel(node, key_hash, key, eq_key, shift, 4096)
 
-def contains_with_hash(set: HashSet[k], key_hash: Int, key: k) -> Bool:
+def contains_with_hash(set: HashSet[k], key_hash: Int64, key: k) -> Bool:
   hash_item = set_hash_item(set)
   eq_key = hash_to_Eq(hash_item)
   match set:
@@ -392,10 +397,10 @@ def updated_entry(set: HashSet[k], entry: Entry[k]) -> HashSet[k]:
       (next_root, delta) = insert_entry_node(root, entry, eq_key, 0)
       Root(hash_item, sz + delta, next_root)
 
-def updated_with_hash(set: HashSet[k], key_hash: Int, key: k) -> HashSet[k]:
+def updated_with_hash(set: HashSet[k], key_hash: Int64, key: k) -> HashSet[k]:
   updated_entry(set, Entry(key_hash, key))
 
-def remove_with_hash(set: HashSet[k], key_hash: Int, key: k) -> HashSet[k]:
+def remove_with_hash(set: HashSet[k], key_hash: Int64, key: k) -> HashSet[k]:
   match set:
     case Empty(_):
       set
@@ -482,6 +487,20 @@ def fold_entries_node_fuel(node: Node[k], init: b, fn: (b, Entry[k]) -> b, fuel:
 
 def fold_entries_node(node: Node[k], init: b, fn: (b, Entry[k]) -> b) -> b:
   fold_entries_node_fuel(node, init, fn, 4096)
+
+def count_nodes_node_fuel(node: Node[k], fuel: Int) -> Int:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      0
+    case _:
+      match node:
+        case Indexed(_, _, _, children):
+          foldl_Array(children, 1, (acc, child) -> acc.add(count_nodes_node_fuel(child, fuel.sub(1))))
+        case Collision(_, _):
+          1
+
+def count_nodes_node(node: Node[k]) -> Int:
+  count_nodes_node_fuel(node, 4096)
 
 # Keep only entries satisfying pred.
 def filter(set: HashSet[k], pred: k -> Bool) -> HashSet[k]:
@@ -582,20 +601,26 @@ def eq_fn(left: HashSet[k], right: HashSet[k]) -> Bool:
 # Equality adapter for sets.
 eq: forall k. Eq[HashSet[k]] = eq_from_fn(eq_fn)
 
-def hash_entry(entry: Entry[k]) -> Int:
+def sum_61(left: Int64, right: Int64) -> Int64:
+  normalize_61(int64_to_Int(add_Int64(left, right)))
+
+def hash_in_range_61(value: Int64) -> Bool:
+  eq_Int64(value, normalize_61(int64_to_Int(value)))
+
+def hash_entry(entry: Entry[k]) -> Int64:
   finish_61(entry_hash(entry), 1, hash_tag_entry)
 
-def hash_fn(set: HashSet[k]) -> Int:
+def hash_fn(set: HashSet[k]) -> Int64:
   match set:
     case Empty(_):
       finish_61(hash_seed_set, 0, hash_tag_set)
     case Root(_, sz, root):
-      (sum_acc, xor_acc) = fold_entries_node(root, (hash_seed_set, 0), (state, entry) -> (
+      (sum_acc, xor_acc) = fold_entries_node(root, (hash_seed_set, empty_i64), (state, entry) -> (
         (sum_acc, xor_acc) = state
         item_hash = hash_entry(entry)
-        (normalize_61(sum_acc + item_hash), xor_acc.xor_Int(item_hash))
+        (sum_61(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
       ))
-      finish_61(mix_61(sum_acc, normalize_61(xor_acc)), sz, hash_tag_set)
+      finish_61(mix_61(sum_acc, xor_acc), sz, hash_tag_set)
 
 # Hash adapter for sets.
 hash: forall k. Hash[HashSet[k]] = hash_specialized(hash_fn, eq)
@@ -607,12 +632,126 @@ hash: forall k. Hash[HashSet[k]] = hash_specialized(hash_fn, eq)
 def count_entries_node(node: Node[k]) -> Int:
   fold_entries_node(node, 0, (acc, _) -> acc + 1)
 
+def bitmap_bit_at(bitmap: Int64, target: Int64) -> Option[Int64]:
+  def go(remaining: Int, fragment_idx: Int, seen: Int64) -> Option[Int64]:
+    loop remaining:
+      case _ if cmp_Int(remaining, 0) matches LT | EQ:
+        None
+      case _:
+        bit = bitpos(fragment_idx)
+        if has_bit(bitmap, bit):
+          if eq_Int64(seen, target):
+            Some(bit)
+          else:
+            go(remaining.sub(1), fragment_idx.add(1), add_Int64(seen, one_i64))
+        else:
+          go(remaining.sub(1), fragment_idx.add(1), seen)
+  go(32, 0, empty_i64)
+
+def subtree_matches_parent_bit(node: Node[k], shift: Int, expected_bit: Int64) -> Bool:
+  fold_entries_node(node, True, (ok, entry) -> (
+    if ok:
+      eq_Int64(bitpos(fragment(entry_hash(entry), shift)), expected_bit)
+    else:
+      False
+  ))
+
+def indexed_entries_ok(entries: Array[Entry[k]], data_bitmap: Int64, hash_item: Hash[k], shift: Int) -> Bool:
+  cnt = size_Array(entries)
+  def go(rem: Int, idx: Int64) -> Bool:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        True
+      case _:
+        match (bitmap_bit_at(data_bitmap, idx), get_Array(entries, idx)):
+          case (Some(expected_bit), Some(entry)):
+            cached_hash_ok = eq_Int64(entry_hash(entry), hash_Hash(hash_item, entry_key(entry)))
+            range_ok = hash_in_range_61(entry_hash(entry))
+            bit_ok = eq_Int64(bitpos(fragment(entry_hash(entry), shift)), expected_bit)
+            if and(and(cached_hash_ok, range_ok), bit_ok):
+              go(rem.sub(1), add_Int64(idx, one_i64))
+            else:
+              False
+          case _:
+            False
+  go(int64_to_Int(cnt), empty_i64)
+
+def collision_entries_ok(entries: Array[Entry[k]], collision_hash: Int64, hash_item: Hash[k]) -> Bool:
+  cnt = size_Array(entries)
+  if or(eq_Int64(cnt, empty_i64), eq_Int64(cnt, one_i64)):
+    False
+  else:
+    def go(rem: Int, idx: Int64) -> Bool:
+      loop rem:
+        case _ if cmp_Int(rem, 0) matches LT | EQ:
+          True
+        case _:
+          match get_Array(entries, idx):
+            case Some(entry):
+              cached_hash_ok = eq_Int64(entry_hash(entry), hash_Hash(hash_item, entry_key(entry)))
+              same_hash_ok = eq_Int64(entry_hash(entry), collision_hash)
+              range_ok = and(hash_in_range_61(collision_hash), hash_in_range_61(entry_hash(entry)))
+              if and(and(cached_hash_ok, same_hash_ok), range_ok):
+                go(rem.sub(1), add_Int64(idx, one_i64))
+              else:
+                False
+            case None:
+              False
+    go(int64_to_Int(cnt), empty_i64)
+
+def indexed_children_work(children: Array[Node[k]], node_bitmap: Int64, shift: Int) -> Option[List[(Node[k], Int)]]:
+  cnt = size_Array(children)
+  next_shift = shift.add(fragment_bits)
+  def go(rem: Int, idx: Int64, rev_acc: List[(Node[k], Int)]) -> Option[List[(Node[k], Int)]]:
+    loop rem:
+      case _ if cmp_Int(rem, 0) matches LT | EQ:
+        Some(rev_acc)
+      case _:
+        match (bitmap_bit_at(node_bitmap, idx), get_Array(children, idx)):
+          case (Some(expected_bit), Some(child)):
+            aligned = subtree_matches_parent_bit(child, shift, expected_bit)
+            if aligned:
+              go(rem.sub(1), add_Int64(idx, one_i64), [(child, next_shift), *rev_acc])
+            else:
+              None
+          case _:
+            None
+  go(int64_to_Int(cnt), empty_i64, [])
+
+def node_invariants_ok(node: Node[k], hash_item: Hash[k], shift: Int) -> Bool:
+  budget = count_nodes_node(node)
+  def go(fuel: Int, work: List[(Node[k], Int)]) -> Bool:
+    loop (fuel, work):
+      case (_, []):
+        True
+      case _ if cmp_Int(fuel, 0) matches LT | EQ:
+        False
+      case (_, [(Indexed(data_bitmap, entries, node_bitmap, children), node_shift), *tail]):
+        disjoint = eq_Int64(and_Int64(data_bitmap, node_bitmap), empty_i64)
+        entry_count_ok = eq_Int64(size_Array(entries), i64(popcount_Int64(data_bitmap)))
+        child_count_ok = eq_Int64(size_Array(children), i64(popcount_Int64(node_bitmap)))
+        indexed_ok = indexed_entries_ok(entries, data_bitmap, hash_item, node_shift)
+        match indexed_children_work(children, node_bitmap, node_shift):
+          case Some(child_work):
+            if and(and(disjoint, entry_count_ok), and(child_count_ok, indexed_ok)):
+              go(fuel.sub(1), [*child_work, *tail])
+            else:
+              False
+          case None:
+            False
+      case (_, [(Collision(collision_hash, entries), _), *tail]):
+        if collision_entries_ok(entries, collision_hash, hash_item):
+          go(fuel.sub(1), tail)
+        else:
+          False
+  go(budget, [(node, shift)])
+
 def invariants_ok(set: HashSet[k]) -> Bool:
   match set:
     case Empty(_):
       True
-    case Root(_, sz, root):
-      sz.eq_Int(count_entries_node(root))
+    case Root(hash_item, sz, root):
+      and(node_invariants_ok(root, hash_item, 0), sz.eq_Int(count_entries_node(root)))
 
 def model_contains(model: List[Int], key: Int) -> Bool:
   loop model:
@@ -763,7 +902,7 @@ rand_ops: Gen[List[Op]] = list_Gen(rand_op)
 
 rand_item_list: Gen[List[Int]] = list_Gen(rand_key)
 
-hash_int_collision: Hash[Int] = hash_specialized(_ -> 0, eq_Int_inst)
+hash_int_collision: Hash[Int] = hash_specialized(_ -> empty_i64, eq_Int_inst)
 hash_int_shifted: Hash[Int] = hash_specialized(i -> normalize_61(i + 17), eq_Int_inst)
 
 sequence_prop: Prop = forall_Prop(
@@ -836,10 +975,28 @@ adapter_prop: Prop = forall_Prop(
     set_hash = hash
     equal = eq_Eq(set_eq, left, right)
     coherent = if equal:
-      hash_Hash(set_hash, left).eq_Int(hash_Hash(set_hash, right))
+      hash_Hash(set_hash, left).eq_Int64(hash_Hash(set_hash, right))
     else:
       True
     Assertion(and(coherent, eq_Bool(equal, model_eq(left_model, right_model))), "adapter coherence")
+  ))
+
+permutation_hash_prop: Prop = forall_Prop(
+  rand_item_list,
+  "equal sets hash the same across insertion order",
+  items -> (
+    model = model_from_items(items)
+    left = from_List(hash_Int, model)
+    right = from_List(hash_Int, model.reverse())
+    set_eq = eq
+    set_hash = hash
+    Assertion(
+      and(
+        and(eq_Eq(set_eq, left, right), eq_Int64(hash_Hash(set_hash, left), hash_Hash(set_hash, right))),
+        and(invariants_ok(left), invariants_ok(right))
+      ),
+      "permutation hash"
+    )
   ))
 
 hashset_props: Prop = suite_Prop(
@@ -850,6 +1007,7 @@ hashset_props: Prop = suite_Prop(
     union_cross_hash_prop,
     intersection_difference_prop,
     adapter_prop,
+    permutation_hash_prop,
   ])
 
 tests = TestSuite("HashSet tests", [
@@ -917,5 +1075,10 @@ tests = TestSuite("HashSet tests", [
       "bulk ops sanity"
     )
   ),
+  Assertion(fragment(normalize_61(-1), 0).eq_Int(30), "fragment handles -1 at shift 0"),
+  Assertion(fragment(normalize_61(0), 5).eq_Int(0), "fragment handles zero at shift 5"),
+  Assertion(fragment(normalize_61(2305843009213693949), 0).eq_Int(29), "fragment handles modulus minus two"),
+  Assertion(fragment(normalize_61(2305843009213693950), 60).eq_Int(1), "fragment handles modulus minus one at shift 60"),
+  Assertion(fragment(normalize_61(2305843009213693951), 0).eq_Int(0), "fragment handles modulus wrap"),
   run_Prop(hashset_props, 200, 20260308),
 ])

@@ -1,12 +1,17 @@
 package Zafu/Text/Parse/Error
 
 from Bosatsu/Char import cmp_Char
+from Bosatsu/Num/Int64 import (
+  Int64,
+  eq_Int64,
+  int_low_bits_to_Int64 as i64,
+)
 
 from Zafu/Abstract/Eq import eq_from_fn
 
 from Zafu/Abstract/Hash import (
   Hash,
-  hash_from_fn,
+  hash_specialized,
   hash as hash_Hash,
   mix_61,
   finish_61,
@@ -88,24 +93,24 @@ def expectation_eq(left: Expectation, right: Expectation) -> Bool:
     case _:
       False
 
-def hash_expectation(value: Expectation) -> Int:
+def hash_expectation(value: Expectation) -> Int64:
   match value:
     case ExpectedChar(ch):
-      finish_61(hash_Hash(hash_Char, ch), 1, 1)
+      finish_61(hash_Hash(hash_Char, ch), 1, i64(1))
     case ExpectedString(text):
-      finish_61(hash_Hash(hash_String, text), 1, 2)
+      finish_61(hash_Hash(hash_String, text), 1, i64(2))
     case InRange(lower, upper):
-      finish_61(mix_61(hash_Hash(hash_Char, lower), hash_Hash(hash_Char, upper)), 2, 3)
+      finish_61(mix_61(hash_Hash(hash_Char, lower), hash_Hash(hash_Char, upper)), 2, i64(3))
     case ExpectedEnd:
-      finish_61(0, 0, 4)
+      finish_61(i64(0), 0, i64(4))
     case ExpectedPredicate(label):
-      finish_61(hash_Hash(hash_String, label), 1, 5)
+      finish_61(hash_Hash(hash_String, label), 1, i64(5))
     case FailWith(message):
-      finish_61(hash_Hash(hash_String, message), 1, 6)
+      finish_61(hash_Hash(hash_String, message), 1, i64(6))
     case InContext(label):
-      finish_61(hash_Hash(hash_String, label), 1, 7)
+      finish_61(hash_Hash(hash_String, label), 1, i64(7))
 
-expectation_hash: Hash[Expectation] = hash_from_fn(hash_expectation, eq_from_fn(expectation_eq))
+expectation_hash: Hash[Expectation] = hash_specialized(hash_expectation, eq_from_fn(expectation_eq))
 
 def distinct_empty(hash_item: Hash[a]) -> DistinctList[a]:
   DistinctList(empty_HashSet(hash_item), [])
@@ -156,3 +161,24 @@ def push_context(err: Error, ctx: String) -> Error:
 def replace_expected(err: Error, expected_label: String) -> Error:
   Error(input, failed_at, _, contexts) = err
   Error(input, failed_at, [ExpectedPredicate(expected_label)], contexts)
+
+tests = TestSuite("Text/Parse/Error tests", [
+  Assertion(
+    eq_Int64(hash_Hash(expectation_hash, ExpectedChar(.'x')), hash_Hash(expectation_hash, ExpectedChar(.'x'))),
+    "expectation hash equal values",
+  ),
+  Assertion(
+    if eq_Int64(hash_Hash(expectation_hash, ExpectedString("x")), hash_Hash(expectation_hash, ExpectedChar(.'x'))):
+      False
+    else:
+      True,
+    "expectation hash tags constructors",
+  ),
+  Assertion(
+    if eq_Int64(hash_Hash(expectation_hash, ExpectedPredicate("ctx")), hash_Hash(expectation_hash, InContext("ctx"))):
+      False
+    else:
+      True,
+    "expectation hash keeps predicate/context distinct",
+  ),
+])

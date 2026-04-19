@@ -3,6 +3,7 @@ package Zafu/Collection/NonEmptyChain
 from Bosatsu/Num/Float64 import (
   addf,
 )
+from Bosatsu/Num/Int64 import eq_Int64
 from Zafu/Collection/Chain import (
   Chain,
   empty as empty_Chain,
@@ -651,14 +652,14 @@ typeclass_adapter_tests = TestSuite("typeclass adapters", [
     hash_inst = hash_NonEmptyChain(hash_Int)
     hx = hash_Hash(hash_inst, from_prepend(1, from_List_Chain([2, 3])))
     hy = hash_Hash(hash_inst, from_append(from_List_Chain([1, 2]), 3))
-    Assertion(eq_Int(hx, hy), "hash_NonEmptyChain equal values")
+    Assertion(eq_Int64(hx, hy), "hash_NonEmptyChain equal values")
   ),
   (
     hash_inst = hash_NonEmptyChain(hash_Int)
     hx = hash_Hash(hash_inst, from_prepend(1, from_List_Chain([2, 3])))
     hy = hash_Hash(hash_inst, from_prepend(1, from_List_Chain([2, 4])))
     Assertion(
-      if eq_Int(hx, hy):
+      if eq_Int64(hx, hy):
         False
       else:
         True,

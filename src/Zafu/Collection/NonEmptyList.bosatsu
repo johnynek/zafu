@@ -1,5 +1,7 @@
 package Zafu/Collection/NonEmptyList
 
+from Bosatsu/Num/Int64 import eq_Int64
+
 from Zafu/Collection/List import (
   any as any_List,
   exists as exists_List,
@@ -469,14 +471,14 @@ tests = TestSuite("Zafu/Collection/NonEmptyList tests", [
     hash_inst = hash_NonEmptyList(hash_Int)
     hx = hash_Hash(hash_inst, NonEmptyList(1, [2, 3]))
     hy = hash_Hash(hash_inst, NonEmptyList(1, [2, 3]))
-    Assertion(eq_Int(hx, hy), "hash_NonEmptyList equal values")
+    Assertion(eq_Int64(hx, hy), "hash_NonEmptyList equal values")
   ),
   (
     hash_inst = hash_NonEmptyList(hash_Int)
     hx = hash_Hash(hash_inst, NonEmptyList(1, [2, 3]))
     hy = hash_Hash(hash_inst, NonEmptyList(1, [2, 4]))
     Assertion(
-      if eq_Int(hx, hy):
+      if eq_Int64(hx, hy):
         False
       else:
         True,
