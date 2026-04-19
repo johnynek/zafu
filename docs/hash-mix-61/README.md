@@ -35,6 +35,17 @@ their caller-supplied dictionaries, so the benchmark's synthetic key/item hash
 inputs measure the shipped public hash path rather than the collections'
 internal HAMT cache dictionaries.
 
+Breaking API note:
+
+- `HashMap.hash` now takes both `hash_key` and `hash_value` dictionaries.
+- `HashSet.hash` now takes the caller's `hash_item` dictionary instead of being
+  a constant exported `Hash`.
+
+That change is intentional for issue #207: equal maps and sets must hash
+coherently even when their internal HAMT cache dictionaries differ, so the
+public adapters now re-hash visible keys/items with the caller's chosen
+dictionary instead of trusting the cached internal hashes.
+
 Strategies:
 
 - `int_fallback`: the Int conversion multiply + canonical reduction fallback.

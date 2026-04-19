@@ -58,14 +58,21 @@ def in_range_61_i64(value: Int64) -> Bool:
   and(non_negative, below_modulus)
 
 def reduce_61_i64(value: Int64) -> Int64:
-  folded = add_Int64(and_Int64(value, hash_mask_61), shift_right_unsigned_Int64(value, 61))
-  match cmp_Int64(folded, hash_modulus):
+  # The fast Mersenne fold assumes a non-negative bounded input. Keep that path
+  # for the hot callers, but normalize negative values through the Int helper so
+  # the reducer stays correct if future callers violate the fast-path contract.
+  match cmp_Int64(value, zero_i64):
     case LT:
-      folded
-    case EQ:
-      zero_i64
-    case GT:
-      sub_Int64(folded, hash_modulus)
+      normalize_61_int(int64_to_Int(value))
+    case EQ | GT:
+      folded = add_Int64(and_Int64(value, hash_mask_61), shift_right_unsigned_Int64(value, 61))
+      match cmp_Int64(folded, hash_modulus):
+        case LT:
+          folded
+        case EQ:
+          zero_i64
+        case GT:
+          sub_Int64(folded, hash_modulus)
 
 def sum_61_i64(left: Int64, right: Int64) -> Int64:
   reduce_61_i64(add_Int64(left, right))

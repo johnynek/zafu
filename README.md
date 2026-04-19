@@ -77,6 +77,22 @@ the Int fallback wins on the JVM cases, but the 31-bit Int64 limb strategy wins
 decisively on the native `bosatsu_c` workloads, so `Hash.mix_61` follows the
 benchmarked Int64 limb path.
 
+## Hash API migration notes
+
+Issue #207 intentionally changes the public collection hash adapters to restore
+Eq/Hash coherence when equal `HashMap` or `HashSet` values were built with
+different internal hash dictionaries.
+
+- `HashMap.hash` changed from `Hash[v] -> Hash[HashMap[k, v]]` to
+  `HashMap.hash(hash_key, hash_value)`.
+- `HashSet.hash` changed from a constant `Hash[HashSet[k]]` to
+  `HashSet.hash(hash_item)`.
+
+Callers now need to supply the public key/item dictionary explicitly when they
+want a `Hash` instance for a map or set. The public hash adapters no longer
+trust the collections' cached HAMT hashes, because those caches may have been
+built from a different Eq-coherent dictionary than the caller wants to use.
+
 ## Benchmarksgame compare harness
 
 Phase-1 cross-language comparison needs Python 3.9+, `curl`, `java`, `javac`, and `gcc` in addition to the Bosatsu wrapper setup.

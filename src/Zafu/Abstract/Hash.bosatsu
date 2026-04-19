@@ -170,6 +170,7 @@ tests = TestSuite("Hash tests", [
     mixed = mix_61(sub_Int64(hash_modulus, i64(1)), sub_Int64(hash_modulus, i64(1)))
     Assertion(in_range_61(mixed), "mix_61 stays in range")
   ),
+  Assertion(eq_Int64(reduce_61_i64(i64(-1)), normalize_61(-1)), "reduce_61_i64 normalizes negatives"),
   Assertion(eq_Int64(normalize_61(0), i64(0)), "normalize_61 zero"),
   Assertion(eq_Int64(normalize_61(hash_modulus_int.sub(2)), sub_Int64(hash_modulus, i64(2))), "normalize_61 modulus minus two"),
   Assertion(eq_Int64(normalize_61(hash_modulus_int.sub(1)), sub_Int64(hash_modulus, i64(1))), "normalize_61 modulus minus one"),
