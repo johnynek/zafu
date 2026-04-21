@@ -57,6 +57,12 @@ from Zafu/Abstract/Internal/Hash61 import (
   in_range_61_i64,
   sum_61_i64,
 )
+from Zafu/Control/IterState import (
+  Continue,
+  Done,
+  IterState,
+  foldl_Array as foldl_state_Array,
+)
 from Zafu/Abstract/Instances/Predef import (
   eq_Int as eq_Int_inst,
   hash_Int
@@ -492,6 +498,26 @@ def fold_entries_node_fuel(node: Node[k], init: b, fn: (b, Entry[k]) -> b, fuel:
 def fold_entries_node(node: Node[k], init: b, fn: (b, Entry[k]) -> b) -> b:
   fold_entries_node_fuel(node, init, fn, 4096)
 
+# IterState variant for callers that can stop once the accumulator reaches a
+# terminal value (for example, the first equality mismatch).
+def fold_entries_node_state_fuel(node: Node[k], init: b, fn: (b, Entry[k]) -> IterState[b, b], fuel: Int) -> IterState[b, b]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      Continue(init)
+    case _:
+      match node:
+        case Indexed(_, entries, _, children):
+          match foldl_state_Array(entries, init, fn):
+            case Done(done_value):
+              Done(done_value)
+            case Continue(acc1):
+              foldl_state_Array(children, acc1, (acc, child) -> fold_entries_node_state_fuel(child, acc, fn, fuel.sub(1)))
+        case Collision(_, entries):
+          foldl_state_Array(entries, init, fn)
+
+def fold_entries_node_state(node: Node[k], init: b, fn: (b, Entry[k]) -> IterState[b, b]) -> IterState[b, b]:
+  fold_entries_node_state_fuel(node, init, fn, 4096)
+
 def count_nodes_node_fuel(node: Node[k], fuel: Int) -> Int:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
@@ -606,24 +632,24 @@ def unique_subset_count(hash_item: Hash[k], normalized: HashSet[k], set: HashSet
     case Empty(_):
       (0, True)
     case Root(_, _, root):
-      (_, unique_count, ok) = fold_entries_node(root, (empty(hash_item), 0, True), (state, entry) -> (
-        (seen, unique_count, ok) = state
-        if ok:
-          item = entry_key(entry)
-          if contains(seen, item):
-            state
-          elif contains(normalized, item):
-            (updated(seen, item), unique_count.add(1), True)
-          else:
-            (seen, unique_count, False)
+      Done((_, unique_count, ok)) | Continue((_, unique_count, ok)) = fold_entries_node_state(root, (empty(hash_item), 0, True), (state, entry) -> (
+        (seen, unique_count, _) = state
+        item = entry_key(entry)
+        if contains(seen, item):
+          Continue(state)
+        elif contains(normalized, item):
+          Continue((updated(seen, item), unique_count.add(1), True))
         else:
-          state
+          Done((seen, unique_count, False))
       ))
       (unique_count, ok)
 
 def eq_fn(hash_item: Hash[k], left: HashSet[k], right: HashSet[k]) -> Bool:
   def eq_ordered(smaller: HashSet[k], larger: HashSet[k]) -> Bool:
     (normalized_smaller, smaller_unique_count) = normalize_classes(hash_item, smaller)
+    # Rehashing `larger` under the supplied item semantics can only merge raw
+    # entries into fewer equivalence classes; it cannot create more classes than
+    # the raw entry count we already have in `size(larger)`.
     if cmp_Int(smaller_unique_count, size(larger)) matches GT:
       False
     else:
@@ -1160,6 +1186,16 @@ tests = TestSuite("HashSet tests", [
       eq_Eq(set_eq, left, right) matches False,
       "adapter keeps distinct supplied quotient classes"
     )
+  ),
+  (
+    s = from_List(hash_Int, [1, 33, 2])
+    visited = match s:
+      case Empty(_):
+        0
+      case Root(_, _, root):
+        Done(result) | Continue(result) = fold_entries_node_state(root, 0, (count, _) -> Done(count.add(1)))
+        result
+    Assertion(visited.eq_Int(1), "IterState fold short-circuits")
   ),
   Assertion(fragment(normalize_61(-1), 0).eq_Int(30), "fragment handles -1 at shift 0"),
   Assertion(fragment(normalize_61(0), 5).eq_Int(0), "fragment handles zero at shift 5"),

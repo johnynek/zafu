@@ -58,6 +58,12 @@ from Zafu/Abstract/Internal/Hash61 import (
   in_range_61_i64,
   sum_61_i64,
 )
+from Zafu/Control/IterState import (
+  Continue,
+  Done,
+  IterState,
+  foldl_Array as foldl_state_Array,
+)
 from Zafu/Abstract/Instances/Predef import (
   eq_Int as eq_Int_inst,
   eq_Option,
@@ -527,6 +533,26 @@ def fold_entries_node_fuel(node: Node[k, v], init: b, fn: (b, Entry[k, v]) -> b,
 def fold_entries_node(node: Node[k, v], init: b, fn: (b, Entry[k, v]) -> b) -> b:
   fold_entries_node_fuel(node, init, fn, 4096)
 
+# IterState variant for callers that can stop once the accumulator reaches a
+# terminal value (for example, the first equality mismatch).
+def fold_entries_node_state_fuel(node: Node[k, v], init: b, fn: (b, Entry[k, v]) -> IterState[b, b], fuel: Int) -> IterState[b, b]:
+  recur fuel:
+    case _ if cmp_Int(fuel, 0) matches LT | EQ:
+      Continue(init)
+    case _:
+      match node:
+        case Indexed(_, entries, _, children):
+          match foldl_state_Array(entries, init, fn):
+            case Done(done_value):
+              Done(done_value)
+            case Continue(acc1):
+              foldl_state_Array(children, acc1, (acc, child) -> fold_entries_node_state_fuel(child, acc, fn, fuel.sub(1)))
+        case Collision(_, entries):
+          foldl_state_Array(entries, init, fn)
+
+def fold_entries_node_state(node: Node[k, v], init: b, fn: (b, Entry[k, v]) -> IterState[b, b]) -> IterState[b, b]:
+  fold_entries_node_state_fuel(node, init, fn, 4096)
+
 def count_nodes_node_fuel(node: Node[k, v], fuel: Int) -> Int:
   recur fuel:
     case _ if cmp_Int(fuel, 0) matches LT | EQ:
@@ -677,10 +703,10 @@ def difference(left: HashMap[k, v], right: HashMap[k, w]) -> HashMap[k, v]:
     case Root(_, _, right_root):
       fold_entries_node(right_root, left, (acc, entry) -> remove(acc, entry_key(entry)))
 
-def entry_pair(entry: Entry[k, v]) -> Tuple2[k, v]:
+def entry_pair(entry: Entry[k, v]) -> (k, v):
   (entry_key(entry), entry_value(entry))
 
-def pair_eq(hash_key: Hash[k], hash_value: Hash[v]) -> Eq[Tuple2[k, v]]:
+def pair_eq(hash_key: Hash[k], hash_value: Hash[v]) -> Eq[(k, v)]:
   eq_key = hash_to_Eq(hash_key)
   eq_value = hash_to_Eq(hash_value)
   eq_from_fn((left, right) -> (
@@ -689,13 +715,13 @@ def pair_eq(hash_key: Hash[k], hash_value: Hash[v]) -> Eq[Tuple2[k, v]]:
     and(eq_Eq(eq_key, left_key, right_key), eq_Eq(eq_value, left_value, right_value))
   ))
 
-def pair_hash(hash_key: Hash[k], hash_value: Hash[v]) -> Hash[Tuple2[k, v]]:
+def pair_hash(hash_key: Hash[k], hash_value: Hash[v]) -> Hash[(k, v)]:
   hash_specialized(pair -> (
     (key, value) = pair
     finish_61(mix_61(hash_Hash(hash_key, key), hash_Hash(hash_value, value)), 2, hash_tag_entry)
   ), pair_eq(hash_key, hash_value))
 
-def normalize_pair_classes(hash_pair: Hash[Tuple2[k, v]], map: HashMap[k, v]) -> (HashMap[Tuple2[k, v], Bool], Int):
+def normalize_pair_classes(hash_pair: Hash[(k, v)], map: HashMap[k, v]) -> (HashMap[(k, v), Unit], Int):
   match map:
     case Empty(_):
       (empty(hash_pair), 0)
@@ -706,26 +732,23 @@ def normalize_pair_classes(hash_pair: Hash[Tuple2[k, v]], map: HashMap[k, v]) ->
         if contains_key(normalized, pair):
           state
         else:
-          (updated(normalized, pair, True), unique_count.add(1))
+          (updated(normalized, pair, ()), unique_count.add(1))
       ))
 
-def unique_pair_subset_count(hash_pair: Hash[Tuple2[k, v]], normalized: HashMap[Tuple2[k, v], Bool], map: HashMap[k, v]) -> (Int, Bool):
+def unique_pair_subset_count(hash_pair: Hash[(k, v)], normalized: HashMap[(k, v), Unit], map: HashMap[k, v]) -> (Int, Bool):
   match map:
     case Empty(_):
       (0, True)
     case Root(_, _, root):
-      (_, unique_count, ok) = fold_entries_node(root, (empty(hash_pair), 0, True), (state, entry) -> (
-        (seen, unique_count, ok) = state
-        if ok:
-          pair = entry_pair(entry)
-          if contains_key(seen, pair):
-            state
-          elif contains_key(normalized, pair):
-            (updated(seen, pair, True), unique_count.add(1), True)
-          else:
-            (seen, unique_count, False)
+      Done((_, unique_count, ok)) | Continue((_, unique_count, ok)) = fold_entries_node_state(root, (empty(hash_pair), 0, True), (state, entry) -> (
+        (seen, unique_count, _) = state
+        pair = entry_pair(entry)
+        if contains_key(seen, pair):
+          Continue(state)
+        elif contains_key(normalized, pair):
+          Continue((updated(seen, pair, ()), unique_count.add(1), True))
         else:
-          state
+          Done((seen, unique_count, False))
       ))
       (unique_count, ok)
 
@@ -733,6 +756,9 @@ def eq_fn(hash_key: Hash[k], hash_value: Hash[v], left: HashMap[k, v], right: Ha
   hash_pair = pair_hash(hash_key, hash_value)
   def eq_ordered(smaller: HashMap[k, v], larger: HashMap[k, v]) -> Bool:
     (normalized_smaller, smaller_unique_count) = normalize_pair_classes(hash_pair, smaller)
+    # Rehashing `larger` under the supplied pair semantics can only merge raw
+    # entries into fewer equivalence classes; it cannot create more classes than
+    # the raw entry count we already have in `size(larger)`.
     if cmp_Int(smaller_unique_count, size(larger)) matches GT:
       False
     else:
@@ -762,7 +788,7 @@ def hash_fn(hash_key: Hash[k], hash_value: Hash[v], map: HashMap[k, v]) -> Int64
           state
         else:
           item_hash = hash_Hash(hash_pair, pair)
-          (updated(seen, pair, True), unique_count.add(1), sum_61_i64(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
+          (updated(seen, pair, ()), unique_count.add(1), sum_61_i64(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
       ))
       finish_61(mix_61(sum_acc, xor_acc), unique_count, hash_tag_map)
 
@@ -1355,6 +1381,16 @@ tests = TestSuite("HashMap tests", [
       eq_Eq(map_eq, left, right) matches False,
       "adapter keeps distinct supplied pair quotient classes"
     )
+  ),
+  (
+    m = from_List(hash_Int, [(1, 10), (33, 20), (2, 30)])
+    visited = match m:
+      case Empty(_):
+        0
+      case Root(_, _, root):
+        Done(result) | Continue(result) = fold_entries_node_state(root, 0, (count, _) -> Done(count.add(1)))
+        result
+    Assertion(visited.eq_Int(1), "IterState fold short-circuits")
   ),
   Assertion(fragment(normalize_61(-1), 0).eq_Int(30), "fragment handles -1 at shift 0"),
   Assertion(fragment(normalize_61(0), 5).eq_Int(0), "fragment handles zero at shift 5"),
