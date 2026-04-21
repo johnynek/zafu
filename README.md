@@ -79,19 +79,31 @@ benchmarked Int64 limb path.
 
 ## Hash API migration notes
 
-Issue #207 intentionally changes the public collection hash adapters to restore
-Eq/Hash coherence when equal `HashMap` or `HashSet` values were built with
+Issue #207 intentionally changes the public collection Eq/Hash adapters to make
+their semantics lawful even when `HashMap` or `HashSet` values were built with
 different internal hash dictionaries.
 
-- `HashMap.hash` changed from `Hash[v] -> Hash[HashMap[k, v]]` to
-  `HashMap.hash(hash_key, hash_value)`.
+- `HashSet.eq` changed from a constant `Eq[HashSet[k]]` to
+  `HashSet.eq(hash_item)`.
 - `HashSet.hash` changed from a constant `Hash[HashSet[k]]` to
   `HashSet.hash(hash_item)`.
+- `HashMap.eq` changed from `Eq[v] -> Eq[HashMap[k, v]]` to
+  `HashMap.eq(hash_key, hash_value)`.
+- `HashMap.hash` changed from `Hash[v] -> Hash[HashMap[k, v]]` to
+  `HashMap.hash(hash_key, hash_value)`.
 
-Callers now need to supply the public key/item dictionary explicitly when they
-want a `Hash` instance for a map or set. The public hash adapters no longer
-trust the collections' cached HAMT hashes, because those caches may have been
-built from a different Eq-coherent dictionary than the caller wants to use.
+Callers now need to supply the public key/item dictionaries explicitly when
+they want `Eq` or `Hash` instances for maps or sets.
+
+`HashSet.eq/hash` are now defined on the quotient of visible items under the
+caller-supplied `hash_item` equality.
+
+`HashMap.eq/hash` are now defined on the quotient of visible `(key, value)`
+entries under the caller-supplied `(hash_key, hash_value)` pair equality.
+
+The public adapters no longer trust the collections' cached HAMT hashes or
+stored key semantics, because those caches may have been built from different
+Eq-coherent dictionaries than the caller wants to use.
 
 ## Benchmarksgame compare harness
 

@@ -677,54 +677,98 @@ def difference(left: HashMap[k, v], right: HashMap[k, w]) -> HashMap[k, v]:
     case Root(_, _, right_root):
       fold_entries_node(right_root, left, (acc, entry) -> remove(acc, entry_key(entry)))
 
-def eq_fn(eq_value: Eq[v], left: HashMap[k, v], right: HashMap[k, v]) -> Bool:
-  if size(left).eq_Int(size(right)):
-    match left:
-      case Empty(_):
-        True
-      case Root(_, _, left_root):
-        fold_entries_node(left_root, True, (ok, entry) -> (
-          if ok:
-            match get(right, entry_key(entry)):
-              case Some(right_value):
-                eq_Eq(eq_value, entry_value(entry), right_value)
-              case None:
-                False
+def entry_pair(entry: Entry[k, v]) -> Tuple2[k, v]:
+  (entry_key(entry), entry_value(entry))
+
+def pair_eq(hash_key: Hash[k], hash_value: Hash[v]) -> Eq[Tuple2[k, v]]:
+  eq_key = hash_to_Eq(hash_key)
+  eq_value = hash_to_Eq(hash_value)
+  eq_from_fn((left, right) -> (
+    (left_key, left_value) = left
+    (right_key, right_value) = right
+    and(eq_Eq(eq_key, left_key, right_key), eq_Eq(eq_value, left_value, right_value))
+  ))
+
+def pair_hash(hash_key: Hash[k], hash_value: Hash[v]) -> Hash[Tuple2[k, v]]:
+  hash_specialized(pair -> (
+    (key, value) = pair
+    finish_61(mix_61(hash_Hash(hash_key, key), hash_Hash(hash_value, value)), 2, hash_tag_entry)
+  ), pair_eq(hash_key, hash_value))
+
+def normalize_pair_classes(hash_pair: Hash[Tuple2[k, v]], map: HashMap[k, v]) -> (HashMap[Tuple2[k, v], Bool], Int):
+  match map:
+    case Empty(_):
+      (empty(hash_pair), 0)
+    case Root(_, _, root):
+      fold_entries_node(root, (empty(hash_pair), 0), (state, entry) -> (
+        (normalized, unique_count) = state
+        pair = entry_pair(entry)
+        if contains_key(normalized, pair):
+          state
+        else:
+          (updated(normalized, pair, True), unique_count.add(1))
+      ))
+
+def unique_pair_subset_count(hash_pair: Hash[Tuple2[k, v]], normalized: HashMap[Tuple2[k, v], Bool], map: HashMap[k, v]) -> (Int, Bool):
+  match map:
+    case Empty(_):
+      (0, True)
+    case Root(_, _, root):
+      (_, unique_count, ok) = fold_entries_node(root, (empty(hash_pair), 0, True), (state, entry) -> (
+        (seen, unique_count, ok) = state
+        if ok:
+          pair = entry_pair(entry)
+          if contains_key(seen, pair):
+            state
+          elif contains_key(normalized, pair):
+            (updated(seen, pair, True), unique_count.add(1), True)
           else:
-            False
-        ))
+            (seen, unique_count, False)
+        else:
+          state
+      ))
+      (unique_count, ok)
+
+def eq_fn(hash_key: Hash[k], hash_value: Hash[v], left: HashMap[k, v], right: HashMap[k, v]) -> Bool:
+  hash_pair = pair_hash(hash_key, hash_value)
+  def eq_ordered(smaller: HashMap[k, v], larger: HashMap[k, v]) -> Bool:
+    (normalized_smaller, smaller_unique_count) = normalize_pair_classes(hash_pair, smaller)
+    if cmp_Int(smaller_unique_count, size(larger)) matches GT:
+      False
+    else:
+      (larger_unique_count, larger_ok) = unique_pair_subset_count(hash_pair, normalized_smaller, larger)
+      and(larger_ok, smaller_unique_count.eq_Int(larger_unique_count))
+  if cmp_Int(size(left), size(right)) matches GT:
+    eq_ordered(right, left)
   else:
-    False
+    eq_ordered(left, right)
 
-# Equality adapter for maps.
-def eq(eq_value: Eq[v]) -> Eq[HashMap[k, v]]:
-  eq_from_fn((left, right) -> eq_fn(eq_value, left, right))
-
-def hash_entry(hash_key: Hash[k], hash_value: Hash[v], entry: Entry[k, v]) -> Int64:
-  # Public map hashing must re-hash keys with the caller's dictionary so equal
-  # maps stay coherent even when their internal HAMT caches came from
-  # different Eq-coherent key hash functions.
-  key_hash = hash_Hash(hash_key, entry_key(entry))
-  value_hash = hash_Hash(hash_value, entry_value(entry))
-  finish_61(mix_61(key_hash, value_hash), 2, hash_tag_entry)
+# Equality adapter for maps under caller-supplied key/value dictionaries.
+def eq(hash_key: Hash[k], hash_value: Hash[v]) -> Eq[HashMap[k, v]]:
+  eq_from_fn((left, right) -> eq_fn(hash_key, hash_value, left, right))
 
 def hash_fn(hash_key: Hash[k], hash_value: Hash[v], map: HashMap[k, v]) -> Int64:
+  hash_pair = pair_hash(hash_key, hash_value)
   match map:
     case Empty(_):
       finish_61(hash_seed_map, 0, hash_tag_map)
-    case Root(_, sz, root):
-      (sum_acc, xor_acc) = fold_entries_node(root, (hash_seed_map, empty_i64), (state, entry) -> (
-        (sum_acc, xor_acc) = state
-        item_hash = hash_entry(hash_key, hash_value, entry)
-        # XOR is commutative, so this preserves entropy while making map hashing independent of entry traversal order.
-        (sum_61_i64(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
+    case Root(_, _, root):
+      # XOR is commutative, so this preserves entropy while making map hashing
+      # independent of entry traversal order after quotienting by pair equality.
+      (_, unique_count, sum_acc, xor_acc) = fold_entries_node(root, (empty(hash_pair), 0, hash_seed_map, empty_i64), (state, entry) -> (
+        (seen, unique_count, sum_acc, xor_acc) = state
+        pair = entry_pair(entry)
+        if contains_key(seen, pair):
+          state
+        else:
+          item_hash = hash_Hash(hash_pair, pair)
+          (updated(seen, pair, True), unique_count.add(1), sum_61_i64(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
       ))
-      finish_61(mix_61(sum_acc, xor_acc), sz, hash_tag_map)
+      finish_61(mix_61(sum_acc, xor_acc), unique_count, hash_tag_map)
 
 # Hash adapter for maps.
 def hash(hash_key: Hash[k], hash_value: Hash[v]) -> Hash[HashMap[k, v]]:
-  eq_value = hash_to_Eq(hash_value)
-  hash_specialized(map -> hash_fn(hash_key, hash_value, map), eq(eq_value))
+  hash_specialized(map -> hash_fn(hash_key, hash_value, map), eq(hash_key, hash_value))
 
 ############################
 # Invariants and model (tests)
@@ -1037,6 +1081,12 @@ rand_item_list: Gen[List[(Int, Int)]] = list_Gen(tuple2_Gen(rand_key, rand_value
 
 hash_int_collision: Hash[Int] = hash_specialized(_ -> empty_i64, eq_Int_inst)
 hash_int_shifted: Hash[Int] = hash_specialized(i -> normalize_61(i + 17), eq_Int_inst)
+def abs_int(value: Int) -> Int:
+  if cmp_Int(value, 0) matches LT:
+    0.sub(value)
+  else:
+    value
+hash_int_abs: Hash[Int] = hash_specialized(value -> normalize_61(abs_int(value)), eq_from_fn((left, right) -> abs_int(left).eq_Int(abs_int(right))))
 
 sequence_prop: Prop = forall_Prop(
   rand_ops,
@@ -1142,7 +1192,7 @@ adapter_prop: Prop = forall_Prop(
     right = from_List(hash_Int, right_items)
     left_model = model_from_items(left_items)
     right_model = model_from_items(right_items)
-    map_eq = eq(eq_Int_inst)
+    map_eq = eq(hash_Int, hash_Int)
     map_hash = hash(hash_Int, hash_Int)
     equal = eq_Eq(map_eq, left, right)
     coherent = if equal:
@@ -1159,7 +1209,7 @@ cross_hash_adapter_prop: Prop = forall_Prop(
     model = model_from_items(items)
     left = from_List(hash_Int, model)
     right = from_List(hash_int_shifted, model.reverse())
-    map_eq = eq(eq_Int_inst)
+    map_eq = eq(hash_Int, hash_Int)
     map_hash = hash(hash_Int, hash_Int)
     Assertion(
       and(
@@ -1177,7 +1227,7 @@ permutation_hash_prop: Prop = forall_Prop(
     model = model_from_items(items)
     left = from_List(hash_Int, model)
     right = from_List(hash_Int, model.reverse())
-    map_eq = eq(eq_Int_inst)
+    map_eq = eq(hash_Int, hash_Int)
     map_hash = hash(hash_Int, hash_Int)
     Assertion(
       and(
@@ -1282,6 +1332,28 @@ tests = TestSuite("HashMap tests", [
         and(invariants_ok(merged), and(invariants_ok(inter), invariants_ok(diff)))
       ),
       "bulk ops sanity"
+    )
+  ),
+  (
+    left = from_List(hash_Int, [(-1, 7), (1, 7), (-2, 5), (2, 5)])
+    right = from_List(hash_int_abs, [(1, 7), (2, 5)])
+    map_eq = eq(hash_int_abs, hash_Int)
+    map_hash = hash(hash_int_abs, hash_Int)
+    Assertion(
+      and(
+        eq_Eq(map_eq, left, right),
+        eq_Int64(hash_Hash(map_hash, left), hash_Hash(map_hash, right))
+      ),
+      "adapter quotients supplied pair equality classes"
+    )
+  ),
+  (
+    left = from_List(hash_Int, [(-1, 7), (1, 8)])
+    right = from_List(hash_int_abs, [(1, 7)])
+    map_eq = eq(hash_int_abs, hash_Int)
+    Assertion(
+      eq_Eq(map_eq, left, right) matches False,
+      "adapter keeps distinct supplied pair quotient classes"
     )
   ),
   Assertion(fragment(normalize_61(-1), 0).eq_Int(30), "fragment handles -1 at shift 0"),

@@ -30,21 +30,26 @@ The benchmark package and the shipped unordered collection hashers both import
 `hash_set_hash` measurements exercise the same `sum_61_i64` reducer that
 `Zafu/Collection/HashMap` and `Zafu/Collection/HashSet` use in production.
 
-The public `HashMap.hash` and `HashSet.hash` adapters re-hash keys/items with
-their caller-supplied dictionaries, so the benchmark's synthetic key/item hash
-inputs measure the shipped public hash path rather than the collections'
-internal HAMT cache dictionaries.
+The public `HashMap.eq/hash` and `HashSet.eq/hash` adapters use caller-supplied
+dictionaries, so the benchmark's synthetic key/item hash inputs measure the
+shipped public adapter paths rather than the collections' internal HAMT cache
+dictionaries.
 
 Breaking API note:
 
-- `HashMap.hash` now takes both `hash_key` and `hash_value` dictionaries.
-- `HashSet.hash` now takes the caller's `hash_item` dictionary instead of being
-  a constant exported `Hash`.
+- `HashSet.eq` and `HashSet.hash` now take the caller's `hash_item`
+  dictionary.
+- `HashMap.eq` and `HashMap.hash` now take both `hash_key` and `hash_value`
+  dictionaries.
 
-That change is intentional for issue #207: equal maps and sets must hash
-coherently even when their internal HAMT cache dictionaries differ, so the
-public adapters now re-hash visible keys/items with the caller's chosen
-dictionary instead of trusting the cached internal hashes.
+That change is intentional for issue #207: the public adapters now define
+equality and hashing on the caller-visible quotient, rather than trusting the
+collections' cached internal hashes or stored key semantics.
+
+- `HashSet.eq/hash` operate on the quotient of visible items under
+  `hash_item`.
+- `HashMap.eq/hash` operate on the quotient of visible `(key, value)` entries
+  under the caller-supplied pair semantics.
 
 Strategies:
 

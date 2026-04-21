@@ -587,23 +587,56 @@ def difference(left: HashSet[k], right: HashSet[k]) -> HashSet[k]:
     case Root(_, _, right_root):
       fold_entries_node(right_root, left, (acc, entry) -> remove(acc, entry_key(entry)))
 
-def eq_fn(left: HashSet[k], right: HashSet[k]) -> Bool:
-  if size(left).eq_Int(size(right)):
-    match left:
-      case Empty(_):
-        True
-      case Root(_, _, left_root):
-        fold_entries_node(left_root, True, (ok, entry) -> (
-          if ok:
-            contains(right, entry_key(entry))
-          else:
-            False
-        ))
-  else:
-    False
+def normalize_classes(hash_item: Hash[k], set: HashSet[k]) -> (HashSet[k], Int):
+  match set:
+    case Empty(_):
+      (empty(hash_item), 0)
+    case Root(_, _, root):
+      fold_entries_node(root, (empty(hash_item), 0), (state, entry) -> (
+        (normalized, unique_count) = state
+        item = entry_key(entry)
+        if contains(normalized, item):
+          state
+        else:
+          (updated(normalized, item), unique_count.add(1))
+      ))
 
-# Equality adapter for sets.
-eq: forall k. Eq[HashSet[k]] = eq_from_fn(eq_fn)
+def unique_subset_count(hash_item: Hash[k], normalized: HashSet[k], set: HashSet[k]) -> (Int, Bool):
+  match set:
+    case Empty(_):
+      (0, True)
+    case Root(_, _, root):
+      (_, unique_count, ok) = fold_entries_node(root, (empty(hash_item), 0, True), (state, entry) -> (
+        (seen, unique_count, ok) = state
+        if ok:
+          item = entry_key(entry)
+          if contains(seen, item):
+            state
+          elif contains(normalized, item):
+            (updated(seen, item), unique_count.add(1), True)
+          else:
+            (seen, unique_count, False)
+        else:
+          state
+      ))
+      (unique_count, ok)
+
+def eq_fn(hash_item: Hash[k], left: HashSet[k], right: HashSet[k]) -> Bool:
+  def eq_ordered(smaller: HashSet[k], larger: HashSet[k]) -> Bool:
+    (normalized_smaller, smaller_unique_count) = normalize_classes(hash_item, smaller)
+    if cmp_Int(smaller_unique_count, size(larger)) matches GT:
+      False
+    else:
+      (larger_unique_count, larger_ok) = unique_subset_count(hash_item, normalized_smaller, larger)
+      and(larger_ok, smaller_unique_count.eq_Int(larger_unique_count))
+  if cmp_Int(size(left), size(right)) matches GT:
+    eq_ordered(right, left)
+  else:
+    eq_ordered(left, right)
+
+# Equality adapter for sets under a caller-supplied item dictionary.
+def eq(hash_item: Hash[k]) -> Eq[HashSet[k]]:
+  eq_from_fn((left, right) -> eq_fn(hash_item, left, right))
 
 def hash_entry(hash_item: Hash[k], entry: Entry[k]) -> Int64:
   # Public set hashing must ignore cached HAMT hashes and instead re-hash each
@@ -615,17 +648,21 @@ def hash_fn(hash_item: Hash[k], set: HashSet[k]) -> Int64:
   match set:
     case Empty(_):
       finish_61(hash_seed_set, 0, hash_tag_set)
-    case Root(_, sz, root):
-      (sum_acc, xor_acc) = fold_entries_node(root, (hash_seed_set, empty_i64), (state, entry) -> (
-        (sum_acc, xor_acc) = state
-        item_hash = hash_entry(hash_item, entry)
-        (sum_61_i64(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
+    case Root(_, _, root):
+      (_, unique_count, sum_acc, xor_acc) = fold_entries_node(root, (empty(hash_item), 0, hash_seed_set, empty_i64), (state, entry) -> (
+        (seen, unique_count, sum_acc, xor_acc) = state
+        item = entry_key(entry)
+        if contains(seen, item):
+          state
+        else:
+          item_hash = hash_entry(hash_item, entry)
+          (updated(seen, item), unique_count.add(1), sum_61_i64(sum_acc, item_hash), xor_Int64(xor_acc, item_hash))
       ))
-      finish_61(mix_61(sum_acc, xor_acc), sz, hash_tag_set)
+      finish_61(mix_61(sum_acc, xor_acc), unique_count, hash_tag_set)
 
 # Hash adapter for sets.
 def hash(hash_item: Hash[k]) -> Hash[HashSet[k]]:
-  hash_specialized(set -> hash_fn(hash_item, set), eq)
+  hash_specialized(set -> hash_fn(hash_item, set), eq(hash_item))
 
 ############################
 # Invariants and model (tests)
@@ -906,6 +943,12 @@ rand_item_list: Gen[List[Int]] = list_Gen(rand_key)
 
 hash_int_collision: Hash[Int] = hash_specialized(_ -> empty_i64, eq_Int_inst)
 hash_int_shifted: Hash[Int] = hash_specialized(i -> normalize_61(i + 17), eq_Int_inst)
+def abs_int(value: Int) -> Int:
+  if cmp_Int(value, 0) matches LT:
+    0.sub(value)
+  else:
+    value
+hash_int_abs: Hash[Int] = hash_specialized(value -> normalize_61(abs_int(value)), eq_from_fn((left, right) -> abs_int(left).eq_Int(abs_int(right))))
 
 sequence_prop: Prop = forall_Prop(
   rand_ops,
@@ -973,7 +1016,7 @@ adapter_prop: Prop = forall_Prop(
     right = from_List(hash_Int, right_items)
     left_model = model_from_items(left_items)
     right_model = model_from_items(right_items)
-    set_eq = eq
+    set_eq = eq(hash_Int)
     set_hash = hash(hash_Int)
     equal = eq_Eq(set_eq, left, right)
     coherent = if equal:
@@ -990,7 +1033,7 @@ cross_hash_adapter_prop: Prop = forall_Prop(
     model = model_from_items(items)
     left = from_List(hash_Int, model)
     right = from_List(hash_int_shifted, model.reverse())
-    set_eq = eq
+    set_eq = eq(hash_Int)
     set_hash = hash(hash_Int)
     Assertion(
       and(
@@ -1008,7 +1051,7 @@ permutation_hash_prop: Prop = forall_Prop(
     model = model_from_items(items)
     left = from_List(hash_Int, model)
     right = from_List(hash_Int, model.reverse())
-    set_eq = eq
+    set_eq = eq(hash_Int)
     set_hash = hash(hash_Int)
     Assertion(
       and(
@@ -1094,6 +1137,28 @@ tests = TestSuite("HashSet tests", [
         and(invariants_ok(merged), and(invariants_ok(inter), invariants_ok(diff)))
       ),
       "bulk ops sanity"
+    )
+  ),
+  (
+    left = from_List(hash_Int, [-1, 1, 2, -2])
+    right = from_List(hash_int_abs, [1, 2])
+    set_eq = eq(hash_int_abs)
+    set_hash = hash(hash_int_abs)
+    Assertion(
+      and(
+        eq_Eq(set_eq, left, right),
+        eq_Int64(hash_Hash(set_hash, left), hash_Hash(set_hash, right))
+      ),
+      "adapter quotients supplied equality classes"
+    )
+  ),
+  (
+    left = from_List(hash_Int, [-1, 1, 2])
+    right = from_List(hash_int_abs, [1])
+    set_eq = eq(hash_int_abs)
+    Assertion(
+      eq_Eq(set_eq, left, right) matches False,
+      "adapter keeps distinct supplied quotient classes"
     )
   ),
   Assertion(fragment(normalize_61(-1), 0).eq_Int(30), "fragment handles -1 at shift 0"),
