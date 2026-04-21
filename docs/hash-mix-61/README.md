@@ -11,7 +11,8 @@ Artifacts:
 The checked-in JSON records a deterministic SHA-256 source fingerprint over the
 benchmark-relevant Bosatsu and harness files instead of a git SHA. That keeps
 the evidence reviewable from the checked-in tree itself, and
-`scripts/hash_mix_benchmark_test.py` rejects stale fingerprints.
+`scripts/hash_mix_benchmark_test.py` validates the provenance metadata and
+recorded strategy decision.
 
 Regenerate the local baseline with:
 

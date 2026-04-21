@@ -69,8 +69,8 @@ The current local benchmark artifacts live at:
 - `docs/hash-mix-61/baseline-local.csv`
 
 `baseline-local.json` includes a deterministic source fingerprint over the
-benchmark-relevant files, and `scripts/hash_mix_benchmark_test.py` checks that
-the checked-in artifact still matches the current reviewed sources.
+benchmark-relevant files, and `scripts/hash_mix_benchmark_test.py` checks the
+artifact schema, recorded provenance fields, and strategy decision.
 
 The summary note in `docs/hash-mix-61/README.md` explains the recorded tradeoff:
 the Int fallback wins on the JVM cases, but the 31-bit Int64 limb strategy wins
