@@ -1,5 +1,10 @@
 package Zafu/Control/Result
 
+from Bosatsu/Num/Int64 import (
+  Int64,
+  eq_Int64,
+  int_low_bits_to_Int64 as i64,
+)
 from Bosatsu/Prog import (
   Prog,
   pure as pure_Prog,
@@ -334,10 +339,10 @@ def ord(ord_err: Ord[e], ord_ok: Ord[a]) -> Ord[Result[e, a]]:
   ))
 
 # Distinct seeds/tags keep Err(x) and Ok(x) in separate hash domains.
-hash_seed_err: Int = 1439
-hash_tag_err: Int = 1447
-hash_seed_ok: Int = 1451
-hash_tag_ok: Int = 1453
+hash_seed_err: Int64 = i64(1439)
+hash_tag_err: Int64 = i64(1447)
+hash_seed_ok: Int64 = i64(1451)
+hash_tag_ok: Int64 = i64(1453)
 
 def hash(hash_err: Hash[e], hash_ok: Hash[a]) -> Hash[Result[e, a]]:
   eq_err = hash_to_Eq(hash_err)
@@ -594,7 +599,7 @@ tests = TestSuite("Result tests", [
   ),
   (
     hash_inst = hash(hash_Int_inst, hash_Int_inst)
-    hash_eq = eq_Int(hash_Hash(hash_inst, Err(1)), hash_Hash(hash_inst, Ok(1)))
+    hash_eq = eq_Int64(hash_Hash(hash_inst, Err(1)), hash_Hash(hash_inst, Ok(1)))
     Assertion(
       if hash_eq:
         False
@@ -607,12 +612,12 @@ tests = TestSuite("Result tests", [
     hash_inst = hash(hash_Int_inst, hash_Int_inst)
     hx = hash_Hash(hash_inst, Ok(2))
     hy = hash_Hash(hash_inst, Ok(2))
-    Assertion(eq_Int(hx, hy), "hash equal values equal hashes")
+    Assertion(eq_Int64(hx, hy), "hash equal values equal hashes")
   ),
   (
     hash_inst = hash(hash_Int_inst, hash_Int_inst)
     hx = hash_Hash(hash_inst, Err(2))
     hy = hash_Hash(hash_inst, Err(2))
-    Assertion(eq_Int(hx, hy), "hash Err values equal hashes")
+    Assertion(eq_Int64(hx, hy), "hash Err values equal hashes")
   ),
 ])

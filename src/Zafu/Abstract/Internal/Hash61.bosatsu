@@ -1,0 +1,117 @@
+package Zafu/Abstract/Internal/Hash61
+
+from Bosatsu/Num/Int64 import (
+  Int64,
+  add_Int64,
+  and_Int64,
+  cmp_Int64,
+  int64_to_Int,
+  int_low_bits_to_Int64 as i64,
+  mul_Int64,
+  shift_left_Int64,
+  shift_right_unsigned_Int64,
+  sub_Int64,
+)
+
+export (
+  hash_modulus_int,
+  hash_modulus,
+  mix_prime_int,
+  mix_add_int,
+  mix_prime,
+  mix_add,
+  normalize_61_int,
+  in_range_61_i64,
+  reduce_61_i64,
+  sum_61_i64,
+  mix_61_int_fallback,
+  mix_61_limb_31,
+)
+
+exposes Bosatsu/Num/Int64
+
+# 2^61 - 1, the canonical Mersenne modulus used throughout hashing.
+hash_modulus_int: Int = 2305843009213693951
+hash_modulus: Int64 = i64(hash_modulus_int)
+
+# Fixed non-cryptographic mix parameters shared by all 61-bit hash builders.
+mix_prime_int: Int = 1099511628211
+mix_add_int: Int = 1469598103934665603
+mix_prime: Int64 = i64(mix_prime_int)
+mix_add: Int64 = i64(mix_add_int)
+
+hash_mask_61: Int64 = hash_modulus
+hash_mask_31: Int64 = i64(2147483647)
+hash_mask_30: Int64 = i64(1073741823)
+zero_i64: Int64 = i64(0)
+
+def normalize_61_int(raw: Int) -> Int64:
+  modded = mod_Int(raw, hash_modulus_int)
+  if cmp_Int(modded, 0) matches LT:
+    i64(modded.add(hash_modulus_int))
+  else:
+    i64(modded)
+
+def in_range_61_i64(value: Int64) -> Bool:
+  non_negative = cmp_Int64(value, zero_i64) matches EQ | GT
+  below_modulus = cmp_Int64(value, hash_modulus) matches LT
+  and(non_negative, below_modulus)
+
+def reduce_61_i64(value: Int64) -> Int64:
+  # The fast Mersenne fold assumes a non-negative bounded input. Keep that path
+  # for the hot callers, but normalize negative values through the Int helper so
+  # the reducer stays correct if future callers violate the fast-path contract.
+  match cmp_Int64(value, zero_i64):
+    case LT:
+      normalize_61_int(int64_to_Int(value))
+    case EQ | GT:
+      folded = add_Int64(and_Int64(value, hash_mask_61), shift_right_unsigned_Int64(value, 61))
+      match cmp_Int64(folded, hash_modulus):
+        case LT:
+          folded
+        case EQ:
+          zero_i64
+        case GT:
+          sub_Int64(folded, hash_modulus)
+
+def sum_61_i64(left: Int64, right: Int64) -> Int64:
+  reduce_61_i64(add_Int64(left, right))
+
+def mix_61_int_fallback(acc: Int64, next: Int64) -> Int64:
+  normalize_61_int(int64_to_Int(acc).mul(mix_prime_int).add(int64_to_Int(next)).add(mix_add_int))
+
+def mul_mod_61_limb_31(left: Int64, right: Int64) -> Int64:
+  left_lo = and_Int64(left, hash_mask_31)
+  left_hi = shift_right_unsigned_Int64(left, 31)
+  right_lo = and_Int64(right, hash_mask_31)
+  right_hi = shift_right_unsigned_Int64(right, 31)
+
+  prod_lo = mul_Int64(left_lo, right_lo)
+  prod_mid = add_Int64(mul_Int64(left_lo, right_hi), mul_Int64(left_hi, right_lo))
+  prod_hi = mul_Int64(left_hi, right_hi)
+
+  prod_lo_folded = and_Int64(prod_lo, hash_modulus)
+  prod_lo_carry = shift_right_unsigned_Int64(prod_lo, 61)
+  prod_mid_lo = and_Int64(prod_mid, hash_mask_30)
+  prod_mid_hi = shift_right_unsigned_Int64(prod_mid, 30)
+
+  # The 31-bit split keeps each partial product inside Int64 while folding the
+  # 2^61 term back into the canonical Mersenne domain.
+  total = add_Int64(
+    prod_lo_folded,
+    add_Int64(
+      prod_lo_carry,
+      add_Int64(
+        prod_mid_hi,
+        add_Int64(
+          shift_left_Int64(prod_mid_lo, 31),
+          shift_left_Int64(prod_hi, 1),
+        ),
+      ),
+    ),
+  )
+  reduce_61_i64(total)
+
+def mix_61_limb_31(acc: Int64, next: Int64) -> Int64:
+  product = mul_mod_61_limb_31(acc, mix_prime)
+  reduce_61_i64(add_Int64(add_Int64(product, next), mix_add))

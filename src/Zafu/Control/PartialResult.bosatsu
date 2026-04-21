@@ -1,5 +1,10 @@
 package Zafu/Control/PartialResult
 
+from Bosatsu/Num/Int64 import (
+  Int64,
+  eq_Int64,
+  int_low_bits_to_Int64 as i64,
+)
 from Zafu/Abstract/Eq import (
   Eq,
   eq_from_fn,
@@ -454,12 +459,12 @@ def ord(ord_err: Ord[e], ord_ok: Ord[a]) -> Ord[PartialResult[e, a]]:
   ))
 
 # Distinct seeds/tags keep constructors in separate hash domains.
-hash_seed_total_err: Int = 1481
-hash_tag_total_err: Int = 1483
-hash_seed_partial_err: Int = 1487
-hash_tag_partial_err: Int = 1489
-hash_seed_total_ok: Int = 1493
-hash_tag_total_ok: Int = 1499
+hash_seed_total_err: Int64 = i64(1481)
+hash_tag_total_err: Int64 = i64(1483)
+hash_seed_partial_err: Int64 = i64(1487)
+hash_tag_partial_err: Int64 = i64(1489)
+hash_seed_total_ok: Int64 = i64(1493)
+hash_tag_total_ok: Int64 = i64(1499)
 
 def hash(hash_err: Hash[e], hash_ok: Hash[a]) -> Hash[PartialResult[e, a]]:
   eq_err = hash_to_Eq(hash_err)
@@ -831,7 +836,7 @@ tests = TestSuite("PartialResult tests", [
   ),
   (
     hash_inst = hash(hash_Int_inst, hash_Int_inst)
-    hash_eq = eq_Int(hash_Hash(hash_inst, TotalErr(1)), hash_Hash(hash_inst, PartialErr(1, 1)))
+    hash_eq = eq_Int64(hash_Hash(hash_inst, TotalErr(1)), hash_Hash(hash_inst, PartialErr(1, 1)))
     Assertion(
       if hash_eq:
         False
@@ -844,6 +849,6 @@ tests = TestSuite("PartialResult tests", [
     hash_inst = hash(hash_Int_inst, hash_Int_inst)
     hx = hash_Hash(hash_inst, PartialErr(2, 3))
     hy = hash_Hash(hash_inst, PartialErr(2, 3))
-    Assertion(eq_Int(hx, hy), "hash equal values equal hashes")
+    Assertion(eq_Int64(hx, hy), "hash equal values equal hashes")
   ),
 ])

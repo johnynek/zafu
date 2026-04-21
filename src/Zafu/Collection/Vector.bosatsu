@@ -157,8 +157,8 @@ exposes (
 
 chunk_width = 32
 chunk_width64 = i64(chunk_width)
-hash_seed_vector: Int = 1123
-hash_tag_vector: Int = 1129
+hash_seed_vector: Int64 = i64(1123)
+hash_tag_vector: Int64 = i64(1129)
 
 # Persistent vector backed by an RRB-style tree.
 enum Vector:
@@ -958,7 +958,7 @@ def cmp_chunk(ord_item: Ord[a], left_items: Array[a], left_idx: Int, right_items
         case None:
           EQ
 
-def hash_chunk(hash_item: Hash[a], items: Array[a], idx: Int, rem: Int, acc: Int) -> Int:
+def hash_chunk(hash_item: Hash[a], items: Array[a], idx: Int, rem: Int, acc: Int64) -> Int64:
   loop rem:
     case _ if cmp_Int(rem, 0) matches LT | EQ:
       acc
@@ -1073,7 +1073,7 @@ def cmp_Vector_items(ord_item: Ord[a], left: Vector[a], right: Vector[a]) -> Com
     else:
       prefix_cmp
 
-def hash_Vector_items(hash_item: Hash[a], vec: Vector[a]) -> Int:
+def hash_Vector_items(hash_item: Hash[a], vec: Vector[a]) -> Int64:
   total = size(vec)
   leaf_fuel = height(vec).add(8)
   def go(
@@ -1081,8 +1081,8 @@ def hash_Vector_items(hash_item: Hash[a], vec: Vector[a]) -> Int:
     processed: Int,
     stack: List[Vector[a]],
     current: Option[(Array[a], Int)],
-    acc: Int
-  ) -> Int:
+    acc: Int64
+  ) -> Int64:
     loop rem:
       case _ if cmp_Int(rem, 0) matches LT | EQ:
         finish_61(acc, processed, hash_tag_vector)
@@ -1670,7 +1670,7 @@ hash_instance_prop: Prop = forall_Prop(
     list_hash = hash_List_inst(hash_Int)
     actual = hash_Hash(vec_hash, from_List(list))
     expected = hash_Hash(list_hash, list)
-    Assertion(actual.eq_Int(expected), "hash instance law")
+    Assertion(actual.eq_Int64(expected), "hash instance law")
   ))
 
 hash_eq_coherent_prop: Prop = forall_Prop(
@@ -1684,7 +1684,7 @@ hash_eq_coherent_prop: Prop = forall_Prop(
     left_hash = hash_Hash(vec_hash, left_vec)
     right_hash = hash_Hash(vec_hash, right_vec)
     coherent = if eq_Eq(vec_eq, left_vec, right_vec):
-      left_hash.eq_Int(right_hash)
+      left_hash.eq_Int64(right_hash)
     else:
       True
     Assertion(coherent, "hash coherence")
@@ -1821,7 +1821,7 @@ tests = TestSuite("Vector tests", [
     vec_hash = hash_Vector(hash_Int)
     left = concat(from_List([1]), from_List([2, 3]))
     right = from_List([1, 2, 3])
-    Assertion(hash_Hash(vec_hash, left).eq_Int(hash_Hash(vec_hash, right)), "hash_Vector coherence sample")
+    Assertion(hash_Hash(vec_hash, left).eq_Int64(hash_Hash(vec_hash, right)), "hash_Vector coherence sample")
   ),
   Assertion(foldl(from_List([1, 2, 3]), 0, add).eq_Int(6), "foldl sanity"),
   Assertion(foldr(from_List([1, 2, 3]), 0, (item, acc) -> item.sub(acc)).eq_Int(2), "foldr sanity"),

@@ -91,8 +91,14 @@ Bulk map operations:
 
 Typeclass adapters:
 
-1. `eq(eq_value: Eq[v]) -> Eq[HashMap[k, v]]`
-2. `hash(hash_value: Hash[v]) -> Hash[HashMap[k, v]]`
+1. `eq(hash_key: Hash[k], hash_value: Hash[v]) -> Eq[HashMap[k, v]]`
+2. `hash(hash_key: Hash[k], hash_value: Hash[v]) -> Hash[HashMap[k, v]]`
+
+These adapters are defined on the visible set of `(key, value)` entries under
+the caller-supplied pair semantics, not on raw internal key lookup semantics.
+That keeps `Eq`/`Hash` lawful even when maps were built with different internal
+hash dictionaries or when caller-supplied key equality merges previously
+distinct stored keys.
 
 ## Internal representation and invariants
 

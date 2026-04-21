@@ -75,6 +75,7 @@ else
 fi
 
 "$PYTHON" -m unittest scripts/benchmarksgame_compare_test.py
+"$PYTHON" -m unittest scripts/hash_mix_benchmark_test.py
 
 # Keep the required pre-PR gate on a single validate-only benchmark smoke.
 # Longer measured compares run in the separate benchmark workflow.
