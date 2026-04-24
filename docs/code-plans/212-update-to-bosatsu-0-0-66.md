@@ -10,6 +10,7 @@
 - Pending steps: `0`
 - Completed steps: `3`
 - Total steps: `3`
+- State: `implemented`
 
 ## Summary
 
@@ -17,7 +18,7 @@ Update this repo to Bosatsu 0.0.66 by moving the repo-local Bosatsu version pin 
 
 ## Current State
 
-The repo now pins the Bosatsu wrapper version in `.bosatsu_version` to `0.0.66`. `src/zafu_conf.json` declares public dependency `core_alpha` at library version `8.0.1`, with the URI `https://github.com/johnynek/bosatsu/releases/download/v0.0.66/core_alpha-v8.0.1.bosatsu_lib` and Blake3 hash `a54095ec9b31a305bd0729ad213ae12b40e3013cbec9779e85eb712261eaa2d0`. Exported packages, package globs, repo metadata, and unrelated dependency configuration are unchanged. `./bosatsu --fetch`, `./bosatsu fetch`, `./bosatsu check --warn`, `./bosatsu test --warn`, and the configured `scripts/test.sh` gate pass under the updated metadata.
+The repo now pins the Bosatsu wrapper version in `.bosatsu_version` to `0.0.66`. `src/zafu_conf.json` declares public dependency `core_alpha` at library version `8.0.1`, with the URI `https://github.com/johnynek/bosatsu/releases/download/v0.0.66/core_alpha-v8.0.1.bosatsu_lib` and Blake3 hash `blake3:a54095ec9b31a305bd0729ad213ae12b40e3013cbec9779e85eb712261eaa2d0`. Exported packages, package globs, repo metadata, and unrelated dependency configuration are unchanged. `./bosatsu --fetch`, `./bosatsu fetch`, `./bosatsu check --warn`, `./bosatsu test --warn`, and the configured `scripts/test.sh` gate pass under the updated metadata.
 
 ## Problem
 
@@ -42,12 +43,12 @@ Update `.bosatsu_version` from `0.0.65` to `0.0.66`. Update `src/zafu_conf.json`
 #### Assertion Tests
 
 - After the edit, `src/zafu_conf.json` contains `public_deps.core_alpha.version` equal to `8.0.1`.
-- After the edit, `src/zafu_conf.json` contains only the `v0.0.66/core_alpha-v8.0.1.bosatsu_lib` URI for `core_alpha`.
+- After the edit, `src/zafu_conf.json` contains only the full `https://github.com/johnynek/bosatsu/releases/download/v0.0.66/core_alpha-v8.0.1.bosatsu_lib` URI for `core_alpha`.
 - After the edit, `.bosatsu_version` contains exactly `0.0.66`.
 
 #### Completion Notes
 
-Updated `.bosatsu_version` to `0.0.66` and updated `src/zafu_conf.json` so `public_deps.core_alpha` uses version `8.0.1`, the `v0.0.66/core_alpha-v8.0.1.bosatsu_lib` URI, and Blake3 hash `a54095ec9b31a305bd0729ad213ae12b40e3013cbec9779e85eb712261eaa2d0`. No exported packages, package globs, repo metadata, or unrelated dependency configuration changed.
+Updated `.bosatsu_version` to `0.0.66` and updated `src/zafu_conf.json` so `public_deps.core_alpha` uses version `8.0.1`, the `https://github.com/johnynek/bosatsu/releases/download/v0.0.66/core_alpha-v8.0.1.bosatsu_lib` URI, and Blake3 hash `blake3:a54095ec9b31a305bd0729ad213ae12b40e3013cbec9779e85eb712261eaa2d0`. No exported packages, package globs, repo metadata, or unrelated dependency configuration changed.
 
 2. [x] `repair-compatibility-breakages-if-any` Handle 0.0.66 compatibility fallout
 
