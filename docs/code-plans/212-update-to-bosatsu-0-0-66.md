@@ -18,7 +18,7 @@ Update this repo to Bosatsu 0.0.66 by moving the repo-local Bosatsu version pin 
 
 ## Current State
 
-The repo now pins the Bosatsu wrapper version in `.bosatsu_version` to `0.0.66`. `src/zafu_conf.json` declares public dependency `core_alpha` at library version `8.0.1`, with the URI `https://github.com/johnynek/bosatsu/releases/download/v0.0.66/core_alpha-v8.0.1.bosatsu_lib` and Blake3 hash `blake3:a54095ec9b31a305bd0729ad213ae12b40e3013cbec9779e85eb712261eaa2d0`. Exported packages, package globs, repo metadata, and unrelated dependency configuration are unchanged. `./bosatsu --fetch`, `./bosatsu fetch`, `./bosatsu check --warn`, `./bosatsu test --warn`, and the configured `scripts/test.sh` gate pass under the updated metadata.
+The repo now pins the Bosatsu wrapper version in `.bosatsu_version` to `0.0.66`. `src/zafu_conf.json` declares public dependency `core_alpha` at library version `8.0.1`, with the URI `https://github.com/johnynek/bosatsu/releases/download/v0.0.66/core_alpha-v8.0.1.bosatsu_lib` and Blake3 hash `blake3:a54095ec9b31a305bd0729ad213ae12b40e3013cbec9779e85eb712261eaa2d0`. Exported packages, package globs, repo metadata, and unrelated dependency configuration are unchanged. `scripts/test.sh` now requests a larger native stack limit before running the Bosatsu checks because the updated 0.0.66 native compiler path hit a stack overflow in CI with the previous 16 MB request. `./bosatsu --fetch`, `./bosatsu fetch`, `./bosatsu check --warn`, `./bosatsu test --warn`, and the configured `scripts/test.sh` gate pass under the updated metadata.
 
 ## Problem
 
@@ -97,4 +97,4 @@ Run the configured pre-PR gate `scripts/test.sh` after the metadata bump and any
 
 #### Completion Notes
 
-Ran `scripts/test.sh` successfully from the repository root after the metadata bump and compatibility checks.
+Raised the `scripts/test.sh` soft stack request from 16 MB to 64 MB, with a 32 MB fallback when the host rejects the larger value, after CI reported a native Bosatsu compiler `StackOverflowError` under the updated 0.0.66 setup. Ran `scripts/test.sh` successfully from the repository root after the metadata bump, compatibility checks, and stack-limit hardening.
