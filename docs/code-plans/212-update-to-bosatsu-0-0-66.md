@@ -14,26 +14,26 @@
 
 ## Summary
 
-Update this repo to Bosatsu 0.0.66 by moving the repo-local Bosatsu version pin and the `core_alpha` public dependency to the matching release artifact, then verify that the existing library, tools, benchmarks, and publish dry run still pass the configured `scripts/test.sh` gate.
+Update this repo to Bosatsu 0.0.67 by moving the repo-local Bosatsu version pin and the `core_alpha` public dependency to the matching release artifact, then verify that the existing library, tools, benchmarks, and publish dry run still pass the configured `scripts/test.sh` gate.
 
 ## Current State
 
-The repo now pins the Bosatsu wrapper version in `.bosatsu_version` to `0.0.66`. `src/zafu_conf.json` declares public dependency `core_alpha` at library version `8.0.1`, with the URI `https://github.com/johnynek/bosatsu/releases/download/v0.0.66/core_alpha-v8.0.1.bosatsu_lib` and Blake3 hash `blake3:a54095ec9b31a305bd0729ad213ae12b40e3013cbec9779e85eb712261eaa2d0`. Exported packages, package globs, repo metadata, and unrelated dependency configuration are unchanged. `scripts/test.sh` now requests a larger native stack limit before running the Bosatsu checks because the updated 0.0.66 native compiler path hit a stack overflow in CI with the previous 16 MB request. `./bosatsu --fetch`, `./bosatsu fetch`, `./bosatsu check --warn`, `./bosatsu test --warn`, and the configured `scripts/test.sh` gate pass under the updated metadata.
+The repo now pins the Bosatsu wrapper version in `.bosatsu_version` to `0.0.67`. `src/zafu_conf.json` declares public dependency `core_alpha` at library version `8.0.2`, with the URI `https://github.com/johnynek/bosatsu/releases/download/v0.0.67/core_alpha-v8.0.2.bosatsu_lib` and Blake3 hash `blake3:67f348d5e319236d9d6fab5f34ed21b694f4fd3da883b9bfd9d5979054d11527`. Exported packages, package globs, repo metadata, and unrelated dependency configuration are unchanged. `scripts/test.sh` requests a larger native stack limit before running the Bosatsu checks, and the configured gate passes under the maintainer-requested move from 0.0.66 to 0.0.67.
 
 ## Problem
 
-Issue #212 asked to update to Bosatsu 0.0.66 and explicitly called out bumping the `core_alpha` library. The repo metadata now points at the requested compiler/runtime and matching core library, and the required verification gate passes.
+Issue #212 originally asked to update to Bosatsu 0.0.66 and explicitly called out bumping the `core_alpha` library. PR feedback from the maintainer identified a Bosatsu 0.0.66 issue and requested moving to Bosatsu 0.0.67 instead, so the repo metadata now needs to point at the newer compiler/runtime and matching `core_alpha` 8.0.2 artifact.
 
 ## Steps
 
 1. [x] `bump-bosatsu-and-core-alpha-pins` Update Bosatsu and core_alpha release metadata
 
-Update `.bosatsu_version` from `0.0.65` to `0.0.66`. Update `src/zafu_conf.json` so `public_deps.core_alpha.version` is `8.0.1`, its URI is `https://github.com/johnynek/bosatsu/releases/download/v0.0.66/core_alpha-v8.0.1.bosatsu_lib`, and its Blake3 hash is `blake3:a54095ec9b31a305bd0729ad213ae12b40e3013cbec9779e85eb712261eaa2d0`. Keep exported packages, package globs, repo metadata, and unrelated dependency configuration unchanged.
+Update `.bosatsu_version` from `0.0.66` to `0.0.67` per maintainer PR feedback. Update `src/zafu_conf.json` so `public_deps.core_alpha.version` is `8.0.2`, its URI is `https://github.com/johnynek/bosatsu/releases/download/v0.0.67/core_alpha-v8.0.2.bosatsu_lib`, and its Blake3 hash is `blake3:67f348d5e319236d9d6fab5f34ed21b694f4fd3da883b9bfd9d5979054d11527`. Keep exported packages, package globs, repo metadata, and unrelated dependency configuration unchanged.
 
 #### Invariants
 
-- The repo-local wrapper downloads and runs Bosatsu release `0.0.66`.
-- The `core_alpha` dependency version, URI, and hash all refer to the same `v0.0.66` release artifact.
+- The repo-local wrapper downloads and runs Bosatsu release `0.0.67`.
+- The `core_alpha` dependency version, URI, and hash all refer to the same `v0.0.67` release artifact.
 - No public Zafu package exports or package discovery settings change as part of the metadata bump.
 
 #### Property Tests
@@ -42,17 +42,17 @@ Update `.bosatsu_version` from `0.0.65` to `0.0.66`. Update `src/zafu_conf.json`
 
 #### Assertion Tests
 
-- After the edit, `src/zafu_conf.json` contains `public_deps.core_alpha.version` equal to `8.0.1`.
-- After the edit, `src/zafu_conf.json` contains only the full `https://github.com/johnynek/bosatsu/releases/download/v0.0.66/core_alpha-v8.0.1.bosatsu_lib` URI for `core_alpha`.
-- After the edit, `.bosatsu_version` contains exactly `0.0.66`.
+- After the edit, `src/zafu_conf.json` contains `public_deps.core_alpha.version` equal to `8.0.2`.
+- After the edit, `src/zafu_conf.json` contains only the full `https://github.com/johnynek/bosatsu/releases/download/v0.0.67/core_alpha-v8.0.2.bosatsu_lib` URI for `core_alpha`.
+- After the edit, `.bosatsu_version` contains exactly `0.0.67`.
 
 #### Completion Notes
 
-Updated `.bosatsu_version` to `0.0.66` and updated `src/zafu_conf.json` so `public_deps.core_alpha` uses version `8.0.1`, the `https://github.com/johnynek/bosatsu/releases/download/v0.0.66/core_alpha-v8.0.1.bosatsu_lib` URI, and Blake3 hash `blake3:a54095ec9b31a305bd0729ad213ae12b40e3013cbec9779e85eb712261eaa2d0`. No exported packages, package globs, repo metadata, or unrelated dependency configuration changed.
+Updated `.bosatsu_version` to `0.0.67` and updated `src/zafu_conf.json` so `public_deps.core_alpha` uses version `8.0.2`, the `https://github.com/johnynek/bosatsu/releases/download/v0.0.67/core_alpha-v8.0.2.bosatsu_lib` URI, and Blake3 hash `blake3:67f348d5e319236d9d6fab5f34ed21b694f4fd3da883b9bfd9d5979054d11527`. No exported packages, package globs, repo metadata, or unrelated dependency configuration changed.
 
 2. [x] `repair-compatibility-breakages-if-any` Handle 0.0.66 compatibility fallout
 
-Run the normal fast feedback commands after the metadata bump: `./bosatsu --fetch`, `./bosatsu fetch`, `./bosatsu check --warn`, and `./bosatsu test --warn`. If Bosatsu 0.0.66 or `core_alpha` 8.0.1 exposes compile, lint, or test failures, make the smallest source changes needed to preserve existing Zafu behavior and public API intent. Keep any required code edits idiomatic Bosatsu per `coding_style.md`, with special care for stack safety, public surface discipline, and existing collection/parser/generator/test helper patterns.
+Run the normal fast feedback commands after the metadata bump: `./bosatsu --fetch`, `./bosatsu fetch`, `./bosatsu check --warn`, and `./bosatsu test --warn`. If Bosatsu 0.0.67 or `core_alpha` 8.0.2 exposes compile, lint, or test failures, make the smallest source changes needed to preserve existing Zafu behavior and public API intent. Keep any required code edits idiomatic Bosatsu per `coding_style.md`, with special care for stack safety, public surface discipline, and existing collection/parser/generator/test helper patterns.
 
 #### Invariants
 
@@ -74,7 +74,7 @@ Run the normal fast feedback commands after the metadata bump: `./bosatsu --fetc
 
 #### Completion Notes
 
-Ran `./bosatsu --fetch`, `./bosatsu fetch`, `./bosatsu check --warn`, and `./bosatsu test --warn` successfully with Bosatsu `0.0.66` and `core_alpha` `8.0.1`. No compatibility source changes or new tests were needed.
+Ran `./bosatsu --fetch`, `./bosatsu fetch`, `./bosatsu check --warn`, and `./bosatsu test --warn` successfully with Bosatsu `0.0.67` and `core_alpha` `8.0.2`. No compatibility source changes or new tests were needed.
 
 3. [x] `run-required-gate` Verify with required_tests
 
@@ -83,7 +83,7 @@ Run the configured pre-PR gate `scripts/test.sh` after the metadata bump and any
 #### Invariants
 
 - `scripts/test.sh` remains the single required pre-PR gate for this repo version.
-- The gate exercises the updated Bosatsu wrapper version and updated `core_alpha` dependency, not cached 0.0.65 state.
+- The gate exercises the updated Bosatsu wrapper version and updated `core_alpha` dependency, not cached 0.0.66 state.
 - The publish dry run still succeeds with the updated dependency metadata.
 
 #### Property Tests
@@ -93,8 +93,8 @@ Run the configured pre-PR gate `scripts/test.sh` after the metadata bump and any
 #### Assertion Tests
 
 - `scripts/test.sh` passes from the repository root.
-- The gate included successful dependency fetch, `./bosatsu check`, `./bosatsu test`, tool regressions, benchmark smoke checks, Python unit tests, and publish dry run under the updated Bosatsu 0.0.66 setup.
+- The gate includes successful dependency fetch, `./bosatsu check`, `./bosatsu test`, tool regressions, benchmark smoke checks, Python unit tests, and publish dry run under the updated Bosatsu 0.0.67 setup.
 
 #### Completion Notes
 
-Raised the `scripts/test.sh` soft stack request from 16 MB to 64 MB, with a 32 MB fallback when the host rejects the larger value, after CI reported a native Bosatsu compiler `StackOverflowError` under the updated 0.0.66 setup. Ran `scripts/test.sh` successfully from the repository root after the metadata bump, compatibility checks, and stack-limit hardening.
+Retained the `scripts/test.sh` soft stack hardening added after the 0.0.66 CI stack overflow and reran the required gate under Bosatsu `0.0.67` with `core_alpha` `8.0.2`.
