@@ -32,5 +32,5 @@ java -version
 # Native Bosatsu builds and the documentation workflow need these CI packages.
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-  libgc1 libgc-dev pkg-config pandoc python3
+  libgc1 libgc-dev pkg-config pandoc python3 cmake
 rm -rf /var/lib/apt/lists/*

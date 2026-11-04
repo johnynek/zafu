@@ -143,4 +143,4 @@ policy or setup changes are picked up for newly captured work. A host-native
 service rejects setup-bearing overlays and retains its startup baseline.
 
 The required test command remains `scripts/test.sh`. Setup also installs the
-native GC development package and Pandoc used by CI. This repo does not use sbt.
+native GC development package, CMake and Pandoc used by CI. This repo does not use sbt.
