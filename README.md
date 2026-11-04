@@ -128,3 +128,19 @@ The harness reads `vendor/benchmarksgame/manifest.json`, fetches the explicit JV
 ## API docs
 
 - [Zafu library docs](https://johnynek.github.io/zafu/)
+
+## MergeXO container setup
+
+`.mergexo.toml` holds repository-owned policy and selects
+`scripts/container_setup.sh`. MergeXO captures that standalone script before
+checkout and runs it as root inside each disposable worker container. Do not run
+it on your workstation. The setup installs the CI JDK (Temurin 17); downloaded
+tool archives are version- and checksum-pinned.
+
+The service still owns the worker backend, credentials and permissions. Enabling
+containers requires a service configuration change and restart; later repo
+policy or setup changes are picked up for newly captured work. A host-native
+service rejects setup-bearing overlays and retains its startup baseline.
+
+The required test command remains `scripts/test.sh`. Setup also installs the
+native GC development package and Pandoc used by CI. This repo does not use sbt.
