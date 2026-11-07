@@ -7,8 +7,8 @@
 
 - Flow: `small_job`
 - Issue: `#216` update to bosatsu 0.0.69
-- Pending steps: `1`
-- Completed steps: `0`
+- Pending steps: `0`
+- Completed steps: `1`
 - Total steps: `1`
 
 ## Summary
@@ -27,7 +27,7 @@ Issue #216 requests Bosatsu 0.0.69 and explicitly requires bumping the core alph
 
 ## Steps
 
-1. [ ] `upgrade-bosatsu-and-core-alpha` Upgrade the release pins and verify compatibility
+1. [x] `upgrade-bosatsu-and-core-alpha` Upgrade the release pins and verify compatibility
 
 Change `.bosatsu_version` from `0.0.67` to `0.0.69`. In `src/zafu_conf.json`, set `public_deps.core_alpha.version` to `9.0.1`, replace its URI with `https://github.com/johnynek/bosatsu/releases/download/v0.0.69/core_alpha-v9.0.1.bosatsu_lib`, and replace its hash with `blake3:098f5eff00611599b54b5e6bce8b7696c8fdf89f4e99f8bfbbec521764ed8927`.
 
@@ -54,3 +54,7 @@ The slice is complete when the pins agree and these compatibility checks pass. M
 - `./bosatsu --fetch` and `./bosatsu fetch` succeed using the updated pins.
 - `./bosatsu check` and `./bosatsu test` succeed with the upgraded toolchain.
 - For any necessary semantic compatibility repair, add a concrete regression in the existing owning test suite that exercises the affected repository path.
+
+#### Completion Notes
+
+Updated `.bosatsu_version` to `0.0.69` and the `core_alpha` manifest pin to `9.0.1` with the specified release URI and Blake3 hash. `./bosatsu --fetch`, `./bosatsu fetch`, `./bosatsu check`, and `./bosatsu test` succeeded; fetch accepted the declared hash and all 1,086 tests passed. A traced `./bosatsu version` invocation confirmed the launcher executes `.bosatsuc/cli/0.0.69/bosatsu-linux` and reports version `0.0.69`.
